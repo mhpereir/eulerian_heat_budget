@@ -218,8 +218,12 @@ This prevents silent scientific errors.
 
 Computes grid metrics:
 
-- `cell_area(lat, lon)`
-- Optional `dx`, `dy`
+- `get_horizontal_cell_areas(lat, lon)`
+   - 2D horizontal areas on a spherical grid, output in squared meters
+- `get_vertical_cell_areas(p, lat/lon)`
+   - 2D vertical cell areas. if horizontal dimension in lat, must account for spherical correction.
+- `get_cell_volumes(p, lat, lon)`
+   - 3D volume in pressure * squared meters. Horizontal dimensions are spherical, while pressure is assumed to be the radial dimension (linear).
 - Handles spherical Earth geometry
 
 Must be deterministic and independently testable.
@@ -230,8 +234,10 @@ Must be deterministic and independently testable.
 
 Constructs:
 
+- `region_mask`
 - `volume_mask(time,p,y,x)`
-- Region masks (polygon or bounding box)
+- `area_mask_vertical(time,p,y/x)`
+- `area_mask_horizontal(time,y,x)`
 
 Ensures correct truncation at surface pressure.
 
@@ -242,7 +248,9 @@ Ensures correct truncation at surface pressure.
 Pure integration operators:
 
 - `pressure_integral(field, mask)`
+   - depends on `area_mask_vertical`
 - `area_integral(field_2d, cell_area)`
+   - depends on `area_mask_horizontal`
 - `volume_integral(field, mask, cell_area)`
 
 Implements:

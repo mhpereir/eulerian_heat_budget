@@ -49,12 +49,3 @@ def get_vertical_cell_areas(ds):
     # Compute vertical cell area (if needed)
     # For pressure coordinates, this might involve integrating over pressure levels
     pass
-
-def area_mask(ds):
-    # Create a mask for valid grid cells (e.g., atmosphere vs below surface)
-    pass
-
-
-def volume_mask(ds):
-    # Create a mask for valid grid cells (e.g., atmosphere vs below surface)
-    pass
