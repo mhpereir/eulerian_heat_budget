@@ -88,14 +88,16 @@ The implementation is structured in three conceptual layers.
 
 Responsible for:
 
-- Computing grid-cell areas
-- Constructing vertical masks using surface pressure
-- Applying regional masks
+- Applying regional masks (domain for the calculation)
+- Computing grid-cell areas and volumes (grid.py)
+- Constructing 2D (horizontal and vertical) masks for grid-cell-areas and 3D masks for grid-cell-volumes
+
 
 Outputs:
 
-- `cell_area(y,x)`
-- `volume_mask(time,p,y,x)`
+- geometric `cell_area_horizontal(y,x)` and `cell_area_vertical(p,'x' or 'y')`
+- geometric `cell_volume(p,y,x)`
+- `mask(time,p,y,x)` that will be applied to geometric area
 
 This layer contains **no physics**, only geometry and domain logic.
 
@@ -105,9 +107,9 @@ This layer contains **no physics**, only geometry and domain logic.
 
 Reusable operators:
 
-- `pressure_integral(field)`
-- `area_integral(field_2d)`
-- `volume_integral_pcoords(field)`
+- `area_integral_vertical(field_2d_vertical)`
+- `area_integral_horizontal(field_2d_horizontal)`
+- `volume_integral_pcoords(field_3d)`
 
 These functions:
 
@@ -141,7 +143,7 @@ eulerian_heat_budget/
 ├── pyproject.toml
 │
 ├── docs/
-│   └── Eulerian_Heat_Budget_Software_Design.md
+│   └── code_outline.md
 │
 ├── src/eulerian_heat_budget/
 │   ├── __init__.py
@@ -177,6 +179,7 @@ Defines:
   - `R`
   - `cp`
 - Upper boundary pressure
+- Lower boundary constraint (either surface or pressure level)
 - Region configuration
 - Default integration methods
 
@@ -216,28 +219,32 @@ This prevents silent scientific errors.
 
 ### `grid.py`
 
+Standardizes the xarray dataset so it can be used by all downstream grid/mask functions.
+
 Computes grid metrics:
 
 - `get_horizontal_cell_areas(lat, lon)`
-   - 2D horizontal areas on a spherical grid, output in squared meters
+  - 2D horizontal areas on a spherical grid, output in squared meters.
+  - horizontal coordinates are treated as full-cell interval starts, so output dims are `(lat_cell, lon_cell)` with shape `(nlat-1, nlon-1)`.
 - `get_vertical_cell_areas(p, lat/lon)`
-   - 2D vertical cell areas. if horizontal dimension in lat, must account for spherical correction.
+  - 2D vertical side-wall areas for east/west/south/north boundaries.
+  - uses full-cell horizontal intervals and level-point pressure coordinates.
 - `get_cell_volumes(p, lat, lon)`
-   - 3D volume in pressure * squared meters. Horizontal dimensions are spherical, while pressure is assumed to be the radial dimension (linear).
+  - 3D volume in pressure * squared meters.
+  - horizontal dimensions are full-cell spherical intervals; pressure thickness is inferred from level centers.
 - Handles spherical Earth geometry
 
 Must be deterministic and independently testable.
 
 ------
 
-### `masks.py`
+### `weights.py`
 
 Constructs:
 
-- `region_mask`
-- `volume_mask(time,p,y,x)`
-- `area_mask_vertical(time,p,y/x)`
-- `area_mask_horizontal(time,y,x)`
+- `volume_weights(time,p,y,x)`
+- `area_weights_vertical(time,p,y/x)`
+- `area_weights_horizontal(time,y,x)`
 
 Ensures correct truncation at surface pressure.
 
@@ -248,20 +255,11 @@ Ensures correct truncation at surface pressure.
 Pure integration operators:
 
 - `pressure_integral(field, mask)`
-   - depends on `area_mask_vertical`
+  - depends on `area_weights_vertical`
 - `area_integral(field_2d, cell_area)`
-   - depends on `area_mask_horizontal`
+  - depends on `area_weights_horizontal`
 - `volume_integral(field, mask, cell_area)`
-
-Implements:
-
-$$
-\int_V (\cdot) dV =
-\sum_{y,x}
-\left[
-\int \frac{\text{field}}{g} dp
-\right] dA
-$$
+  - depends on `volume_weights`
 
 Must not depend on dataset structure.
 
@@ -314,31 +312,60 @@ Entry script used on HPC or locally.
 
 ### Required Dimensions
 
-- `time`
-- `p`
-- `y`
-- `x`
+- `time`: hourly frequency
+- `level`: variable spacing
+- `lat`: 2 degree spacing
+- `lon`: 2 degree spacing
 
 ------
 
 ### Required Coordinates
 
-- `p` [Pa]
-- `lat(y)`
-- `lon(x)`
-- `time`
+- `time`: same as dimension, 1hr average
+- `level`: same as dimension, cell center
+- `lat`: same as dimension, cell center
+- `lon`: same as dimension, cell center
+- `level_start`: cell start
+- `level_end`: cell end
+- `lat_start`: cell start
+- `lat_end`: cell end
+- `lon_start`: cell start
+- `lon_end`: cell end
+
+Note: in the INPUT data (io.py) horizontal variables follow the full-cell description of data, meaning that the lat/lon grid represents the average over the full grid-cell [x, x+1]. Pressure coordinates represent the variable at each pressure level (horizontally averaged), and `dp` is inferred from level-centered edge extrapolation during integration/geometry calculations. This is standardized in `determine_domain()`.
 
 ------
 
 ### Required Variables
 
-| Variable | Dimensions   | Units  |
-| -------- | ------------ | ------ |
-| `T`      | (time,p,y,x) | K      |
-| `u`      | (time,p,y,x) | m s⁻¹  |
-| `v`      | (time,p,y,x) | m s⁻¹  |
-| `omega`  | (time,p,y,x) | Pa s⁻¹ |
-| `ps`     | (time,y,x)   | Pa     |
+| Variable | Dimensions           | Units  |
+| -------- | -------------------- | ------ |
+| `T`      | (time,level,lat,lon) | K      |
+| `u`      | (time,level,lat,lon) | m s⁻¹  |
+| `v`      | (time,level,lat,lon) | m s⁻¹  |
+| `w`      | (time,level,lat,lon) | Pa s⁻¹ |
+| `sfp`    | (time,lat,lon)       | Pa     |
+
+Future variables: (surface variables)
+
+| Variable | Dimensions        | Units  |
+| -------- | ----------------- | ------ |
+| `T10m`   | (time,lat,lon)    | K      |
+| `u10m`   | (time,lat,lon)    | m s⁻¹  |
+| `v10m`   | (time,lat,lon)    | m s⁻¹  |
+| `w10m`   | (time,lat,lon)    | Pa s⁻¹ |
+
+### Domain dimensions
+
+| Variable    | Dimensions   | Units  |
+| ----------- | ------------ | ------ |
+| `lat_min`   | float        | deg    |
+| `lat_max`   | float        | deg    |
+| `lon_min`   | float        | deg    |
+| `lon_max`   | float        | deg    |
+| `margin`    | int          | int    |
+
+Note: the domain extent is defined by the input domain extent (from io) minus some margin (measured in array index) to ensure there's a few points outside so extrapolation is never necessary.
 
 ------
 
@@ -358,6 +385,54 @@ Entry script used on HPC or locally.
 - Constant field integral
 - Analytic pressure integral
 - Surface truncation behavior
+
+#### Implemented Grid Unit Tests (`tests/test_grid.py`)
+
+1. `test_determine_latlon_domain_interval_start_semantics`
+   - Verifies that `determine_latlon_domain` interprets horizontal coordinates as **full-cell interval starts**, not center points.
+   - For `margin = 1`, expects returned bounds to be the first and last valid **cell-start** values after trimming one cell from each side.
+   - For an over-large margin, expects a `ValueError`, confirming the function rejects cases where no interior cells remain.
+
+2. `test_horizontal_cell_areas_shape_and_metadata`
+   - Verifies output dimensional contract of `get_horizontal_cell_areas`:
+     - dims must be exactly `("lat_cell", "lon_cell")`
+     - shape must be `(nlat-1, nlon-1)`.
+   - Verifies interval metadata coordinates are correct:
+     - `lat_start`, `lat_end`, `lon_start`, `lon_end`
+     - midpoint helper coordinates `lat_mid`, `lon_mid`.
+   - Verifies units are `m2` and all computed values are finite and strictly positive.
+
+3. `test_horizontal_cell_areas_analytic_regular_grid`
+   - Validates spherical horizontal area computation against a closed-form analytic reference on a regular grid:
+     $$
+     A = R^2 |\sin(\phi_n)-\sin(\phi_s)|\,|\lambda_e-\lambda_w|
+     $$
+   - Expects numerical agreement at tight tolerance (`rtol=1e-12`, `atol=0.0`), confirming correct trigonometric and interval handling.
+
+4. `test_vertical_cell_areas_shape_and_units`
+   - Verifies output contract of `get_vertical_cell_areas` for all four side walls:
+     - `east(level, lat_cell)`, `west(level, lat_cell)`,
+       `south(level, lon_cell)`, `north(level, lon_cell)`.
+   - Verifies bbox selection is applied using **interval-start semantics** by checking selected `lat_cell`/`lon_cell` indices and associated start/end metadata.
+   - Verifies units are `m*Pa`, values are finite and positive, and `east == west` for identical meridional geometry.
+
+5. `test_vertical_cell_areas_analytic_regular_grid`
+   - Validates wall-area magnitudes against analytic formulas on a regular grid:
+     - `east/west = dp * (R * dphi)`
+     - `south/north = dp * (R * cos(phi_boundary) * dlon)`.
+   - Confirms pressure-thickness handling (`dp`) and boundary-latitude dependence are correct.
+   - Explicitly checks `south != north` where boundary latitudes differ, ensuring north/south wall geometry is not incorrectly forced symmetric.
+
+6. `test_vertical_cell_areas_irregular_grid_positive`
+   - Uses nonuniform pressure and horizontal spacing to verify robustness away from regular grids.
+   - Expects all four wall outputs to remain finite and strictly positive under irregular interval widths.
+
+7. `test_vertical_cell_areas_error_paths`
+   - Verifies explicit failure behavior for invalid inputs:
+     - bbox selects zero cells,
+     - non-monotonic latitude coordinate,
+     - horizontal coordinate with fewer than two points.
+   - Expects `ValueError` for each case, preventing silent geometry misuse.
 
 ------
 
@@ -383,7 +458,7 @@ For real datasets:
 
 ## 8. Known Numerical Sensitivities
 
-1. Center-of-cell vs full-cell interpretation
+1. Integral will be sensitive to resolution
 2. Pressure spacing non-uniformity
 3. Mask truncation near topography
 4. Vertical differencing of time tendency
@@ -395,10 +470,7 @@ All must be explicitly documented in future versions.
 
 ## 9. Extension Pathways
 
-- Energy-weighted integrals (ρc_vT)
-- Moist static energy version
-- Lagrangian cross-validation
-- Comparison to model energy budgets
+- Add surface variables (T10m, ux10m, uv10m, uz10m) for improved residual calculation.
 - Multi-model ensemble automation
 
 ------
@@ -412,4 +484,3 @@ Use semantic versioning:
 - `2.0`: extended moist/static energy version
 
 ------
-

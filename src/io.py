@@ -103,7 +103,7 @@ def load_era5_sfp(filepath: str) -> xr.Dataset:
 #     return ds_zg  #[m]
 
 
-def load_era5_merge_dataset(ds_T, ds_u, ds_v, ds_w, ds_sp) -> xr.DataTree:
+def load_era5_merge_dataset(ds_T, ds_u, ds_v, ds_w, ds_sp) -> xr.Dataset:
     # Merge all datasets into a single dataset
     merged = xr.merge([ds_T, ds_u, ds_v, ds_w, ds_sp], 
                       compat='identical') 
