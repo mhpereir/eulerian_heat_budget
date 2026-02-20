@@ -84,26 +84,27 @@ The implementation is structured in three conceptual layers.
 
 ------
 
-#### Layer A — Geometry & Masks
+### Layer A — Geometry & Masks
 
 Responsible for:
 
-- Applying regional masks (domain for the calculation)
+- Standardising volume domain for the calculation with `determine_domain()`
 - Computing grid-cell areas and volumes (grid.py)
-- Constructing 2D (horizontal and vertical) masks for grid-cell-areas and 3D masks for grid-cell-volumes
-
+- Constructing 2D (horizontal and vertical) weights for grid-cell-areas and 3D masks for grid-cell-volumes for masking cell elements below the surface
 
 Outputs:
 
 - geometric `cell_area_horizontal(y,x)` and `cell_area_vertical(p,'x' or 'y')`
 - geometric `cell_volume(p,y,x)`
-- `mask(time,p,y,x)` that will be applied to geometric area
+- `volume_weights(time,p,y,x)`
+- `horizontal_area_weights(time,y,x)`
+- `vertical_area_weights(time,p,'x' or 'y')`
 
 This layer contains **no physics**, only geometry and domain logic.
 
 ------
 
-#### Layer B — Integrals (Pure Mathematical Operators)
+### Layer B — Integrals (Pure Mathematical Operators)
 
 Reusable operators:
 
@@ -122,7 +123,7 @@ This layer must be independently unit-tested.
 
 ------
 
-#### Layer C — Budget Assembly
+### Layer C — Budget Assembly
 
 Responsible for:
 
@@ -151,7 +152,7 @@ eulerian_heat_budget/
 │   ├── io.py
 │   ├── validate.py
 │   ├── grid.py
-│   ├── masks.py
+│   ├── weights.py
 │   ├── integrals.py
 │   ├── terms.py
 │   ├── budget.py
@@ -219,9 +220,9 @@ This prevents silent scientific errors.
 
 ### `grid.py`
 
-Standardizes the xarray dataset so it can be used by all downstream grid/mask functions.
+Computes grid metrics for easy integrals later.
 
-Computes grid metrics:
+Geometric cell areas:
 
 - `get_horizontal_cell_areas(lat, lon)`
   - 2D horizontal areas on a spherical grid, output in squared meters.
@@ -229,6 +230,9 @@ Computes grid metrics:
 - `get_vertical_cell_areas(p, lat/lon)`
   - 2D vertical side-wall areas for east/west/south/north boundaries.
   - uses full-cell horizontal intervals and level-point pressure coordinates.
+
+Geometric cell volumes:
+
 - `get_cell_volumes(p, lat, lon)`
   - 3D volume in pressure * squared meters.
   - horizontal dimensions are full-cell spherical intervals; pressure thickness is inferred from level centers.
@@ -240,7 +244,13 @@ Must be deterministic and independently testable.
 
 ### `weights.py`
 
-Constructs:
+Constructs data arrays of weights with the following behaviour:
+
+- 0 if cell is completely below the surface
+- 1 if cell is completely above the surface
+- fractional value [0-1] if only part of the cell is above the surface
+
+Outputs the following variables:
 
 - `volume_weights(time,p,y,x)`
 - `area_weights_vertical(time,p,y/x)`
