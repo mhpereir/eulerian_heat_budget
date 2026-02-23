@@ -1,22 +1,28 @@
 '''
 Docstring for eulerian_heat_budget.src.grid
 
-Computes grid metrics: # Layer A
+Geometry + domain resolution.
 
-- `cell_area(lat, lon)`
-- Optional `dx`, `dy`
-- Handles spherical Earth geometry
+Key responsibilities:
 
-Must be deterministic and independently testable.
+- determine_domain(ds, req):
+  - crops the dataset to whole grid cells consistent with the requested bounds
+  - returns (ds_domain, DomainSpec)
+  - constructs and attaches cell-boundary coordinates:
+    - lat_start, lat_end, lon_start, lon_end
+    - p_start, p_end
+  - constructs and attaches cell IDs for bookkeeping (e.g., lat_cell_id, lon_cell_id, p_cell_id)
+  - rewrites lat/lon to cell centers after cropping (internal convention)
+
+This module should remain deterministic and independently testable.
 '''
 
 import xarray as xr
 import numpy as np
 from typing import Tuple
 
-
-from src import config
-from src.specs import DomainRequest, DomainSpec
+from . import config
+from .specs import DomainRequest, DomainSpec
 
 def _cell_edges_from_centers(coord: xr.DataArray, name: str) -> np.ndarray:
     """Build 1D cell edges from 1D center coordinates.

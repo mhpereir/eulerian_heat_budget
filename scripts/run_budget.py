@@ -36,12 +36,12 @@ if __name__ == "__main__":
     ds_u = io.load_era5_u(f"{config.path_data}/ux.nc")
     ds_v = io.load_era5_u(f"{config.path_data}/uy.nc")
     ds_omega = io.load_era5_omega(f"{config.path_data}/uz.nc")
-    ds_sfp = io.load_era5_sfp(f"{config.path_data}/sfp.nc") #surface pressure
+    ds_sp = io.load_era5_sp(f"{config.path_data}/sfp.nc") #surface pressure in Pa
     # Merge datasets on common coordinates and variables
-    ds_merged = io.load_era5_merge_dataset(ds_T, ds_u, ds_v, ds_omega, ds_sfp)
+    ds_merged = io.load_era5_merge_dataset(ds_T, ds_u, ds_v, ds_omega, ds_sp)
 
     # Validate merged dataset against strict schema
-    validate.validate_dataset(ds_merged)
+    validate.validate_schema(ds_merged)
 
     # Determine domain extent based on grid and config margin
     ds_domain, domain_specs = grid.determine_domain(ds_merged, request)
@@ -56,7 +56,7 @@ if __name__ == "__main__":
 
     print(ds_horizontal_cell_areas)
 
-    print(ds_vertical_cell_areas['east'])
+    print(ds_vertical_cell_areas['A_vertical_east'])
 
     print(ds_cell_volumes)
 

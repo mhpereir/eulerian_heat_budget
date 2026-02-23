@@ -1,4 +1,13 @@
-# src/eulerian_heat_budget/specs.py
+"""
+Docstring for eulerian_heat_budget.src.specs
+
+Dataclasses that define the project's contracts:
+
+- `DomainRequest`: user intent (bounds, margin, etc.)
+- `DomainSpec`: resolved/validated domain (explicit bounds and metadata)
+
+This is the home for “what the domain means” and should stay free of I/O and heavy computation.
+"""
 from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Literal, Optional, Dict, Any, Tuple

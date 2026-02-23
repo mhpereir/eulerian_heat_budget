@@ -84,17 +84,18 @@ The implementation is structured in three conceptual layers.
 
 ------
 
-### Layer A — Geometry & Masks
+### Layer A — Geometry & Weights
 
 Responsible for:
 
 - Standardising volume domain for the calculation with `determine_domain()`
 - Computing grid-cell areas and volumes (grid.py)
-- Constructing 2D (horizontal and vertical) weights for grid-cell-areas and 3D masks for grid-cell-volumes for masking cell elements below the surface
+- Constructing 2D (horizontal and vertical) weights for grid-cell-areas and 3D masks for grid-cell-volumes for masking cell elements below the surface; fractional value of volume above the surface.
 
 Outputs:
 
-- geometric `cell_area_horizontal(y,x)` and `cell_area_vertical(p,'x' or 'y')`
+- geometric `cell_area_horizontal(y,x)`
+- geometric `cell_area_vertical(p,'x' or 'y')`
 - geometric `cell_volume(p,y,x)`
 - `volume_weights(time,p,y,x)`
 - `horizontal_area_weights(time,y,x)`
@@ -138,7 +139,7 @@ This layer depends on Layers A and B.
 
 ## 4. Repository Structure
 
-```
+``` #type: ignore
 eulerian_heat_budget/
 │
 ├── pyproject.toml
@@ -146,10 +147,11 @@ eulerian_heat_budget/
 ├── docs/
 │   └── code_outline.md
 │
-├── src/eulerian_heat_budget/
+├── src/
 │   ├── __init__.py
 │   ├── config.py
 │   ├── io.py
+│   ├── specs.py
 │   ├── validate.py
 │   ├── grid.py
 │   ├── weights.py
@@ -160,7 +162,8 @@ eulerian_heat_budget/
 │
 ├── tests/
 │   ├── test_integrals.py
-│   ├── test_masking.py
+│   ├── test_grid.py
+│   ├── test_weights.py
 │   └── test_budget_closure.py
 │
 └── scripts/
@@ -175,16 +178,23 @@ eulerian_heat_budget/
 
 Defines:
 
-- Physical constants:
-  - `g`
-  - `R`
-  - `cp`
-- Upper boundary pressure
-- Lower boundary constraint (either surface or pressure level)
-- Region configuration
-- Default integration methods
+- Physical constants (currently: g, R, cp)
+- Standard pressure levels (e.g., LEVELS_HPA)
+- Default dataset paths / region aliases (project-specific)
+- Runtime defaults used by CLI (when flags are not provided)
 
-Contains no runtime logic.
+Contains minimal/no runtime logic.
+
+------
+
+### `specs.py`
+
+Dataclasses that define the project's contracts:
+
+- `DomainRequest`: user intent (bounds, margin, etc.)
+- `DomainSpec`: resolved/validated domain (explicit bounds and metadata)
+
+This is the home for “what the domain means” and should stay free of I/O and heavy computation.
 
 ------
 
@@ -192,12 +202,13 @@ Contains no runtime logic.
 
 Responsibilities:
 
-- Load datasets (ERA5, CMIP6, etc.)
-- Harmonize variable names
-- Enforce pressure units (Pa)
-- Return standardized `xarray.Dataset`
+- Load datasets (ERA5, model data, etc.)
+- Harmonize variable names into the canonical internal schema
+- Enforce pressure units (Pa) and consistent coordinate names
+- Return standardized xarray.Dataset objects
+- Should not perform analysis calculations (no integrals, no budgets).
 
-Should not perform calculations.
+Contract requirement: `io.py` is where any renaming between external conventions (ERA5 variable names) and internal names must happen (e.g., surface pressure → `sp`).
 
 ------
 
@@ -206,7 +217,7 @@ Should not perform calculations.
 Strict schema validation:
 
 - Required variables present
-- Required dimensions present
+- Required dimensions present and in canonical order
 - Pressure monotonic decreasing
 - Lat/lon monotonic ascending
 - Units consistent
@@ -214,90 +225,72 @@ Strict schema validation:
 
 Raises errors if violated.
 
-This prevents silent scientific errors.
-
 ------
 
 ### `grid.py`
 
-Computes grid metrics for easy integrals later.
+Geometry + domain resolution.
 
-Geometric cell areas:
+Key responsibilities:
 
-- `get_horizontal_cell_areas(lat, lon)`
-  - 2D horizontal areas on a spherical grid, output in squared meters.
-  - horizontal coordinates are treated as full-cell interval starts, so output dims are `(lat_cell, lon_cell)` with shape `(nlat-1, nlon-1)`.
-- `get_vertical_cell_areas(p, lat/lon)`
-  - 2D vertical side-wall areas for east/west/south/north boundaries.
-  - uses full-cell horizontal intervals and level-point pressure coordinates.
+- determine_domain(ds, req):
+  - crops the dataset to whole grid cells consistent with the requested bounds
+  - returns (ds_domain, DomainSpec)
+  - constructs and attaches cell-boundary coordinates:
+    - lat_start, lat_end, lon_start, lon_end
+    - p_start, p_end
+  - constructs and attaches cell IDs for bookkeeping (e.g., lat_cell_id, lon_cell_id, p_cell_id)
+  - rewrites lat/lon to cell centers after cropping (internal convention)
 
-Geometric cell volumes:
-
-- `get_cell_volumes(p, lat, lon)`
-  - 3D volume in pressure * squared meters.
-  - horizontal dimensions are full-cell spherical intervals; pressure thickness is inferred from level centers.
-- Handles spherical Earth geometry
-
-Must be deterministic and independently testable.
+This module should remain deterministic and independently testable.
 
 ------
 
 ### `weights.py`
 
-Constructs data arrays of weights with the following behaviour:
+Builds fractional occupancy weights that account for surfaces intersecting the volume.
 
-- 0 if cell is completely below the surface
-- 1 if cell is completely above the surface
-- fractional value [0-1] if only part of the cell is above the surface
+Current responsibilities (implemented / in-progress):
 
-Outputs the following variables:
+- Volume occupancy weights on `(time, level, lat, lon)` that represent “fraction of the cell within the control volume”
+- Area weights for control-volume faces (horizontal and vertical walls), with fractional masking where the surface intersects the face
 
-- `volume_weights(time,p,y,x)`
-- `area_weights_vertical(time,p,y/x)`
-- `area_weights_horizontal(time,y,x)`
+These weights are the bridge between “geometry” and later “integrals/budget terms”.
 
-Ensures correct truncation at surface pressure.
+Note: the detailed set of returned arrays and their naming should be documented in the schema section (Section 6) and treated as an API.
 
 ------
 
 ### `integrals.py`
 
-Pure integration operators:
+Pure integration operators (no I/O):
 
-- `pressure_integral(field, mask)`
-  - depends on `area_weights_vertical`
-- `area_integral(field_2d, cell_area)`
-  - depends on `area_weights_horizontal`
-- `volume_integral(field, mask, cell_area)`
-  - depends on `volume_weights`
+- horizontal/vertical surface integrals
+- volume integrals in pressure coordinates
+- time differencing helpers for storage terms
 
-Must not depend on dataset structure.
-
-------
-
-### `terms.py`
-
-Computes individual budget components:
-
-- `compute_storage(T)`
-- `compute_advective_term(U, T)`
-- `compute_adiabatic_term(omega, T)`
-- `compute_diabatic_term(S,A,C)`
-
-May call `integrals.py` internally.
+Should depend only on numpy/xarray objects and weight arrays, not on CLI/config.
 
 ------
 
 ### `budget.py`
 
-High-level orchestration:
+High-level orchestration (no I/O):
 
-- Assembles all terms
-- Computes time tendency
-- Computes residual
-- Returns structured output dataset
+- assembles terms into a single output dataset
+- computes residual / closure diagnostics
+- exposes a stable programmatic API for scripts/CLI
 
-No I/O inside.
+------
+
+### `terms.py`
+
+Computes individual budget components (calls `integrals.py`):
+
+- storage tendency
+- advective flux divergence via control-volume faces
+- adiabatic/compressional term(s)
+- diabatic as residual (or explicitly if available)
 
 ------
 
@@ -306,9 +299,6 @@ No I/O inside.
 Command-line interface:
 
 - Parses arguments
-- Loads data
-- Calls `budget.compute_budget`
-- Saves results
 
 ------
 
@@ -354,7 +344,7 @@ Note: in the INPUT data (io.py) horizontal variables follow the full-cell descri
 | `u`      | (time,level,lat,lon) | m s⁻¹  |
 | `v`      | (time,level,lat,lon) | m s⁻¹  |
 | `w`      | (time,level,lat,lon) | Pa s⁻¹ |
-| `sfp`    | (time,lat,lon)       | Pa     |
+| `sp`     | (time,lat,lon)       | Pa     |
 
 Future variables: (surface variables)
 

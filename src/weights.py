@@ -1,42 +1,45 @@
 '''
 Docstring for eulerian_heat_budget.src.weights
 
-Constructs:
+Builds fractional occupancy weights that account for surfaces intersecting the volume.
 
-- `volume_weights(time,p,y,x)`
-- `area_weights_vertical(time,p,y or x)`
-- `area_weights_horizontal(time,y,x)`
+Current responsibilities (implemented / in-progress):
 
-Ensures correct truncation at surface pressure.
+- Volume occupancy weights on `(time, level, lat, lon)` that represent “fraction of the cell within the control volume”
+- Area weights for control-volume faces (horizontal and vertical walls), with fractional masking where the surface intersects the face
+
+These weights are the bridge between “geometry” and later “integrals/budget terms”.
+
+Note: the detailed set of returned arrays and their naming should be documented in the schema section (Section 6) and treated as an API.
 '''
 import xarray as xr
 
-from src.specs import DomainSpec
+from .specs import DomainSpec
 
 def area_weights_horizontal(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
     """
     Binary weights for horizontal faces of the control volume.
 
     Top face (always considered):
-      - W_top(time, lat, lon) = 1 if sfp > zg_top_pressure else 0
+      - W_top(time, lat, lon) = 1 if sp > zg_top_pressure else 0
 
     Bottom face (optional):
       - If config.zg_bottom == "pressure_level":
-          W_bottom(time, lat, lon) = 1 if sfp > zg_bottom_pressure else 0
+          W_bottom(time, lat, lon) = 1 if sp > zg_bottom_pressure else 0
       - If config.zg_bottom == "surface_pressure":
           bottom face weights are not returned (no surface-flux integration there)
 
     Notes
     -----
     - No fractional weights: pixels are either fully included or excluded.
-    - Assumes ds["sfp"] is in Pa and comparable to config.zg_*_pressure.
+    - Assumes ds["sp"] is in Pa and comparable to config.zg_*_pressure.
     """
-    if "sfp" not in ds:
-        raise KeyError("area_weights_horizontal: ds must contain 'sfp' (surface pressure).")
-    if "time" not in ds["sfp"].dims or "lat" not in ds["sfp"].dims or "lon" not in ds["sfp"].dims:
-        raise ValueError("area_weights_horizontal: expected ds['sfp'] dims to include ('time','lat','lon').")
+    if "sp" not in ds:
+        raise KeyError("area_weights_horizontal: ds must contain 'sp' (surface pressure).")
+    if "time" not in ds["sp"].dims or "lat" not in ds["sp"].dims or "lon" not in ds["sp"].dims:
+        raise ValueError("area_weights_horizontal: expected ds['sp'] dims to include ('time','lat','lon').")
 
-    ps = ds["sfp"].astype("float64")  # (time, lat, lon)
+    ps = ds["sp"].astype("float64")  # (time, lat, lon)
 
     p_top = float(domain_spec.zg_top_pressure)
     w_top = xr.where(ps > p_top, 1.0, 0.0).astype("float64").rename("W_top")
@@ -93,10 +96,10 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
     Assumptions
     -----------
     - level is descending in pressure and p_start(level) > p_end(level) for all levels
-    - ds["sfp"] has dims (time, lat, lon)
+    - ds["sp"] has dims (time, lat, lon)
     - ds has been processed by determine_domain() so lat/lon represent cells
     """
-    required = ["p_start", "p_end", "sfp"]
+    required = ["p_start", "p_end", "sp"]
     missing = [v for v in required if v not in ds]
     if missing:
         raise KeyError(f"area_weights_vertical: ds missing required variables/coords: {missing}")
@@ -104,7 +107,7 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
     if "lat" not in ds.dims or "lon" not in ds.dims or "level" not in ds.dims:
         raise ValueError("area_weights_vertical: expected dims ('time','level','lat','lon') present in ds.")
 
-    ps      = ds["sfp"].astype("float64")     # (time, lat, lon)
+    ps      = ds["sp"].astype("float64")     # (time, lat, lon)
     p_start = ds["p_start"].astype("float64") # (level,)
     p_end   = ds["p_end"].astype("float64")   # (level,)
 
@@ -206,7 +209,7 @@ def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
     ---------------------
     - level is descending in pressure (downward): for each level, p_start > p_end
     - p_start(level), p_end(level) are layer bounds in Pa
-    - surface pressure is ds["sfp"] with dims (time, lat, lon), same units as p_start/p_end
+    - surface pressure is ds["sp"] with dims (time, lat, lon), same units as p_start/p_end
 
     Meaning
     -------
@@ -222,7 +225,7 @@ def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
     xr.Dataset with:
       - volume_weights(time, level, lat, lon) in [0, 1]
     """
-    ps      = ds["sfp"].astype("float64")      # (time, lat, lon)
+    ps      = ds["sp"].astype("float64")      # (time, lat, lon)
     p_start = ds["p_start"].astype("float64")  # (level,)
     p_end   = ds["p_end"].astype("float64")    # (level,)
 

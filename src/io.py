@@ -3,50 +3,14 @@ Docstring for eulerian_heat_budget.src.io
 
 Responsibilities:
 
-- Load datasets (ERA5, CMIP6, etc.)
-- Harmonize variable names
-- Enforce pressure units (Pa)
-- Return standardized `xarray.Dataset`
+- Load datasets (ERA5, model data, etc.)
+- Harmonize variable names into the canonical internal schema
+- Enforce pressure units (Pa) and consistent coordinate names
+- Return standardized xarray.Dataset objects
+- Should not perform analysis calculations (no integrals, no budgets).
 
-Should not perform calculations.
+Contract requirement: `io.py` is where any renaming between external conventions (ERA5 variable names) and internal names must happen (e.g., surface pressure → `sp`).
 
-
-### Required Dimensions
-
-- `time`
-- `p`
-- `y`
-- `x`
-
-------
-
-### Required Coordinates
-
-- `p` [Pa]
-- `lat(y)`
-- `lon(x)`
-- `time`
-
-------
-
-### Required Variables
-
-| Variable | Dimensions   | Units  |
-| -------- | ------------ | ------ |
-| `T`      | (time,p,y,x) | K      |
-| `u`      | (time,p,y,x) | m s⁻¹  |
-| `v`      | (time,p,y,x) | m s⁻¹  |
-| `w`      | (time,p,y,x) | m s⁻¹  |
-| `sp`     | (time,y,x)   | Pa     |
-
-------
-
-### Required Physical Assumptions
-
-- Hydrostatic balance implied.
-- Pressure coordinate vertical axis.
-- Surface is a material boundary.
-- No mass flux across lower boundary.
 '''
 
 import xarray as xr
@@ -86,11 +50,11 @@ def load_era5_omega(filepath: str) -> xr.Dataset:
 
     return ds_omega #[Pa/s]
 
-def load_era5_sfp(filepath: str) -> xr.Dataset:
-    ds_sfp = xr.open_dataset(filepath)
-    ds_sfp = ds_sfp.rename({'latitude': 'lat', 'longitude': 'lon'})
+def load_era5_sp(filepath: str) -> xr.Dataset:
+    ds_sp = xr.open_dataset(filepath)
+    ds_sp = ds_sp.rename({'latitude': 'lat', 'longitude': 'lon'})
 
-    return ds_sfp #[Pa]
+    return ds_sp #[Pa]
 
 # def load_era5_zg(filepath: str) -> xr.Dataset:
 #     ds_z = xr.open_dataset(filepath)

@@ -16,30 +16,43 @@ Raises errors if violated.
 This prevents silent scientific errors.
 '''
 
-def validate_dataset(ds):
-    # Check required variables
-    required_vars = ['T', 'u', 'v', 'w', 'sp']
-    for var in required_vars:
-        if var not in ds:
-            raise ValueError(f"Missing required variable: {var}")
-        else:
-            print(f"Variable '{var}' is present.")
+import xarray as xr
 
-    # Check required dimensions
-    required_dims = ['time', 'level', 'lat', 'lon']
-    for dim in required_dims:
-        if dim not in ds.dims:
-            raise ValueError(f"Missing required dimension: {dim}")
-        else:
-            print(f"Dimension '{dim}' is present.")
+REQUIRED_DIMS = ("time", "level", "lat", "lon")
+REQUIRED_VARS_4D = ("T", "u", "v", "w")
+REQUIRED_VARS_3D = ("sp",)
+
+def validate_schema(ds: xr.Dataset) -> None:
+    # 1) Required dims exist (order irrelevant)
+    missing_dims = [d for d in REQUIRED_DIMS if d not in ds.dims]
+    if missing_dims:
+        raise ValueError(f"Missing required dims: {missing_dims}")
+
+    # 2) Required variables exist
+    for v in (*REQUIRED_VARS_4D, *REQUIRED_VARS_3D):
+        if v not in ds:
+            raise ValueError(f"Missing required variable: {v}")
+
+    # 3) Validate variable dimension order (this is what matters)
+    expected_4d = REQUIRED_DIMS
+    for v in REQUIRED_VARS_4D:
+        if ds[v].dims != expected_4d:
+            raise ValueError(
+                f"Variable '{v}' must have dims {expected_4d}, got {ds[v].dims}"
+            )
+
+    expected_3d = ("time", "lat", "lon")
+    for v in REQUIRED_VARS_3D:
+        if ds[v].dims != expected_3d:
+            raise ValueError(
+                f"Variable '{v}' must have dims {expected_3d}, got {ds[v].dims}"
+            )
+
+    # 4) Use ds.sizes for lengths (future-stable)
+    if ds.sizes["level"] < 1 or ds.sizes["lat"] < 1 or ds.sizes["lon"] < 1:
+        raise ValueError("Dataset has an empty required dimension.")
     
-    # Ensure dimensions are in correct order
-    expected_order = ['time', 'level', 'lat', 'lon']
-    if list(ds.dims) != expected_order:
-        raise ValueError(f"Dimensions must be in order: {expected_order}")
-    else:
-        print(f"Dimensions are in correct order: {expected_order}")
-
+    
     # Check pressure monotonicity
     if not ds['level'].diff('level').min() < 0:
         raise ValueError("Pressure levels must be monotonic decreasing")
@@ -63,7 +76,9 @@ def validate_dataset(ds):
     else:
         print("Temperature units are consistent (K).")
 
-    # Additional checks can be added as needed
-
-
+    # Check time coordinate regularity
+    time_diff = ds['time'].diff('time')
+    if not time_diff.min() == time_diff.max():
+        raise ValueError("Time coordinate must be regular (constant time step)")
+    
     return None
