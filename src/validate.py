@@ -17,6 +17,7 @@ This prevents silent scientific errors.
 '''
 
 import xarray as xr
+import numpy as np
 
 REQUIRED_DIMS = ("time", "level", "lat", "lon")
 REQUIRED_VARS_4D = ("T", "u", "v", "w")
@@ -47,38 +48,40 @@ def validate_schema(ds: xr.Dataset) -> None:
             raise ValueError(
                 f"Variable '{v}' must have dims {expected_3d}, got {ds[v].dims}"
             )
+        
+    for coord in REQUIRED_DIMS:
+        if ds[coord].dims != (coord,):
+            raise ValueError(f"Coordinate '{coord}' must be 1D over itself.")
 
-    # 4) Use ds.sizes for lengths (future-stable)
+    # 4) Use ds.sizes for lengths
     if ds.sizes["level"] < 1 or ds.sizes["lat"] < 1 or ds.sizes["lon"] < 1:
         raise ValueError("Dataset has an empty required dimension.")
     
-    
+
+    level = ds["level"].values
     # Check pressure monotonicity
-    if not ds['level'].diff('level').min() < 0:
-        raise ValueError("Pressure levels must be monotonic decreasing")
-    else:
-        print("Pressure levels are monotonic decreasing.")
+    if not np.all(np.diff(level) < 0):
+        raise ValueError("Pressure levels must be strictly monotonic decreasing")
+
 
     # Check lat/lon monotonicity
     if not ds['lat'].diff('lat').min() > 0:
         raise ValueError("Latitude must be monotonic ascending")
-    else:
-        print("Latitude is monotonic ascending.")
 
     if not ds['lon'].diff('lon').min() > 0:
         raise ValueError("Longitude must be monotonic ascending")
-    else:
-        print("Longitude is monotonic ascending.")
 
     # Check units (example for temperature)
     if ds['T'].attrs.get('units') != 'K':
         raise ValueError("Temperature must be in Kelvin")
-    else:
-        print("Temperature units are consistent (K).")
 
     # Check time coordinate regularity
-    time_diff = ds['time'].diff('time')
-    if not time_diff.min() == time_diff.max():
-        raise ValueError("Time coordinate must be regular (constant time step)")
+    time = ds["time"].values
+    if len(time) > 2:
+        dt = np.diff(time)
+        if not np.all(dt == dt[0]):
+            raise ValueError("Time coordinate must be regular (constant time step)")
     
+    print("Dataset schema validation passed.")
+
     return None
