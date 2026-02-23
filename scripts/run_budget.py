@@ -52,11 +52,10 @@ if __name__ == "__main__":
 
     ds_cell_volumes = grid.get_cell_volumes(ds_domain).astype("float64")
 
-    print(ds_domain)
+    ds_weights_horizontal = weights.area_weights_horizontal(ds_domain, domain_specs)
+    ds_weights_vertical   = weights.area_weights_vertical(ds_domain, domain_specs)
+    ds_weights_volume     = weights.volume_weights(ds_domain, domain_specs)
 
-    print(ds_horizontal_cell_areas)
-
-    print(ds_vertical_cell_areas['A_vertical_east'])
-
-    print(ds_cell_volumes)
-
+    print(ds_weights_horizontal)
+    print(ds_weights_vertical)
+    print(ds_weights_volume)

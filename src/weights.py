@@ -39,10 +39,10 @@ def area_weights_horizontal(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Datas
     if "time" not in ds["sp"].dims or "lat" not in ds["sp"].dims or "lon" not in ds["sp"].dims:
         raise ValueError("area_weights_horizontal: expected ds['sp'] dims to include ('time','lat','lon').")
 
-    ps = ds["sp"].astype("float64")  # (time, lat, lon)
+    sp = ds["sp"].astype("float64")  # (time, lat, lon)
 
     p_top = float(domain_spec.zg_top_pressure)
-    w_top = xr.where(ps > p_top, 1.0, 0.0).astype("float64").rename("W_top")
+    w_top = xr.where(sp > p_top, 1.0, 0.0).astype("float64").rename("W_top")
     w_top.attrs.update(
         long_name="Top horizontal face binary weight",
         description="1 if surface pressure is deeper than top face pressure (face in atmosphere); else 0 (face underground).",
@@ -57,7 +57,7 @@ def area_weights_horizontal(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Datas
     # Bottom face only if it is a pressure-level boundary (internal CV face)
     if str(domain_spec.zg_bottom) == "pressure_level":
         p_bot = float(domain_spec.zg_bottom_pressure) #type:ignore - guarded from in if-statement
-        w_bottom = xr.where(ps > p_bot, 1.0, 0.0).astype("float64").rename("W_bottom")
+        w_bottom = xr.where(sp > p_bot, 1.0, 0.0).astype("float64").rename("W_bottom")
         w_bottom.attrs.update(
             long_name="Bottom horizontal face binary weight",
             description="1 if surface pressure is deeper than bottom face pressure (face in atmosphere); else 0 (face underground).",
@@ -86,12 +86,12 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
 
     Weight definition (same as volume_weights, but evaluated on boundary lines)
     ------------------------------------------------------------------------
-    For a layer with bounds [p_end, p_start] (p_start > p_end) and boundary surface pressure ps_b:
+    For a layer with bounds [p_end, p_start] (p_start > p_end) and boundary surface pressure sp_b:
 
-      raw = (ps_b - p_end) / (p_start - p_end)
+      raw = (sp_b - p_end) / (p_start - p_end)
 
       clip to [0,1] for all layers except optionally bottom layer (level index 0),
-      which may exceed 1 if ps_b > p_start (accounts for ps below grid bottom).
+      which may exceed 1 if sp_b > p_start (accounts for sp below grid bottom).
 
     Assumptions
     -----------
@@ -107,7 +107,7 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
     if "lat" not in ds.dims or "lon" not in ds.dims or "level" not in ds.dims:
         raise ValueError("area_weights_vertical: expected dims ('time','level','lat','lon') present in ds.")
 
-    ps      = ds["sp"].astype("float64")     # (time, lat, lon)
+    sp      = ds["sp"].astype("float64")     # (time, lat, lon)
     p_start = ds["p_start"].astype("float64") # (level,)
     p_end   = ds["p_end"].astype("float64")   # (level,)
 
@@ -115,26 +115,54 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
     if bool((dp <= 0).any()):
         raise ValueError("area_weights_vertical: expected descending levels with p_start > p_end for all levels.")
 
-    # Boundary surface pressures
-    ps_e = ps.isel(lon=-1)  # (time, lat)  east boundary (lon_max)
-    ps_w = ps.isel(lon=0)   # (time, lat)  west boundary (lon_min)
-    ps_s = ps.isel(lat=0)   # (time, lon)  south boundary (lat_min)
-    ps_n = ps.isel(lat=-1)  # (time, lon)  north boundary (lat_max)
+    # select effective bottom pressure (either surface pressure; or fixed pressure level if zg_bottom is pressure_level)
+    if str(domain_spec.zg_bottom) == "pressure_level": 
+        #zg_bottom_pressure is a float (stric enforced by config schema) so safe to convert to DataArray with single value
+        p_bot = xr.DataArray(float(domain_spec.zg_bottom_pressure), attrs={"units": "Pa"}) #type: ignore
+        # If the surface is shallower than p_bot, the actual bottom is sp (no atmosphere below sp)
+        p_bot_eff = xr.ufuncs.minimum(p_bot, sp)  # (time, lat, lon)
+    elif str(domain_spec.zg_bottom) == "surface_pressure":
+        p_bot_eff = sp  # (time, lat, lon)
+    else:
+        raise ValueError(f"area_weights_vertical: unsupported zg_bottom={domain_spec.zg_bottom}")
+
+    # Bottom boundary pressure
+    p_bot_eff_e = p_bot_eff.isel(lon=-1)  # (time, lat)  east boundary (lon_max)
+    p_bot_eff_w = p_bot_eff.isel(lon=0)   # (time, lat)  west boundary (lon_min)
+    p_bot_eff_s = p_bot_eff.isel(lat=0)   # (time, lon)  south boundary (lat_min)
+    p_bot_eff_n = p_bot_eff.isel(lat=-1)  # (time, lon)  north boundary (lat_max)
+
+    # Drop scalar coords that will conflict during Dataset merge
+    p_bot_eff_e = _drop_if_present(p_bot_eff_e, ["lon", "lon_start", "lon_end", "lon_cell_id"])
+    p_bot_eff_w = _drop_if_present(p_bot_eff_w, ["lon", "lon_start", "lon_end", "lon_cell_id"])
+    p_bot_eff_s = _drop_if_present(p_bot_eff_s, ["lat", "lat_start", "lat_end", "lat_cell_id"])
+    p_bot_eff_n = _drop_if_present(p_bot_eff_n, ["lat", "lat_start", "lat_end", "lat_cell_id"])
 
     # Raw fractional occupancies (broadcast dp/p_end over time+boundary-dim)
-    raw_e = (ps_e - p_end) / dp  # (time, level, lat)
-    raw_w = (ps_w - p_end) / dp  # (time, level, lat)
-    raw_s = (ps_s - p_end) / dp  # (time, level, lon)
-    raw_n = (ps_n - p_end) / dp  # (time, level, lon)
+    # raw_e = (sp_e - p_end) / dp  # (time, level, lat)
+    # raw_w = (sp_w - p_end) / dp  # (time, level, lat)
+    # raw_s = (sp_s - p_end) / dp  # (time, level, lon)
+    # raw_n = (sp_n - p_end) / dp  # (time, level, lon)
+
+    w_e = _interval_overlap_fraction(p_start, p_end, domain_spec.zg_top_pressure, p_bot_eff_e)  # (time, level, lat)
+    w_w = _interval_overlap_fraction(p_start, p_end, domain_spec.zg_top_pressure, p_bot_eff_w)  # (time, level, lat)
+    w_s = _interval_overlap_fraction(p_start, p_end, domain_spec.zg_top_pressure, p_bot_eff_s)  # (time, level, lon)
+    w_n = _interval_overlap_fraction(p_start, p_end, domain_spec.zg_top_pressure, p_bot_eff_n)  # (time, level, lon)
 
     # Default clipping
-    w_e = raw_e.clip(min=0.0, max=1.0)
-    w_w = raw_w.clip(min=0.0, max=1.0)
-    w_s = raw_s.clip(min=0.0, max=1.0)
-    w_n = raw_n.clip(min=0.0, max=1.0)
+    # w_e = raw_e.clip(min=0.0, max=1.0)
+    # w_w = raw_w.clip(min=0.0, max=1.0)
+    # w_s = raw_s.clip(min=0.0, max=1.0)
+    # w_n = raw_n.clip(min=0.0, max=1.0)
 
-    if domain_spec.allow_bottom_overflow:
+    if domain_spec.allow_bottom_overflow and str(domain_spec.zg_bottom) == "surface_pressure":
         # Bottom layer is assumed to be index 0 for descending pressure coordinates
+
+        raw_e = (p_bot_eff_e - p_end) / dp  # (time, level, lat)
+        raw_w = (p_bot_eff_w - p_end) / dp  # (time, level, lat)
+        raw_s = (p_bot_eff_s - p_end) / dp  # (time, level, lon)
+        raw_n = (p_bot_eff_n - p_end) / dp  # (time, level, lon)
+
         w_e[dict(level=0)] = raw_e.isel(level=0).clip(min=0.0)  # allow >1
         w_w[dict(level=0)] = raw_w.isel(level=0).clip(min=0.0)
         w_s[dict(level=0)] = raw_s.isel(level=0).clip(min=0.0)
@@ -178,7 +206,7 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
 
     desc = (
         "Fractional wall occupancy above surface pressure; 0=underground, 1=in atmosphere, "
-        + ("bottom layer may exceed 1 if ps > p_start" if domain_spec.allow_bottom_overflow else "clipped to [0,1]")
+        + ("bottom layer may exceed 1 if sp > p_start" if domain_spec.allow_bottom_overflow else "clipped to [0,1]")
     )
 
     for da, ln in [
@@ -214,44 +242,59 @@ def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
     Meaning
     -------
     For each (time, level, lat, lon), weight w is the fraction of the layer [p_end, p_start]
-    that is in-atmosphere (above ground), i.e. the portion with p <= ps.
+    that is in-atmosphere (above ground), i.e. the portion with p <= sp.
 
-      w = 0  if ps <= p_end   (surface above the layer: layer is entirely underground)
-      w = 1  if ps >= p_start (surface below the layer: full layer exists)
-      w = (ps - p_end) / (p_start - p_end) if p_end < ps < p_start
+      w = 0  if sp <= p_end   (surface above the layer: layer is entirely underground)
+      w = 1  if sp >= p_start (surface below the layer: full layer exists)
+      w = (sp - p_end) / (p_start - p_end) if p_end < sp < p_start
 
     Returns
     -------
     xr.Dataset with:
       - volume_weights(time, level, lat, lon) in [0, 1]
     """
-    ps      = ds["sp"].astype("float64")      # (time, lat, lon)
+    sp      = ds["sp"].astype("float64")      # (time, lat, lon)
     p_start = ds["p_start"].astype("float64")  # (level,)
     p_end   = ds["p_end"].astype("float64")    # (level,)
 
     dp    = p_start - p_end
 
-    raw_w = ( (ps - p_end) / dp ).astype("float64") # (time, level, lat, lon)
+    # select effective bottom pressure (either surface pressure; or fixed pressure level if zg_bottom is pressure_level)
+    if str(domain_spec.zg_bottom) == "pressure_level": 
+        #zg_bottom_pressure is a float (stric enforced by config schema) so safe to convert to DataArray with single value
+        p_bot = xr.DataArray(float(domain_spec.zg_bottom_pressure), attrs={"units": "Pa"}) #type: ignore
+        # If the surface is shallower than p_bot, the actual bottom is sp (no atmosphere below sp)
+        p_bot_eff = xr.ufuncs.minimum(p_bot, sp)  # (time, lat, lon)
+    elif str(domain_spec.zg_bottom) == "surface_pressure":
+        p_bot_eff = sp  # (time, lat, lon)
+    else:
+        raise ValueError(f"volume_weights: unsupported zg_bottom={domain_spec.zg_bottom}")
 
     # Fractional occupancy above the surface
-    w = raw_w.clip(min=0.0, max=1.0)
+    w = _interval_overlap_fraction(p_start, p_end, domain_spec.zg_top_pressure, p_bot_eff).clip(min=0.0, max=1.0)
 
-    if domain_spec.allow_bottom_overflow: 
+    # w = raw_w.clip(min=0.0, max=1.0)
+    
+    if domain_spec.allow_bottom_overflow and str(domain_spec.zg_bottom) == "surface_pressure": 
+        raw_w = ( (sp - p_end) / dp ).astype("float64") # (time, level, lat, lon)
         # allows for w > 1 if surface pressure is below (higher p) than the edge of the 
         # bottom layer
         w_bottom = raw_w.isel(level=0).clip(min=0.0)  # dims: (time, lat, lon)
         w[dict(level=0)] = w_bottom
 
-    out = xr.Dataset({"V_cell": w})
+    out = xr.Dataset({"W_cell": w})
 
-    out["V_cell"].attrs.update(
+    out["W_cell"].attrs.update(
         long_name="Fractional layer occupancy above surface pressure",
         description=(
             "0=layer fully below ground; 1=layer fully in atmosphere; "
             "fractional if surface intersects layer; "
-            + ("bottom layer may exceed 1 to account for ps > p_start" if domain_spec.allow_bottom_overflow else "")
+            + ("bottom layer may exceed 1 to account for sp > p_start" if domain_spec.allow_bottom_overflow else "")
         ),
         units="1",
+        zg_top_pressure_pa=float(domain_spec.zg_top_pressure),
+        zg_bottom_pressure_pa=float(domain_spec.zg_bottom_pressure) if str(domain_spec.zg_bottom) == "pressure_level" else None, #type: ignore
+        zg_bottom_mode=str(domain_spec.zg_bottom),
     )
 
     out = out.assign_coords(
@@ -268,3 +311,24 @@ def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
         }
     )
     return out
+
+
+
+# ------------------------------------- Helper function --------------------------------------
+
+def _drop_if_present(da: xr.DataArray, names: list[str]) -> xr.DataArray:
+    present = [n for n in names if (n in da.coords or n in da.variables)]
+    return da.drop_vars(present, errors="ignore")
+
+
+def _interval_overlap_fraction(p_hi, p_lo, p_top, p_bot):
+    """
+    Fraction of layer [p_lo, p_hi] that lies within [p_top, p_bot].
+    All inputs broadcastable; requires p_hi > p_lo.
+    """
+    dp = p_hi - p_lo
+
+    inc_lo = xr.ufuncs.maximum(p_lo, p_top)
+    inc_hi = xr.ufuncs.minimum(p_hi, p_bot)
+    inc_dp = xr.ufuncs.maximum(0.0, inc_hi - inc_lo)
+    return (inc_dp / dp).astype("float64")

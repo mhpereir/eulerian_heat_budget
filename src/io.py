@@ -86,4 +86,7 @@ def load_era5_merge_dataset(ds_T, ds_u, ds_v, ds_w, ds_sp) -> xr.Dataset:
     if not ((dlev < 0).all() and merged['level'].to_index().is_unique):
         merged = merged.sortby('level', ascending=False)
 
+    merged['level']                = merged['level'] * 100.0  # convert hPa to Pa
+    merged['level'].attrs['units'] = 'Pa'  # ensure pressure levels are in Pa
+
     return merged
