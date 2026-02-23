@@ -86,7 +86,6 @@ def load_era5_omega(filepath: str) -> xr.Dataset:
 
     return ds_omega #[Pa/s]
 
-
 def load_era5_sfp(filepath: str) -> xr.Dataset:
     ds_sfp = xr.open_dataset(filepath)
     ds_sfp = ds_sfp.rename({'latitude': 'lat', 'longitude': 'lon'})

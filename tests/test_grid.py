@@ -9,6 +9,7 @@ import pytest
 import xarray as xr
 
 from src import config
+from src.specs import DomainRequest
 from src.grid import (
     determine_domain,
     get_horizontal_cell_areas,
@@ -35,15 +36,25 @@ def _make_dataset(*, level, lat, lon) -> xr.Dataset:
     )
 
 
-def test_determine_domain_crops_to_cells_and_sets_bounds(monkeypatch):
+def _make_request(*, margin_n: int) -> DomainRequest:
+    return DomainRequest(
+        bbox=(-90.0, 90.0, -180.0, 180.0),
+        margin_n=margin_n,
+        zg_top_pressure=10000.0,
+        zg_bottom="pressure_level",
+        zg_bottom_pressure=50000.0,
+        allow_bottom_overflow=True,
+    )
+
+
+def test_determine_domain_crops_to_cells_and_sets_bounds():
     ds = _make_dataset(
         level=[100000.0, 90000.0, 80000.0],
         lat=[0.0, 1.0, 2.0, 3.0, 4.0],       # N_start=5 => N_cells=4
         lon=[10.0, 11.0, 12.0, 13.0, 14.0],  # N_start=5 => N_cells=4
     )
 
-    monkeypatch.setattr(config, "margin", 1)
-    dom = determine_domain(ds)
+    dom, spec = determine_domain(ds, _make_request(margin_n=1))
 
     # After cropping: N_cells_keep = (N_start-1) - 2*margin = 4 - 2 = 2
     assert dom.sizes["lat"] == 2
@@ -67,42 +78,48 @@ def test_determine_domain_crops_to_cells_and_sets_bounds(monkeypatch):
     assert dom.attrs["lon_min"] == 11.0
     assert dom.attrs["lon_max"] == 13.0
 
+    assert spec.lat_min == 1.0
+    assert spec.lat_max == 3.0
+    assert spec.lon_min == 11.0
+    assert spec.lon_max == 13.0
+    assert spec.zg_top_pressure == 10000.0
+    assert spec.zg_bottom == "pressure_level"
+    assert spec.zg_bottom_pressure == 50000.0
+    assert spec.allow_bottom_overflow is True
+
     # traceability ids exist on the same dims
     np.testing.assert_array_equal(dom["lat_cell_id"].values, np.array([1, 2]))
     np.testing.assert_array_equal(dom["lon_cell_id"].values, np.array([1, 2]))
 
     # margin too large should error
-    monkeypatch.setattr(config, "margin", 3)
-    with pytest.raises(ValueError, match="margin is too large"):
-        determine_domain(ds)
+    with pytest.raises(ValueError, match="too large"):
+        determine_domain(ds, _make_request(margin_n=3))
 
 
-def test_horizontal_cell_areas_shape_and_positive(monkeypatch):
+def test_horizontal_cell_areas_shape_and_positive():
     ds = _make_dataset(
         level=[100000.0, 90000.0, 80000.0],
         lat=[0.0, 10.0, 20.0, 30.0],      # N_start=4 => N_cells=3
         lon=[100.0, 110.0, 120.0],        # N_start=3 => N_cells=2
     )
-    monkeypatch.setattr(config, "margin", 0)
-    dom = determine_domain(ds)
+    dom, _ = determine_domain(ds, _make_request(margin_n=0))
 
     A = get_horizontal_cell_areas(dom)
     assert A.dims == ("lat", "lon")
     assert A.shape == (3, 2)
-    assert A.name == "top"
+    assert A.name == "A_horizontal"
     assert A.attrs["units"] == "m2"
     assert np.isfinite(A.values).all()
     assert np.all(A.values > 0.0)
 
 
-def test_horizontal_cell_areas_analytic_regular_grid(monkeypatch):
+def test_horizontal_cell_areas_analytic_regular_grid():
     ds = _make_dataset(
         level=[100000.0, 90000.0, 80000.0],
         lat=[0.0, 10.0, 20.0],          # cells: [0-10], [10-20]
         lon=[100.0, 110.0, 120.0],      # cells: [100-110], [110-120]
     )
-    monkeypatch.setattr(config, "margin", 0)
-    dom = determine_domain(ds)
+    dom, _ = determine_domain(ds, _make_request(margin_n=0))
 
     A = get_horizontal_cell_areas(dom)
 
@@ -119,46 +136,44 @@ def test_horizontal_cell_areas_analytic_regular_grid(monkeypatch):
     np.testing.assert_allclose(A.values, expected, rtol=1e-12, atol=0.0)
 
 
-def test_vertical_cell_areas_shapes_and_symmetries(monkeypatch):
+def test_vertical_cell_areas_shapes_and_symmetries():
     ds = _make_dataset(
         level=[100000.0, 90000.0, 80000.0, 70000.0],  # N_cells=4
         lat=[0.0, 10.0, 20.0, 30.0],    # N_cells=3
         lon=[100.0, 110.0, 120.0],      # N_cells=2
     )
-    monkeypatch.setattr(config, "margin", 0)
-    dom = determine_domain(ds)
+    dom, _ = determine_domain(ds, _make_request(margin_n=0))
 
     walls = get_vertical_cell_areas(dom)
 
-    assert walls["east"].dims == ("level", "lat")
-    assert walls["west"].dims == ("level", "lat")
-    assert walls["south"].dims == ("level", "lon")
-    assert walls["north"].dims == ("level", "lon")
+    assert walls["A_vertical_east"].dims == ("level", "lat")
+    assert walls["A_vertical_west"].dims == ("level", "lat")
+    assert walls["A_vertical_south"].dims == ("level", "lon")
+    assert walls["A_vertical_north"].dims == ("level", "lon")
 
-    assert walls["east"].shape == (4, 3)
-    assert walls["west"].shape == (4, 3)
-    assert walls["south"].shape == (4, 2)
-    assert walls["north"].shape == (4, 2)
+    assert walls["A_vertical_east"].shape == (4, 3)
+    assert walls["A_vertical_west"].shape == (4, 3)
+    assert walls["A_vertical_south"].shape == (4, 2)
+    assert walls["A_vertical_north"].shape == (4, 2)
 
-    for wall in ("east", "west", "south", "north"):
+    for wall in ("A_vertical_east", "A_vertical_west", "A_vertical_south", "A_vertical_north"):
         arr = walls[wall]
         assert arr.attrs["units"] == "m*Pa"
         assert np.isfinite(arr.values).all()
         assert np.all(arr.values > 0.0)
 
     # east and west are geometrically identical here (same dy, dp)
-    np.testing.assert_allclose(walls["east"].values, walls["west"].values, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(walls["A_vertical_east"].values, walls["A_vertical_west"].values, rtol=1e-12, atol=0.0)
 
 
-def test_vertical_cell_areas_analytic_regular_grid(monkeypatch):
+def test_vertical_cell_areas_analytic_regular_grid():
     # Use a simple regular grid so analytic expectations are clear.
     ds = _make_dataset(
         level=[100000.0, 90000.0, 80000.0],   # centers => dp=10000 Pa via edges
         lat=[0.0, 10.0, 20.0, 30.0],
         lon=[100.0, 110.0, 120.0],
     )
-    monkeypatch.setattr(config, "margin", 0)
-    dom = determine_domain(ds)
+    dom, _ = determine_domain(ds, _make_request(margin_n=0))
 
     walls = get_vertical_cell_areas(dom)
 
@@ -182,26 +197,25 @@ def test_vertical_cell_areas_analytic_regular_grid(monkeypatch):
     expected_south = expected_dp[:, None] * expected_dx_south[None, :]
     expected_north = expected_dp[:, None] * expected_dx_north[None, :]
 
-    np.testing.assert_allclose(walls["east"].values, expected_east, rtol=1e-12, atol=0.0)
-    np.testing.assert_allclose(walls["west"].values, expected_east, rtol=1e-12, atol=0.0)
-    np.testing.assert_allclose(walls["south"].values, expected_south, rtol=1e-12, atol=0.0)
-    np.testing.assert_allclose(walls["north"].values, expected_north, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(walls["A_vertical_east"].values, expected_east, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(walls["A_vertical_west"].values, expected_east, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(walls["A_vertical_south"].values, expected_south, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(walls["A_vertical_north"].values, expected_north, rtol=1e-12, atol=0.0)
 
     # Because cos(lat) differs at 0 vs 30, south != north
-    assert not np.allclose(walls["south"].values, walls["north"].values)
+    assert not np.allclose(walls["A_vertical_south"].values, walls["A_vertical_north"].values)
 
 
-def test_cell_volumes_strict_identity(monkeypatch):
+def test_cell_volumes_strict_identity():
     ds = _make_dataset(
         level=[100000.0, 90000.0, 80000.0],
         lat=[0.0, 10.0, 20.0, 30.0],
         lon=[100.0, 110.0, 120.0],
     )
-    monkeypatch.setattr(config, "margin", 0)
-    dom = determine_domain(ds)
+    dom, _ = determine_domain(ds, _make_request(margin_n=0))
 
     V = get_cell_volumes(dom).astype("float64")
-    A = get_horizontal_cell_areas(dom).astype("float64")  # "top"
+    A = get_horizontal_cell_areas(dom).astype("float64")
     dp = np.abs(dom["p_end"] - dom["p_start"]).astype("float64")
 
     lhs = float(V.sum())
@@ -209,22 +223,21 @@ def test_cell_volumes_strict_identity(monkeypatch):
     assert np.isclose(lhs, rhs, rtol=1e-10, atol=0.0)
 
 
-def test_cell_volumes_trapezoid_wall_sanity(monkeypatch):
+def test_cell_volumes_trapezoid_wall_sanity():
     ds = _make_dataset(
         level=[100000.0, 90000.0, 80000.0],
         lat=[0.0, 10.0, 20.0, 30.0],
         lon=[100.0, 110.0, 120.0],
     )
-    monkeypatch.setattr(config, "margin", 0)
-    dom = determine_domain(ds)
+    dom, _ = determine_domain(ds, _make_request(margin_n=0))
 
     V = get_cell_volumes(dom).astype("float64")
     walls = get_vertical_cell_areas(dom)
 
     lhs = float(V.sum())
 
-    south_total = float(walls["south"].sum())  # m*Pa
-    north_total = float(walls["north"].sum())  # m*Pa
+    south_total = float(walls["A_vertical_south"].sum())  # m*Pa
+    north_total = float(walls["A_vertical_north"].sum())  # m*Pa
 
     # Use true domain edges from bounds (robust even if attrs change)
     phi_min = np.deg2rad(float(dom["lat_start"].isel(lat=0)))

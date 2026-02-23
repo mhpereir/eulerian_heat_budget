@@ -14,8 +14,9 @@ import xarray as xr
 import numpy as np
 from typing import Tuple
 
-from . import config
 
+from src import config
+from src.specs import DomainRequest, DomainSpec
 
 def _cell_edges_from_centers(coord: xr.DataArray, name: str) -> np.ndarray:
     """Build 1D cell edges from 1D center coordinates.
@@ -66,11 +67,12 @@ def _interval_bounds_from_centers(coord: xr.DataArray, name: str) -> Tuple[np.nd
 
 def determine_domain(
     ds: xr.Dataset,
+    request: DomainRequest,
     *,
     level_name: str = "level",
     lat_name: str = "lat",
     lon_name: str = "lon",
-) -> xr.Dataset:
+) -> Tuple[xr.Dataset, DomainSpec]:
     """
     Return a domain-cropped dataset with coordinate metadata for cell bounds.
 
@@ -79,9 +81,9 @@ def determine_domain(
     cells from each edge. After this, ds_domain[lat]/[lon] are cell centers (Option A),
     and bounds are in lat_start/lat_end, lon_start/lon_end.
     """
-    margin = int(config.margin)
+    margin = int(request.margin_n)
     if margin < 0:
-        raise ValueError("config.margin must be non-negative.")
+        raise ValueError("Margin request must be non-negative.")
 
     for name in (level_name, lat_name, lon_name):
         if name not in ds.coords:
@@ -90,6 +92,11 @@ def determine_domain(
     lat = ds[lat_name]
     lon = ds[lon_name]
     level = ds[level_name]
+
+    if min(lat) < request.bbox[0] or max(lat) > request.bbox[1]:
+        raise ValueError("Dataset latitudes are out of bounds of requested bbox.")
+    if min(lon) < request.bbox[2] or max(lon) > request.bbox[3]:
+        raise ValueError("Dataset longitudes are out of bounds of requested bbox.")
 
     Nlat_start = lat.size
     Nlon_start = lon.size
@@ -100,7 +107,7 @@ def determine_domain(
 
     # Margin is in cells
     if (Nlat_cell - 2 * margin) <= 0 or (Nlon_cell - 2 * margin) <= 0:
-        raise ValueError("config.margin is too large for current grid cell dimensions.")
+        raise ValueError("Margin request is too large for current grid cell dimensions.")
 
     # Slice *cells* (i indexes the start of each cell)
     lat_cell_slice = slice(margin, Nlat_cell - margin)
@@ -171,7 +178,18 @@ def determine_domain(
         }
     )
 
-    return ds_domain
+    spec = DomainSpec(
+        lat_min=float(lat_start[0]),
+        lat_max=float(lat_end[-1]),
+        lon_min=float(lon_start[0]),
+        lon_max=float(lon_end[-1]),
+        zg_top_pressure=request.zg_top_pressure,
+        zg_bottom=request.zg_bottom,
+        zg_bottom_pressure=request.zg_bottom_pressure,
+        allow_bottom_overflow=request.allow_bottom_overflow,
+    )
+
+    return ds_domain, spec
 
 
 
@@ -212,12 +230,12 @@ def get_horizontal_cell_areas(ds: xr.Dataset) -> xr.DataArray:
     d_lon     = np.abs(lon_end_rad - lon_start_rad)                  # (lon,)
 
     cell_area = (config.R_earth ** 2) * d_sin_lat * d_lon             # broadcast -> (lat, lon)
-    cell_area = cell_area.rename("top") # type: ignore
+    cell_area = cell_area.rename("A_horizontal") # type: ignore
 
     cell_area.attrs.update(
         {
             "units": "m2",
-            "long_name": "Top horizontal wall geometric area",
+            "long_name": "Horizontal wall geometric area",
             "horizontal_coord_type": ds.attrs.get("horizontal_coord_type"),
             "horizontal_input_interpretation": ds.attrs.get("horizontal_input_interpretation"),
             "longitude_closure": "open_domain",
@@ -298,24 +316,28 @@ def get_vertical_cell_areas(ds: xr.Dataset) -> xr.Dataset:
     east.attrs.update({
         "fixed_coord": "lon",
         "fixed_value": float(ds.attrs["lon_max"]),
+        "orientation": "meridional",
         "normal_convention": "geometric_only"   
     })
 
     west.attrs.update({
         "fixed_coord": "lon",
         "fixed_value": float(ds.attrs["lon_min"]),
+        "orientation": "meridional",
         "normal_convention": "geometric_only"
     })
 
     south.attrs.update({
         "fixed_coord": "lat",
         "fixed_value": float(ds.attrs["lat_min"]),
+        "orientation": "zonal",
         "normal_convention": "geometric_only"
     })
 
     north.attrs.update({
         "fixed_coord": "lat",
         "fixed_value": float(ds.attrs["lat_max"]),
+        "orientation": "zonal",
         "normal_convention": "geometric_only"
     })
 
@@ -333,19 +355,19 @@ def get_vertical_cell_areas(ds: xr.Dataset) -> xr.Dataset:
                          "vertical_input_interpretation": ds.attrs.get("vertical_input_interpretation"),
     })
 
-    out = xr.Dataset({"east": east, "west": west, "south": south, "north": north})
+    out = xr.Dataset({"A_vertical_east": east, "A_vertical_west": west, "A_vertical_south": south, "A_vertical_north": north})
 
     # Carry through coordinate metadata so consumers can locate bounds easily
     # (They’re already in ds.coords; xarray will propagate coords for used dims.)
     out = out.assign_coords(
         {
-            "p_start": ds["p_start"],
-            "p_end": ds["p_end"],
-            "p_mid": ds.get("p_mid", ds["level"]),
+            "p_start":   ds["p_start"],
+            "p_end":     ds["p_end"],
+            "p_mid":     ds.get("p_mid", ds["level"]),
             "lat_start": ds["lat_start"],
-            "lat_end": ds["lat_end"],
+            "lat_end":   ds["lat_end"],
             "lon_start": ds["lon_start"],
-            "lon_end": ds["lon_end"],
+            "lon_end":   ds["lon_end"],
             # Optional traceability ids if present
             **({ "lat_cell_id": ds["lat_cell_id"] } if "lat_cell_id" in ds.coords else {}),
             **({ "lon_cell_id": ds["lon_cell_id"] } if "lon_cell_id" in ds.coords else {}),
@@ -375,22 +397,9 @@ def get_cell_volumes(ds: xr.Dataset) -> xr.DataArray:
       - bounds: lat_start/lat_end on lat dim; lon_start/lon_end on lon dim
       - vertical bounds: p_start/p_end on level dim
     """
-    # ---- Required coordinates ----
-    for k in ("lat_start", "lat_end", "lon_start", "lon_end", "p_start", "p_end"):
-        if k not in ds.coords:
-            raise ValueError(f"Dataset must contain coordinate '{k}' from determine_domain().")
-
-    level_name = "level"
-    lat_name = "lat"
-    lon_name = "lon"
-    if level_name not in ds.dims or lat_name not in ds.dims or lon_name not in ds.dims:
-        raise ValueError("Expected ds to have dims ('level','lat','lon') as cell dimensions.")
-
     # ---- Vertical thickness (Pa): (level,) ----
     dp = np.abs(ds["p_end"] - ds["p_start"])
-    if (dp <= 0).any():
-        raise ValueError("Pressure layer thickness must be strictly positive.")
-
+    
     # ---- Horizontal cell area on sphere: (lat, lon) ----
     lat_start_rad = np.deg2rad(ds["lat_start"])
     lat_end_rad   = np.deg2rad(ds["lat_end"])
@@ -405,7 +414,7 @@ def get_cell_volumes(ds: xr.Dataset) -> xr.DataArray:
     cell_area.attrs.update({"units": "m2", "long_name": "Horizontal grid-cell area on a spherical Earth"})
 
     # ---- Volume in pressure coords: A * dp -> (level, lat, lon) ----
-    cell_volume = (cell_area * dp).rename("cell_volume")
+    cell_volume = (cell_area * dp).rename("V_cell")
     cell_volume.attrs.update(
         {
             "units": "m2*Pa",
@@ -420,13 +429,13 @@ def get_cell_volumes(ds: xr.Dataset) -> xr.DataArray:
     # xarray will keep coords for the dims involved, but we can ensure key metadata is present.
     cell_volume = cell_volume.assign_coords(
         {
-            "dp": dp,
-            "p_start": ds["p_start"],
-            "p_end": ds["p_end"],
+            "dp":        dp,
+            "p_start":   ds["p_start"],
+            "p_end":     ds["p_end"],
             "lat_start": ds["lat_start"],
-            "lat_end": ds["lat_end"],
+            "lat_end":   ds["lat_end"],
             "lon_start": ds["lon_start"],
-            "lon_end": ds["lon_end"],
+            "lon_end":   ds["lon_end"],
             **({"lat_cell_id": ds["lat_cell_id"]} if "lat_cell_id" in ds.coords else {}),
             **({"lon_cell_id": ds["lon_cell_id"]} if "lon_cell_id" in ds.coords else {}),
         }

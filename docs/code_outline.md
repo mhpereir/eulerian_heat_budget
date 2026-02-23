@@ -5,7 +5,7 @@
 This project implements a physically consistent, volume-integrated Eulerian heat budget in pressure coordinates, with the intention of calculating the integrated diabatic heating term as the residual:
 
 $$
-\frac{d}{dt}\int_{V(t)} T dV = 
+\frac{d}{dt}\int_{V(t)} T dV =
 -\iint_{\partial V_{\text{sides+top}}} T(\mathbf{U}\cdot \hat{n}) dA
 +
 \int_{V(t)} \left(
