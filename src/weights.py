@@ -55,7 +55,7 @@ def area_weights_horizontal(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Datas
     out_vars = {"W_top": w_top}
 
     # Bottom face only if it is a pressure-level boundary (internal CV face)
-    if str(domain_spec.zg_bottom) == "pressure_level":
+    if str(domain_spec.zg_bottom) == "pressure_level" and domain_spec.zg_bottom_pressure is not None:
         p_bot = float(domain_spec.zg_bottom_pressure) #type:ignore - guarded from in if-statement
         w_bottom = xr.where(sp > p_bot, 1.0, 0.0).astype("float64").rename("W_bottom")
         w_bottom.attrs.update(
@@ -168,6 +168,12 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
         w_s[dict(level=0)] = raw_s.isel(level=0).clip(min=0.0)
         w_n[dict(level=0)] = raw_n.isel(level=0).clip(min=0.0)
 
+
+    w_e = w_e.transpose("time", "level", "lat")
+    w_w = w_w.transpose("time", "level", "lat")
+    w_s = w_s.transpose("time", "level", "lon")
+    w_n = w_n.transpose("time", "level", "lon")
+
     w_east  = w_e.astype("float64").rename("W_east")
     w_west  = w_w.astype("float64").rename("W_west")
     w_south = w_s.astype("float64").rename("W_south")
@@ -273,6 +279,8 @@ def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
     # Fractional occupancy above the surface
     w = _interval_overlap_fraction(p_start, p_end, domain_spec.zg_top_pressure, p_bot_eff).clip(min=0.0, max=1.0)
 
+    w = w.transpose("time", "level", "lat", "lon")
+
     # w = raw_w.clip(min=0.0, max=1.0)
     
     if domain_spec.allow_bottom_overflow and str(domain_spec.zg_bottom) == "surface_pressure": 
@@ -282,10 +290,10 @@ def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
         w_bottom = raw_w.isel(level=0).clip(min=0.0)  # dims: (time, lat, lon)
         w[dict(level=0)] = w_bottom
 
-    out = xr.Dataset({"W_cell": w})
+    out = xr.Dataset({"W_volume": w})
 
-    out["W_cell"].attrs.update(
-        long_name="Fractional layer occupancy above surface pressure",
+    out["W_volume"].attrs.update(
+        long_name="Fractional layer volume above surface pressure",
         description=(
             "0=layer fully below ground; 1=layer fully in atmosphere; "
             "fractional if surface intersects layer; "
@@ -311,7 +319,6 @@ def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
         }
     )
     return out
-
 
 
 # ------------------------------------- Helper function --------------------------------------
