@@ -30,6 +30,7 @@ def _make_dataset(*, level, lat, lon) -> xr.Dataset:
 
 def _make_request(
     *,
+    bbox: tuple[float, float, float, float],
     zg_top_pressure: float,
     zg_bottom: str,
     zg_bottom_pressure: float | None,
@@ -37,7 +38,7 @@ def _make_request(
     margin_n: int = 0,
 ) -> DomainRequest:
     return DomainRequest(
-        bbox=(0, 90.0, -180.0, 180.0),
+        bbox=bbox,
         margin_n=margin_n,
         zg_top_pressure=zg_top_pressure,
         zg_bottom=zg_bottom,  # "surface_pressure" | "pressure_level" #type:ignore
@@ -67,26 +68,28 @@ def test_volume_weights_surface_and_top_intersections_exact():
       - CV top pressure intersects the top layer (fractional)
     Expect exact fractions.
     """
+    bbox=(0,5,15,20)
     ds = _make_dataset(
         level=[1000*100, 900*100, 800*100, 700*100],     # 4 levels
-        lat=[0.0, 1.0],               # 1 cell
-        lon=[10.0, 11.0],             # 1 cell
+        lat=[0.0, 1.0, 2.0, 3.0, 4.0, 5.0],              # 5 cell
+        lon=[15., 16., 17., 18., 19., 20.],              # 5 cell
     )
 
     # CV top at 850 hPa (cuts the upper layer), bottom at surface pressure
     req = _make_request(
+        bbox=bbox,
         zg_top_pressure=790*100,
         zg_bottom="surface_pressure",
         zg_bottom_pressure=None,
         allow_bottom_overflow=False,
-        margin_n=0,
+        margin_n=1,
     )
-    dom, spec = determine_domain(ds, req)
+    dom, halo, spec = determine_domain(ds, req)
 
     # Define sp such that it cuts the *bottom* layer halfway:
     # If bottom layer is [p_end, p_start] = [90000, 100000], pick sp=95000 => 0.5
     # The top layer is [80000, 90000], but CV top is 85000 so only [85000, 90000] included => 0.5
-    dom = _attach_sp(dom, sp_vals=np.array([[[1000*100]]]))
+    dom = _attach_sp(dom, sp_vals=np.zeros((1, 3, 3)) + np.array([[[1000*100]]]))  # shape (time=1, lat=6, lon=6)
 
     W = volume_weights(dom, spec)["W_volume"]
     assert W.dims == ("time", "level", "lat", "lon")
@@ -101,21 +104,23 @@ def test_volume_weights_surface_and_top_intersections_exact():
 
 
 def test_area_weights_horizontal_binary_top_and_bottom():
+    bbox=(0,4,10,14)
     ds = _make_dataset(
-        level=[950*100, 850*100],
-        lat=[0.0, 1.0, 2.0],     # 2 cells
-        lon=[10.0, 11.0, 12.0],  # 2 cells
+        level=[950*100, 850*100, 750*100],     # 3 levels
+        lat=[0.0, 1.0, 2.0, 3.0, 4.0],     # 4 cells
+        lon=[10.0, 11.0, 12.0, 13.0, 14.0],  # 4 cells
     )
 
     # Choose CV top=90000 and bottom=80000 so both faces exist as pressure-level boundaries
     req = _make_request(
-        zg_top_pressure=900*100,
+        bbox=bbox,
+        zg_top_pressure=800*100,
         zg_bottom="pressure_level",
-        zg_bottom_pressure=800*100,
+        zg_bottom_pressure=900*100,
         allow_bottom_overflow=False,
-        margin_n=0,
+        margin_n=1,
     )
-    dom, spec = determine_domain(ds, req)
+    dom, halo, spec = determine_domain(ds, req)
 
     # sp field: one point above top, one between faces, one below bottom etc.
     # shape (time=1, lat=2, lon=2)
@@ -135,10 +140,10 @@ def test_area_weights_horizontal_binary_top_and_bottom():
     assert Wb.dims == ("time", "lat", "lon")
 
     # W_top=1 where sp>900
-    np.testing.assert_array_equal(Wt.values, (sp_vals > 900*100).astype(float))
+    np.testing.assert_array_equal(Wt.values, (sp_vals > 800*100).astype(float))
 
     # W_bottom=1 where sp>800
-    np.testing.assert_array_equal(Wb.values, (sp_vals > 800*100).astype(float))
+    np.testing.assert_array_equal(Wb.values, (sp_vals > 900*100).astype(float))
 
 
 def test_area_weights_vertical_uses_boundary_slices():
@@ -146,19 +151,21 @@ def test_area_weights_vertical_uses_boundary_slices():
     Ensure W_east/W_west use lon boundary slices and W_north/W_south use lat boundary slices.
     This is a shape + value test for one simple level.
     """
+    bbox=(0,4,10,14)
     ds = _make_dataset(
         level=[950*100, 850*100],              # 1 level -> easier expected values
-        lat=[0.0, 1.0, 2.0],           # 2 cells => lat centers len=2 after determine_domain
-        lon=[10.0, 11.0, 12.0],        # 2 cells => lon centers len=2
+        lat=[0.0, 1.0, 2.0, 3.0, 4.0],           # 2 cells => lat centers len=2 after determine_domain
+        lon=[10.0, 11.0, 12.0, 13.0, 14.0],        # 2 cells => lon centers len=2
     )
     req = _make_request(
+        bbox=bbox,
         zg_top_pressure=880*100,
         zg_bottom="surface_pressure",
         zg_bottom_pressure=None,
         allow_bottom_overflow=True,
-        margin_n=0,
+        margin_n=1,
     )
-    dom, spec = determine_domain(ds, req)
+    dom, halo, spec = determine_domain(ds, req)
 
     # Create sp(time,lat,lon) with distinct boundary values:
     # west boundary (lon=0) differs from east boundary (lon=-1)

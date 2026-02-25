@@ -21,7 +21,7 @@ cp: float       = 1.005e3 #specific heat capacity of air in J/(kg*K)
 # default config values
 DEFAULT_BBOX          = (40, 60, -130, -110) # lat_min, lat_max, lon_min, lon_max for domain extent (before margin/snap)
 
-DEFAULT_MARGIN_N: int = 0 # number of grid points to keep as margin when determining domain extent
+DEFAULT_MARGIN_N: int = 1 # number of grid points to keep as margin when determining domain extent
 
 DEFAULT_ZG_BOT_MODE = "pressure_level" # or "surface_pressure"
 

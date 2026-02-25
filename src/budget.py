@@ -1,12 +1,8 @@
 '''
-Docstring for eulerian_heat_budget.src.budget
+High-level orchestration (no I/O):
 
-High-level orchestration:
-
-- Assembles all terms
-- Computes time tendency
-- Computes residual
-- Returns structured output dataset
-
-No I/O inside.
+- assembles terms into a single output dataset
+- computes residual / closure diagnostics
+- exposes a stable programmatic API for scripts/CLI
 '''
+

@@ -14,6 +14,22 @@ from typing import Literal, Optional, Dict, Any, Tuple
 
 BotMode = Literal["surface_pressure", "pressure_level"]
 
+def build_request_from_cli(args) -> specs.DomainRequest:
+    bbox = (
+        args.lat_min if args.lat_min is not None else config.DEFAULT_BBOX[0],
+        args.lat_max if args.lat_max is not None else config.DEFAULT_BBOX[1],
+        args.lon_min if args.lon_min is not None else config.DEFAULT_BBOX[2],
+        args.lon_max if args.lon_max is not None else config.DEFAULT_BBOX[3],
+    )
+    return specs.DomainRequest(
+        bbox=bbox,
+        margin_n=args.margin_n if args.margin_n is not None else config.DEFAULT_MARGIN_N,
+        zg_top_pressure=args.zg_top_pa if args.zg_top_pa is not None else config.DEFAULT_ZG_TOP_PA,
+        zg_bottom=args.zg_bottom if args.zg_bottom is not None else config.DEFAULT_ZG_BOT_MODE,
+        zg_bottom_pressure=args.zg_bottom_pa if args.zg_bottom_pa is not None else config.DEFAULT_ZG_BOT_PA,
+        allow_bottom_overflow=args.allow_bottom_overflow if args.allow_bottom_overflow is not None else config.DEFAULT_ALLOW_BOTTOM_OVERFLOW,
+    )
+
 @dataclass(frozen=True)
 class DomainRequest:
     # User intent

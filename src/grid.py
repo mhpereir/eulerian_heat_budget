@@ -71,6 +71,7 @@ def _interval_bounds_from_centers(coord: xr.DataArray, name: str) -> Tuple[np.nd
     return edges[:-1], edges[1:]
 
 
+
 def determine_domain(
     ds: xr.Dataset,
     request: DomainRequest,
@@ -78,7 +79,7 @@ def determine_domain(
     level_name: str = "level",
     lat_name: str = "lat",
     lon_name: str = "lon",
-) -> Tuple[xr.Dataset, DomainSpec]:
+) -> Tuple[xr.Dataset, xr.Dataset, DomainSpec]:
     """
     Return a domain-cropped dataset with coordinate metadata for cell bounds.
 
@@ -86,116 +87,262 @@ def determine_domain(
     We build cells from consecutive starts (N_cells = N_start - 1), then trim `margin`
     cells from each edge. After this, ds_domain[lat]/[lon] are cell centers (Option A),
     and bounds are in lat_start/lat_end, lon_start/lon_end.
+
+    Returns:
+        ds_domain : trimmed integration domain
+        ds_halo   : ds_domain +1 cell pad (lat/lon)
+        spec      : DomainSpec for ds_domain
+
     """
     margin = int(request.margin_n)
-    if margin < 0:
-        raise ValueError("Margin request must be non-negative.")
+    if margin < 1:
+        raise ValueError(
+            "margin_n must be >= 1 (required to construct ds_halo with +1 pad)."
+        )
 
     for name in (level_name, lat_name, lon_name):
         if name not in ds.coords:
             raise ValueError(f"Dataset must contain '{name}' coordinate.")
 
-    lat = ds[lat_name]
-    lon = ds[lon_name]
+    lat   = ds[lat_name]
+    lon   = ds[lon_name]
     level = ds[level_name]
 
-    if min(lat) < request.bbox[0] or max(lat) > request.bbox[1]:
-        raise ValueError("Dataset latitudes are out of bounds of requested bbox.")
-    if min(lon) < request.bbox[2] or max(lon) > request.bbox[3]:
-        raise ValueError("Dataset longitudes are out of bounds of requested bbox.")
-
-    Nlat_start = lat.size
-    Nlon_start = lon.size
-
-    # Number of *cells* implied by starts
-    Nlat_cell = Nlat_start - 1
-    Nlon_cell = Nlon_start - 1
+    Nlat_cell = lat.size -1
+    Nlon_cell = lon.size -1
 
     # Margin is in cells
     if (Nlat_cell - 2 * margin) <= 0 or (Nlon_cell - 2 * margin) <= 0:
         raise ValueError("Margin request is too large for current grid cell dimensions.")
 
-    # Slice *cells* (i indexes the start of each cell)
-    lat_cell_slice = slice(margin, Nlat_cell - margin)
-    lon_cell_slice = slice(margin, Nlon_cell - margin)
 
-    # Subset dataset on the same slices (dims remain lat/lon, but now represent cells)
-    ds_domain = ds.isel({lat_name: lat_cell_slice, lon_name: lon_cell_slice}).copy()
+    def _build_domain_for_margin(m: int) -> xr.Dataset:
+        """Build a cell-centered dataset for a given cell-margin m, cropped to request.bbox first."""
+        if m < 0:
+            raise ValueError("Internal error: margin must be non-negative.")
 
-    # Build bounds without extrapolation: start[i] and start[i+1]
-    lat_start = lat.isel({lat_name: lat_cell_slice}).values
-    lat_end   = lat.isel({lat_name: slice(margin + 1, margin + 1 + lat_start.size)}).values
-    lat_mid   = 0.5 * (lat_start + lat_end)
+        lat_starts = np.asarray(lat.values, dtype=float)
+        lon_starts = np.asarray(lon.values, dtype=float)
 
-    lon_start = lon.isel({lon_name: lon_cell_slice}).values
-    lon_end   = lon.isel({lon_name: slice(margin + 1, margin + 1 + lon_start.size)}).values
-    lon_mid   = 0.5 * (lon_start + lon_end)
+        if not (np.all(np.diff(lat_starts) > 0) and np.all(np.diff(lon_starts) > 0)):
+            raise ValueError("This implementation assumes lat/lon start coords are strictly increasing.")
 
-    # Vertical: level is already midpoints; make edges for bounds
-    p_edges = _cell_edges_from_centers(level, level_name)
-    p_mid   = np.asarray(level.values, dtype=float)
+        lat0, lat1, lon0, lon1 = map(float, request.bbox)
 
-    # Traceability indices as coords on the *same* dims
-    lat_cell_id = np.arange(margin, margin + lat_mid.size, dtype=int)
-    lon_cell_id = np.arange(margin, margin + lon_mid.size, dtype=int)
-    p_cell_id   = np.arange(p_mid.size, dtype=int)
+        # Ensure bbox lies within dataset coverage of *cells* (needs at least one cell)
+        if lat0 < lat_starts[0] or lat1 > lat_starts[-1]:
+            raise ValueError("Requested lat bbox is outside dataset lat start range.")
+        if lon0 < lon_starts[0] or lon1 > lon_starts[-1]:
+            raise ValueError("Requested lon bbox is outside dataset lon start range.")
 
-    lat_start = lat_start.astype(np.float64)
-    lat_end   = lat_end.astype(np.float64)
-    lat_mid   = lat_mid.astype(np.float64)
-    lon_start = lon_start.astype(np.float64)
-    lon_end   = lon_end.astype(np.float64)
-    lon_mid   = lon_mid.astype(np.float64)
-    p_edges   = p_edges.astype(np.float64)
-    p_mid     = p_mid.astype(np.float64)
+        # Ensure pressure bounds are consistent with dataset levels
+        if request.zg_bottom == "pressure_level":
+            if request.zg_bottom_pressure is None:
+                raise ValueError("zg_bottom_pressure must be specified when zg_bottom is 'pressure_level'.")
 
-    # Option A: overwrite lat/lon coords to be centers; attach bounds on same dims
-    ds_domain = ds_domain.assign_coords(
-        {
-            lat_name: (lat_name, lat_mid),
-            lon_name: (lon_name, lon_mid),
+            p_min = float(level.min().values)
+            p_max = float(level.max().values)
+            if request.zg_bottom_pressure < p_min or request.zg_bottom_pressure > p_max:
+                raise ValueError("Requested zg_bottom_pressure is outside dataset level range.")
+            if request.zg_top_pressure < p_min or request.zg_top_pressure > p_max:
+                raise ValueError("Requested zg_top_pressure is outside dataset level range.")
+            if request.zg_top_pressure >= request.zg_bottom_pressure:
+                raise ValueError("Requested zg_top_pressure must be less than zg_bottom_pressure.")
 
-            "lat_cell_id": (lat_name, lat_cell_id),
-            "lon_cell_id": (lon_name, lon_cell_id),
+        # Determine cell-index range whose cells cover bbox
+        # Cells i span [start[i], start[i+1]]
+        i0 = int(np.searchsorted(lat_starts, lat0, side="right") - 1)
+        i1 = int(np.searchsorted(lat_starts, lat1, side="left"))  # exclusive cell end index
+        j0 = int(np.searchsorted(lon_starts, lon0, side="right") - 1)
+        j1 = int(np.searchsorted(lon_starts, lon1, side="left"))
 
-            "lat_start": (lat_name, lat_start),
-            "lat_end":   (lat_name, lat_end),
-            "lon_start": (lon_name, lon_start),
-            "lon_end":   (lon_name, lon_end),
+        # Clamp to valid cell index range
+        i0 = max(i0, 0)
+        j0 = max(j0, 0)
+        i1 = min(i1, Nlat_cell)
+        j1 = min(j1, Nlon_cell)
 
-            "p_cell_id": (level_name, p_cell_id),
-            "p_start":   (level_name, p_edges[:-1]),
-            "p_end":     (level_name, p_edges[1:]),
-            "p_mid":     (level_name, p_mid),
-        }
-    )
+        # Apply margin in *cell indices*
+        i0m = i0 + m
+        i1m = i1 - m
+        j0m = j0 + m
+        j1m = j1 - m
 
-    ds_domain.attrs.update(
-        {
-            "lat_min": float(lat_start[0]),
-            "lat_max": float(lat_end[-1]),
-            "lon_min": float(lon_start[0]),
-            "lon_max": float(lon_end[-1]),
-            "margin": margin,
-            "horizontal_coord_type": "cell_center_with_bounds",
-            "horizontal_input_interpretation": "cell_starts",
-            "vertical_coord_type": "level_center_with_bounds",
-            "vertical_input_interpretation": "level_centers",
-        }
-    )
+        if i1m <= i0m or j1m <= j0m:
+            raise ValueError("Domain too small after applying bbox + margin.")
+
+        # Now select the corresponding *start indices* for those cells
+        # We keep starts i0m..i1m-1 (length Ncells), and use start[i+1] for ends.
+        lat_cell_slice = slice(i0m, i1m)  # cells
+        lon_cell_slice = slice(j0m, j1m)
+
+        out = ds.isel({lat_name: lat_cell_slice, lon_name: lon_cell_slice}).copy()
+
+        lat_start = lat.isel({lat_name: lat_cell_slice}).values
+        lat_end = lat.isel({lat_name: slice(i0m + 1, i1m + 1)}).values
+        lat_mid = 0.5 * (lat_start + lat_end)
+
+        lon_start = lon.isel({lon_name: lon_cell_slice}).values
+        lon_end = lon.isel({lon_name: slice(j0m + 1, j1m + 1)}).values
+        lon_mid = 0.5 * (lon_start + lon_end)
+
+        # Vertical bounds unchanged
+        p_edges = _cell_edges_from_centers(level, level_name)
+        p_mid = np.asarray(level.values, dtype=float)
+
+        lat_cell_id = np.arange(i0m, i0m + lat_mid.size, dtype=int)
+        lon_cell_id = np.arange(j0m, j0m + lon_mid.size, dtype=int)
+        p_cell_id = np.arange(p_mid.size, dtype=int)
+
+        out = out.assign_coords(
+            {
+                lat_name: (lat_name, lat_mid.astype(np.float64)),
+                lon_name: (lon_name, lon_mid.astype(np.float64)),
+                "lat_cell_id": (lat_name, lat_cell_id),
+                "lon_cell_id": (lon_name, lon_cell_id),
+                "lat_start": (lat_name, lat_start.astype(np.float64)),
+                "lat_end": (lat_name, lat_end.astype(np.float64)),
+                "lon_start": (lon_name, lon_start.astype(np.float64)),
+                "lon_end": (lon_name, lon_end.astype(np.float64)),
+                "p_cell_id": (level_name, p_cell_id),
+                "p_start": (level_name, p_edges[:-1].astype(np.float64)),
+                "p_end": (level_name, p_edges[1:].astype(np.float64)),
+                "p_mid": (level_name, p_mid.astype(np.float64)),
+            }
+        )
+
+        out.attrs.update(
+            {
+                "lat_min": float(lat_start[0]),
+                "lat_max": float(lat_end[-1]),
+                "lon_min": float(lon_start[0]),
+                "lon_max": float(lon_end[-1]),
+                "margin": int(m),
+                "horizontal_coord_type": "cell_center_with_bounds",
+                "horizontal_input_interpretation": "cell_starts",
+            }
+        )
+
+        return out
+
+
+    ds_halo = _build_domain_for_margin(margin - 1)
+    ds_domain = _build_domain_for_margin(margin)
+
+
+
+
+
+
+    # if min(lat) < request.bbox[0] or max(lat) > request.bbox[1]:
+    #     raise ValueError("Dataset latitudes are out of bounds of requested bbox.")
+    # if min(lon) < request.bbox[2] or max(lon) > request.bbox[3]:
+    #     raise ValueError("Dataset longitudes are out of bounds of requested bbox.")
+
+
+
+
+
+
+
+    # Nlat_start = lat.size
+    # Nlon_start = lon.size
+
+    # # Number of *cells* implied by starts
+    # Nlat_cell = Nlat_start - 1
+    # Nlon_cell = Nlon_start - 1
+
+    # # Margin is in cells
+    # if (Nlat_cell - 2 * margin) <= 0 or (Nlon_cell - 2 * margin) <= 0:
+    #     raise ValueError("Margin request is too large for current grid cell dimensions.")
+
+    # # Slice *cells* (i indexes the start of each cell)
+    # lat_cell_slice = slice(margin, Nlat_cell - margin)
+    # lon_cell_slice = slice(margin, Nlon_cell - margin)
+
+    # halo_n = 1  # number of cells to pad for halo (must be <= margin)
+    # lat_cell_slice_halo = slice(margin - halo_n, Nlat_cell - margin + halo_n)
+    # lon_cell_slice_halo = slice(margin - halo_n, Nlon_cell - margin + halo_n)
+
+    # # Subset dataset on the same slices (dims remain lat/lon, but now represent cells)
+    # ds_domain = ds.isel({lat_name: lat_cell_slice, lon_name: lon_cell_slice}).copy()
+
+    # ds_halo   = ds.isel({lat_name: lat_cell_slice_halo, lon_name: lon_cell_slice_halo}).copy()
+
+    # # Build bounds without extrapolation: start[i] and start[i+1]
+    # lat_start = lat.isel({lat_name: lat_cell_slice}).values
+    # lat_end   = lat.isel({lat_name: slice(margin + 1, margin + 1 + lat_start.size)}).values
+    # lat_mid   = 0.5 * (lat_start + lat_end)
+
+    # lon_start = lon.isel({lon_name: lon_cell_slice}).values
+    # lon_end   = lon.isel({lon_name: slice(margin + 1, margin + 1 + lon_start.size)}).values
+    # lon_mid   = 0.5 * (lon_start + lon_end)
+
+    # # Vertical: level is already midpoints; make edges for bounds
+    # p_edges = _cell_edges_from_centers(level, level_name)
+    # p_mid   = np.asarray(level.values, dtype=float)
+
+    # # Traceability indices as coords on the *same* dims
+    # lat_cell_id = np.arange(margin, margin + lat_mid.size, dtype=int)
+    # lon_cell_id = np.arange(margin, margin + lon_mid.size, dtype=int)
+    # p_cell_id   = np.arange(p_mid.size, dtype=int)
+
+    # lat_start = lat_start.astype(np.float64)
+    # lat_end   = lat_end.astype(np.float64)
+    # lat_mid   = lat_mid.astype(np.float64)
+    # lon_start = lon_start.astype(np.float64)
+    # lon_end   = lon_end.astype(np.float64)
+    # lon_mid   = lon_mid.astype(np.float64)
+    # p_edges   = p_edges.astype(np.float64)
+    # p_mid     = p_mid.astype(np.float64)
+
+    # # Option A: overwrite lat/lon coords to be centers; attach bounds on same dims
+    # ds_domain = ds_domain.assign_coords(
+    #     {
+    #         lat_name: (lat_name, lat_mid),
+    #         lon_name: (lon_name, lon_mid),
+
+    #         "lat_cell_id": (lat_name, lat_cell_id),
+    #         "lon_cell_id": (lon_name, lon_cell_id),
+
+    #         "lat_start": (lat_name, lat_start),
+    #         "lat_end":   (lat_name, lat_end),
+    #         "lon_start": (lon_name, lon_start),
+    #         "lon_end":   (lon_name, lon_end),
+
+    #         "p_cell_id": (level_name, p_cell_id),
+    #         "p_start":   (level_name, p_edges[:-1]),
+    #         "p_end":     (level_name, p_edges[1:]),
+    #         "p_mid":     (level_name, p_mid),
+    #     }
+    # )
+
+    # ds_domain.attrs.update(
+    #     {
+    #         "lat_min": float(lat_start[0]),
+    #         "lat_max": float(lat_end[-1]),
+    #         "lon_min": float(lon_start[0]),
+    #         "lon_max": float(lon_end[-1]),
+    #         "margin": margin,
+    #         "horizontal_coord_type": "cell_center_with_bounds",
+    #         "horizontal_input_interpretation": "cell_starts",
+    #         "vertical_coord_type": "level_center_with_bounds",
+    #         "vertical_input_interpretation": "level_centers",
+    #     }
+    # )
 
     spec = DomainSpec(
-        lat_min=float(lat_start[0]),
-        lat_max=float(lat_end[-1]),
-        lon_min=float(lon_start[0]),
-        lon_max=float(lon_end[-1]),
+        lat_min=float(ds_domain.lat_start[0]),
+        lat_max=float(ds_domain.lat_end[-1]),
+        lon_min=float(ds_domain.lon_start[0]),
+        lon_max=float(ds_domain.lon_end[-1]),
         zg_top_pressure=request.zg_top_pressure,
         zg_bottom=request.zg_bottom,
         zg_bottom_pressure=request.zg_bottom_pressure,
         allow_bottom_overflow=request.allow_bottom_overflow,
     )
 
-    return ds_domain, spec
+    return ds_domain, ds_halo, spec
 
 
 
