@@ -142,26 +142,32 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
 
     # Net advection is constrained to a 1D time series.
     advection_walls = xr.zeros_like(ds_domain["time"], dtype="float64").rename("uT_integral")
-    if integral_diagnostics_flag:
-        mass_advection_walls = xr.zeros_like(ds_domain["time"], dtype="float64").rename("u_integral")
-
+    
     out = xr.Dataset(
-    data_vars={
-            "advective_heat": advection_walls,
-            "advective_mass": mass_advection_walls,
+        data_vars={
+            "net_heat_advection": advection_walls,
         }
     )
-    out["advective_heat"].attrs.update({"long_name": "...", "units": "W"})  # whatever you use
-    out["advective_mass"].attrs.update({"long_name": "...", "units": "kg/s or Pa*m^2/s proxy"})
+    out["net_heat_advection"].attrs.update(
+        {"long_name": "Net advected heat", "units": "K m2 Pa s-1"}
+    )
+
+    if integral_diagnostics_flag:
+        mass_advection_walls = xr.zeros_like(ds_domain["time"], dtype="float64")
+        out["net_mass_advection"] = mass_advection_walls
+        out["net_mass_advection"].attrs.update(
+            {"long_name": "Net advected mass", "units": "m2 Pa s-1"}
+        )
 
     wall_sign = {
         "west":  -1.0, #winds are west to east, west wall's normal is west facing
         "east":  +1.0, #winds are west to east, east wall's normal is east facing
         "south": -1.0, #winds are south to north, south wall's normal is south facing
         "north": +1.0, #winds are south to north, north wall's normal is north facing
-        "top":   -1.0, #omega is 
+        "top":   -1.0, #omega is top to bottom, top wall's normal is top facing
         "bottom": +1.0,  # only used when fixed-pressure bottom is enabled
     }
+
     for wall in wall_list:
         if wall == 'top' or wall == 'bottom':
             cell_wall_name = 'A_horizontal'
@@ -173,7 +179,7 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
                                            ds_weights_areas[f'W_{wall}'])
         
         adv_wall = adv_wall.astype("float64").reset_coords(drop=True)
-        advection_walls = advection_walls + wall_sign[wall] * adv_wall
+        out["net_heat_advection"] = out["net_heat_advection"] + wall_sign[wall] * adv_wall
 
         if integral_diagnostics_flag:
             mass_adv_wall = integrals.area_integral(ds_u_integrands[f'u_{wall}'], #type: ignore condition guarded behind if-statements
@@ -181,17 +187,9 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
                                                     ds_weights_areas[f'W_{wall}'])
 
             mass_adv_wall = mass_adv_wall.astype("float64").reset_coords(drop=True)
-            mass_advection_walls = mass_advection_walls + wall_sign[wall] * mass_adv_wall #type: ignore
+            out["net_mass_advection"] = out["net_mass_advection"] + wall_sign[wall] * mass_adv_wall #type: ignore
 
-    advection_walls.attrs.update({
-        "long_name": "Net advective heat flux through control-volume walls",
-        "units": "K m2 Pa s-1",
-    })
-
-    if integral_diagnostics_flag:
-        advection_walls = advection_walls.assign_coords(mass_advection=mass_advection_walls) # type: ignore
-
-    return advection_walls
+    return out
 
 def compute_adiabatic_term(omega, T): # C
     r'''
