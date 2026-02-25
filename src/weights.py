@@ -324,7 +324,7 @@ def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
 # ------------------------------------- Helper function --------------------------------------
 
 def _drop_if_present(da: xr.DataArray, names: list[str]) -> xr.DataArray:
-    present = [n for n in names if (n in da.coords or n in da.variables)]
+    present = [n for n in names if n in da.coords]
     return da.drop_vars(present, errors="ignore")
 
 

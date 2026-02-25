@@ -508,7 +508,7 @@ def get_vertical_cell_areas(ds: xr.Dataset) -> xr.Dataset:
                          "vertical_input_interpretation": ds.attrs.get("vertical_input_interpretation"),
     })
 
-    out = xr.Dataset({"A_vertical_east": east, "A_vertical_west": west, "A_vertical_south": south, "A_vertical_north": north})
+    out = xr.Dataset({"A_east": east, "A_west": west, "A_south": south, "A_north": north})
 
     # Carry through coordinate metadata so consumers can locate bounds easily
     # (They’re already in ds.coords; xarray will propagate coords for used dims.)

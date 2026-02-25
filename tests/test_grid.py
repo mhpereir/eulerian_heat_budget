@@ -164,24 +164,24 @@ def test_vertical_cell_areas_shapes_and_symmetries():
 
     walls = get_vertical_cell_areas(halo)
 
-    assert walls["A_vertical_east"].dims == ("level", "lat")
-    assert walls["A_vertical_west"].dims == ("level", "lat")
-    assert walls["A_vertical_south"].dims == ("level", "lon")
-    assert walls["A_vertical_north"].dims == ("level", "lon")
+    assert walls["A_east"].dims == ("level", "lat")
+    assert walls["A_west"].dims == ("level", "lat")
+    assert walls["A_south"].dims == ("level", "lon")
+    assert walls["A_north"].dims == ("level", "lon")
 
-    assert walls["A_vertical_east"].shape == (6, 4)
-    assert walls["A_vertical_west"].shape == (6, 4)
-    assert walls["A_vertical_south"].shape == (6, 3)
-    assert walls["A_vertical_north"].shape == (6, 3)
+    assert walls["A_east"].shape == (6, 4)
+    assert walls["A_west"].shape == (6, 4)
+    assert walls["A_south"].shape == (6, 3)
+    assert walls["A_north"].shape == (6, 3)
 
-    for wall in ("A_vertical_east", "A_vertical_west", "A_vertical_south", "A_vertical_north"):
+    for wall in ("A_east", "A_west", "A_south", "A_north"):
         arr = walls[wall]
         assert arr.attrs["units"] == "m*Pa"
         assert np.isfinite(arr.values).all()
         assert np.all(arr.values > 0.0)
 
     # east and west are geometrically identical here (same dy, dp)
-    np.testing.assert_allclose(walls["A_vertical_east"].values, walls["A_vertical_west"].values, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(walls["A_east"].values, walls["A_west"].values, rtol=1e-12, atol=0.0)
 
 
 def test_vertical_cell_areas_analytic_regular_grid():
@@ -216,13 +216,13 @@ def test_vertical_cell_areas_analytic_regular_grid():
     expected_south = expected_dp[:, None] * expected_dx_south[None, :]
     expected_north = expected_dp[:, None] * expected_dx_north[None, :]
 
-    np.testing.assert_allclose(walls["A_vertical_east"].values, expected_east, rtol=1e-12, atol=0.0)
-    np.testing.assert_allclose(walls["A_vertical_west"].values, expected_east, rtol=1e-12, atol=0.0)
-    np.testing.assert_allclose(walls["A_vertical_south"].values, expected_south, rtol=1e-12, atol=0.0)
-    np.testing.assert_allclose(walls["A_vertical_north"].values, expected_north, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(walls["A_east"].values, expected_east, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(walls["A_west"].values, expected_east, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(walls["A_south"].values, expected_south, rtol=1e-12, atol=0.0)
+    np.testing.assert_allclose(walls["A_north"].values, expected_north, rtol=1e-12, atol=0.0)
 
     # Because cos(lat) differs at 0 vs 30, south != north
-    assert not np.allclose(walls["A_vertical_south"].values, walls["A_vertical_north"].values)
+    assert not np.allclose(walls["A_south"].values, walls["A_north"].values)
 
 
 def test_cell_volumes_strict_identity():
@@ -257,8 +257,8 @@ def test_cell_volumes_trapezoid_wall_sanity():
 
     lhs = float(V.sum())
 
-    south_total = float(walls["A_vertical_south"].sum())  # m*Pa
-    north_total = float(walls["A_vertical_north"].sum())  # m*Pa
+    south_total = float(walls["A_south"].sum())  # m*Pa
+    north_total = float(walls["A_north"].sum())  # m*Pa
 
     # Use true domain edges from bounds (robust even if attrs change)
     phi_min = np.deg2rad(float(dom["lat_start"].isel(lat=0)))
