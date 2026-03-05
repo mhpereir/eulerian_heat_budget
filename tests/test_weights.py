@@ -91,7 +91,7 @@ def test_volume_weights_surface_and_top_intersections_exact():
     # The top layer is [80000, 90000], but CV top is 85000 so only [85000, 90000] included => 0.5
     dom = _attach_sp(dom, sp_vals=np.zeros((1, 3, 3)) + np.array([[[1000*100]]]))  # shape (time=1, lat=6, lon=6)
 
-    W = volume_weights(dom, spec)["W_volume"]
+    W = volume_weights(dom, spec)
     assert W.dims == ("time", "level", "lat", "lon")
     assert np.isfinite(W.values).all()
 

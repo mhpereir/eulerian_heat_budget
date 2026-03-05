@@ -7,6 +7,8 @@ if PROJECT_ROOT not in sys.path:
 
 from src import config, cli, specs, io, validate, grid, budget
 
+from src import plot_results
+
 import xarray as xr
 import numpy as np
 
@@ -47,9 +49,11 @@ if __name__ == "__main__":
     # Determine domain extent based on grid and config margin
     ds_domain, ds_halo, DomainSpecs = grid.determine_domain(ds_merged, request)
     
+    print('Proceeding with', DomainSpecs)
 
-    result = budget.calculate_budget(ds_domain, ds_halo, DomainSpecs, integral_diagnostics_flag=True)
+    result = budget.calculate_budget(ds_domain, ds_halo, DomainSpecs, integral_diagnostics_flag=True, plot_dir=config.DEFAULT_PLOTS_OUTPUT)
 
+    plot_results.plot_budget_terms(result, plot_dir=config.DEFAULT_PLOTS_OUTPUT)
 
     print(result)
 

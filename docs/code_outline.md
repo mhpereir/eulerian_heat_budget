@@ -61,9 +61,9 @@ We compute:
    \frac{dS}{dt}
    $$
 
-2. **Advection (via divergence form)**
+2. **Advection (via surface flux form)**
    $$
-   A(t) = \int_{V(t)} -\nabla \cdot (\mathbf{U}T) dV
+   A(t) = \int_{A(t)} T(\mathbf{U}\cdot \hat n) dA
    $$
 
 3. **Adiabatic compression**
@@ -149,6 +149,7 @@ eulerian_heat_budget/
 │
 ├── src/
 │   ├── __init__.py
+|   ├── cli.py
 │   ├── config.py
 │   ├── io.py
 │   ├── specs.py
@@ -158,7 +159,8 @@ eulerian_heat_budget/
 │   ├── integrals.py
 │   ├── terms.py
 │   ├── budget.py
-│   └── cli.py
+│   ├── plot_diagnostics.py
+│   └── plot_results.py
 │
 ├── tests/
 │   ├── test_integrals.py
@@ -279,7 +281,15 @@ High-level orchestration (no I/O):
 
 - assembles terms into a single output dataset
 - computes residual / closure diagnostics
-- exposes a stable programmatic API for scripts/CLI
+- plots diagnostics
+- exposes a stable programmatic API for scripts
+
+Outputs the four main integral components:
+
+- `dT_dt` (storage)
+- `net_advected_heat` (advection)
+- `adiabatic_heating` (work/adiabatic)
+- `diabatic_heating` (local heat sources, residual)
 
 ------
 
@@ -304,7 +314,35 @@ Command-line interface:
 
 ### `scripts/run_budget.py`
 
-Entry script used on HPC or locally.
+Main script, used on HPC or locally.
+
+------
+
+### `scripts/plot_diagnostics.py`
+
+Plots intermediate diagnostic figures to ensure integrals are working correctly. Called from budget.py
+
+- fig 1: mass continuity test of `net_advected_mass` vs time rate of change of volume `dV_dt`
+
+$$
+\frac{d​}{dt}\iiint_{V(t)} ​dV_p +  ​\iint \vec U \cdot n dA_p​​​=0
+$$
+
+- fig 2: advection terms
+  - top panel: volume of domain;
+  - middle panel: advection terms (east, west, south, north, top, and bottom if present)
+  - bottom panel: sum of advection terms (`net_heat_advection`)
+- fig 3: time series of absolute flux residual
+
+------
+
+### `scripts/plot_results.py`
+
+Plot results of integral calculation. Called from run_budget.py
+
+- fig1:
+  - top panel `dT_dt`
+  - bottom panel `net_head_advection`, `adiabatic_heating`, `D (diabatic heating, residual term)`
 
 ------
 

@@ -29,7 +29,9 @@ def area_integral(field_2d: xr.DataArray,
 
     return integrand.sum(dim=sum_dims)
 
-def volume_integral_pcoords(field_3d, volume_3d, weights_3d):
+def volume_integral_pcoords(field_3d: xr.DataArray, 
+                            volume_3d: xr.DataArray, 
+                            weights_3d: xr.DataArray) -> xr.DataArray:
     # Integrate field over volume using pressure and area integrals
     # Spherical coordinates for the horizontal dimentions, and pressure coordinates for the vertical dimension
     integrand = field_3d * volume_3d * weights_3d
@@ -39,13 +41,3 @@ def volume_integral_pcoords(field_3d, volume_3d, weights_3d):
         raise ValueError("The number of dimensions for the volume integral is not 3.")
 
     return integrand.sum(dim=sum_dims)
-
-
-#need to add a differential helper funct for dT/dt storage term, and a vertical advection term (omega*dT/dp)
-def time_derivative(field_3d, time_3d):
-    # Compute time derivative using finite differences
-    return (field_3d.diff(dim='time') / time_3d.diff(dim='time')).pad(time=1, mode='edge')
-
-def spatial_derivative(field_3d, coord_3d, dim):
-    # Compute spatial derivative using finite differences along specified dimension
-    return (field_3d.diff(dim=dim) / coord_3d.diff(dim=dim)).pad({dim: 1}, mode='edge')

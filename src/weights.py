@@ -13,6 +13,7 @@ These weights are the bridge between “geometry” and later “integrals/budge
 Note: the detailed set of returned arrays and their naming should be documented in the schema section (Section 6) and treated as an API.
 '''
 import xarray as xr
+import numpy as np
 
 from .specs import DomainSpec
 
@@ -163,10 +164,12 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
         raw_s = (p_bot_eff_s - p_end) / dp  # (time, level, lon)
         raw_n = (p_bot_eff_n - p_end) / dp  # (time, level, lon)
 
-        w_e[dict(level=0)] = raw_e.isel(level=0).clip(min=0.0)  # allow >1
-        w_w[dict(level=0)] = raw_w.isel(level=0).clip(min=0.0)
-        w_s[dict(level=0)] = raw_s.isel(level=0).clip(min=0.0)
-        w_n[dict(level=0)] = raw_n.isel(level=0).clip(min=0.0)
+        is_bottom = ds["level"] == ds["level"].isel(level=0)  # (level,) boolean
+
+        w_e = xr.where(is_bottom, raw_e.isel(level=0).clip(min=0.0), w_e)
+        w_w = xr.where(is_bottom, raw_w.isel(level=0).clip(min=0.0), w_w)
+        w_s = xr.where(is_bottom, raw_s.isel(level=0).clip(min=0.0), w_s)
+        w_n = xr.where(is_bottom, raw_n.isel(level=0).clip(min=0.0), w_n)
 
 
     w_e = w_e.transpose("time", "level", "lat")
@@ -235,7 +238,7 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
 
 
 
-def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
+def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.DataArray:
     """
     Fractional volume weights for pressure layers truncated by surface pressure.
 
@@ -288,11 +291,16 @@ def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
         # allows for w > 1 if surface pressure is below (higher p) than the edge of the 
         # bottom layer
         w_bottom = raw_w.isel(level=0).clip(min=0.0)  # dims: (time, lat, lon)
-        w[dict(level=0)] = w_bottom
+        
+        is_bottom = xr.zeros_like(w, dtype=bool)
+        is_bottom[dict(level=0)] = True
 
-    out = xr.Dataset({"W_volume": w})
+        w = xr.where(is_bottom, w_bottom, w)
 
-    out["W_volume"].attrs.update(
+
+    out = w.rename("W_volume")
+
+    out.attrs.update(
         long_name="Fractional layer volume above surface pressure",
         description=(
             "0=layer fully below ground; 1=layer fully in atmosphere; "
@@ -335,7 +343,7 @@ def _interval_overlap_fraction(p_hi, p_lo, p_top, p_bot):
     """
     dp = p_hi - p_lo
 
-    inc_lo = xr.ufuncs.maximum(p_lo, p_top)
-    inc_hi = xr.ufuncs.minimum(p_hi, p_bot)
-    inc_dp = xr.ufuncs.maximum(0.0, inc_hi - inc_lo)
+    inc_lo = np.maximum(p_lo, p_top)
+    inc_hi = np.minimum(p_hi, p_bot)
+    inc_dp = np.maximum(0.0, inc_hi - inc_lo)
     return (inc_dp / dp).astype("float64")

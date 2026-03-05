@@ -12,12 +12,44 @@ May call `integrals.py` internally.
 '''
 
 import xarray as xr
+import numpy as np
 
-from . import integrals, weights
+from . import integrals, weights, config
 
 from .specs import DomainSpec
 
-def compute_storage(T): #S
+
+def compute_domain_volume(ds_domain: xr.Dataset,
+                            ds_cell_volumes: xr.DataArray,
+                            ds_weights_volumes: xr.DataArray,
+                            DomainSpecs: DomainSpec) -> xr.DataArray:
+    
+    #temporary array, to hold 1s
+    constant_arr = xr.zeros_like(ds_cell_volumes) + 1 #config.g #4D
+    out = integrals.volume_integral_pcoords(constant_arr, ds_cell_volumes, ds_weights_volumes)
+
+    return out.rename("V")
+
+def compute_time_derivative(da: xr.DataArray) -> xr.DataArray:
+    if da.name is None:
+        raise ValueError("Input DataArray must have a name")
+
+    # centered difference: (f[i+1] - f[i-1]) / (t[i+1] - t[i-1]), on interior points
+    num = (da.shift(time=-1) - da.shift(time=1)).isel(time=slice(1, -1))
+    den = (da["time"].shift(time=-1) - da["time"].shift(time=1)).isel(time=slice(1, -1))
+
+    # if time is datetime64, convert timedelta to seconds
+    if np.issubdtype(den.dtype, np.timedelta64):
+        den = den / np.timedelta64(1, "s")
+
+    ddt = num / den
+    ddt.name = f"d{da.name}_dt"
+    return ddt
+   
+def compute_storage(T: xr.DataArray,
+                    ds_cell_volumes: xr.DataArray,
+                    ds_weights_volumes: xr.DataArray,
+                    DomainSpecs: DomainSpec) -> xr.DataArray: #S
     r'''
     Inputs: T (temperature field, 4D: time, level, lat, lon)
     Outputs: S (storage term, 3D: time-2)
@@ -26,7 +58,13 @@ def compute_storage(T): #S
     '''
     # Compute local time tendency of temperature
     
-    pass
+    T_int = integrals.volume_integral_pcoords(T, ds_cell_volumes, ds_weights_volumes).astype("float64")
+    T_int = T_int.reset_coords(drop=True)
+
+    T_int.name = 'T'
+    dT_dt      = compute_time_derivative(T_int)
+
+    return dT_dt
 
 def compute_advective_term(ds_domain: xr.Dataset, #A
                            ds_halo: xr.Dataset,
@@ -160,14 +198,16 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
         )
 
     wall_sign = {
-        "west":  -1.0, #winds are west to east, west wall's normal is west facing
-        "east":  +1.0, #winds are west to east, east wall's normal is east facing
-        "south": -1.0, #winds are south to north, south wall's normal is south facing
-        "north": +1.0, #winds are south to north, north wall's normal is north facing
-        "top":   -1.0, #omega is top to bottom, top wall's normal is top facing
+        "west":   -1.0, #winds are west to east, west wall's normal is west facing
+        "east":   +1.0, #winds are west to east, east wall's normal is east facing
+        "south":  -1.0, #winds are south to north, south wall's normal is south facing
+        "north":  +1.0, #winds are south to north, north wall's normal is north facing
+        "top":    -1.0, #omega is top to bottom, top wall's normal is top facing
         "bottom": +1.0,  # only used when fixed-pressure bottom is enabled
     }
 
+    residual_num   = xr.zeros_like(ds_domain["time"], dtype="float64")
+    residual_denom = xr.zeros_like(ds_domain["time"], dtype="float64")
     for wall in wall_list:
         if wall == 'top' or wall == 'bottom':
             cell_wall_name = 'A_horizontal'
@@ -180,6 +220,7 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
         
         adv_wall = adv_wall.astype("float64").reset_coords(drop=True)
         out["net_heat_advection"] = out["net_heat_advection"] + wall_sign[wall] * adv_wall
+        out["flux_contribution_" + wall] = wall_sign[wall] * adv_wall
 
         if integral_diagnostics_flag:
             mass_adv_wall = integrals.area_integral(ds_u_integrands[f'u_{wall}'], #type: ignore condition guarded behind if-statements
@@ -188,19 +229,64 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
 
             mass_adv_wall = mass_adv_wall.astype("float64").reset_coords(drop=True)
             out["net_mass_advection"] = out["net_mass_advection"] + wall_sign[wall] * mass_adv_wall #type: ignore
+            out["mass_flux_contribution_" + wall] = wall_sign[wall] * mass_adv_wall
 
+            residual_denom = residual_denom + np.abs(mass_adv_wall)
+
+    if integral_diagnostics_flag:
+        residual_num = np.abs(out["net_mass_advection"])
+
+        eps= residual_num / residual_denom
+
+        out["abs_mass_advection_residual_fraction"] = eps
+
+        print(f"Residual from mass advection into domain through the surfaces: \n MEAN={eps.mean().values}, MAX={eps.max().values} of time series.")
+    
     return out
 
-def compute_adiabatic_term(omega, T): # C
+def compute_adiabatic_term(ds_domain: xr.Dataset, 
+                           ds_cell_volumes: xr.DataArray,
+                           ds_weights_volumes: xr.DataArray,
+                           DomainSpecs: DomainSpec) -> xr.DataArray: # C
     r'''
-    math term: -\int \omega * dT/dp dV 
+    math term: \int_{V(t)} \omega \frac{RT}{c_p p} dV
     '''
     # Compute adiabatic term (vertical motion)
-    pass
+    integrand = ds_domain['w'] * config.R_value * ds_domain['T'] / ds_domain['level'] / config.cp
 
-def compute_diabatic_term(S, A, C): # D
+    adiabatic_heating = integrals.volume_integral_pcoords(integrand, ds_cell_volumes, ds_weights_volumes)
+
+    adiabatic_heating = adiabatic_heating.rename('adiabatic_heating')
+
+    return adiabatic_heating
+
+def compute_diabatic_term(
+    S: xr.DataArray, #storage, dT_dt
+    A: xr.DataArray, #advection, net_heat_advection
+    C: xr.DataArray, #adiabatic, adiabatic_heating
+) -> xr.DataArray: # D
     r'''
-    math term: D = S - A - C
+    math term: S = - A + C + D  => D = S + A - C
     '''
     # Compute diabatic term as residual
-    return S - A - C
+    return S + A - C
+
+
+
+#extra terms
+
+def compute_T_domain_average(T: xr.DataArray,
+                             domain_volume: xr.DataArray,
+                             ds_cell_volumes: xr.DataArray,
+                             ds_weights_volumes: xr.DataArray,
+                             DomainSpecs: DomainSpec) -> xr.DataArray:
+    r'''
+    math term: \int T dV / \int dV
+    '''
+    T_integral = integrals.volume_integral_pcoords(T, ds_cell_volumes, ds_weights_volumes)
+    # volume_integral = compute_domain_volume(ds_domain=None, ds_cell_volumes=ds_cell_volumes, ds_weights_volumes=ds_weights_volumes, DomainSpecs=DomainSpecs)
+
+    T_domain_avg = T_integral / domain_volume
+    T_domain_avg.name = "T_domain_avg"
+
+    return T_domain_avg

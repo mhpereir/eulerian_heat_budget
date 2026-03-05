@@ -6,13 +6,21 @@ High-level orchestration (no I/O):
 - exposes a stable programmatic API for scripts/CLI
 '''
 
+import os
+
 import xarray as xr
+import numpy as np
 
 from . import grid, weights, terms
+from . import plot_diagnostics
+
 from .specs import DomainSpec
 
-def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: DomainSpec, integral_diagnostics_flag: bool) -> xr.Dataset:
 
+
+def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: DomainSpec, integral_diagnostics_flag: bool, plot_dir: str) -> xr.Dataset:
+    plot_diag_path = os.path.join(plot_dir, "diagnostics")
+    os.makedirs(plot_diag_path, exist_ok=True)
 
     # Construct integand cell areas and weights for integration
     ds_horizontal_cell_areas = grid.get_horizontal_cell_areas(ds_domain).astype("float64")
@@ -25,7 +33,7 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
 
     ds_weights_horizontal = weights.area_weights_horizontal(ds_domain, DomainSpecs)
     ds_weights_vertical   = weights.area_weights_vertical(ds_domain, DomainSpecs)
-    ds_weights_volume     = weights.volume_weights(ds_domain, DomainSpecs)
+    ds_weights_volumes    = weights.volume_weights(ds_domain, DomainSpecs)
 
     ds_weights_areas = xr.merge([ds_weights_horizontal, ds_weights_vertical])
 
@@ -33,7 +41,51 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     # advective term needs du/dx, dv/dy, dw/dp @ each wall (east, west, north, south, top, bottom)
     # adiabatic term needs dT/dp at cell centers 
     # these can be computed using finite differences and stored as new variables in the dataset for use in the budget calculations
-    
-    advection_terms = terms.compute_advective_term(ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, DomainSpecs, integral_diagnostics_flag)
 
-    return advection_terms
+    dT_dt = terms.compute_storage(ds_domain['T'],
+                                  ds_cell_volumes,
+                                  ds_weights_volumes,
+                                  DomainSpecs)
+
+    domain_volume   = terms.compute_domain_volume(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
+    dV_dt           = terms.compute_time_derivative(domain_volume)
+
+    advection_terms = terms.compute_advective_term(ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, DomainSpecs, integral_diagnostics_flag)
+    #time crop advection
+    advection_terms = advection_terms.sel(time=dT_dt['time'])
+
+    #plot diagnostics for advective integrals
+    plot_diagnostics.fig1_mass_continuity(dV_dt, advection_terms, plot_diag_path)
+    plot_diagnostics.fig2_advection_components_timeseries(advection_terms, plot_diag_path)
+    plot_diagnostics.fig3_mass_advection_residual_timeseries(advection_terms, dV_dt, plot_diag_path)
+
+    adiabatic_term = terms.compute_adiabatic_term(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
+    #time crop adiabatic
+    adiabatic_term = adiabatic_term.sel(time=dT_dt['time'])
+
+    # compute the residual term (diabatic term) from the scalar net advection term
+    diabatic_term = terms.compute_diabatic_term(
+        dT_dt,
+        advection_terms["net_heat_advection"],
+        adiabatic_term,
+    )
+
+    #extra terms:
+    #average T over the domain for each time step
+    T_domain_avg = terms.compute_T_domain_average(ds_domain['T'], domain_volume, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
+    T_domain_avg = T_domain_avg.sel(time=dT_dt['time'])
+
+    domain_volume = domain_volume.sel(time=dT_dt['time']) 
+    #combine all terms into a single output dataset
+    out = xr.Dataset({
+        'dT_dt': dT_dt,
+        'dV_dt': dV_dt,
+        'advection_term': advection_terms['net_heat_advection'], # use actual variable name in advection_terms dataset
+        'adiabatic_term': adiabatic_term,
+        'diabatic_term': diabatic_term,
+        'T_domain_avg': T_domain_avg,
+        'domain_volume': domain_volume,
+    })
+
+
+    return out
