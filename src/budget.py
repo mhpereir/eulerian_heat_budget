@@ -42,6 +42,8 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     # adiabatic term needs dT/dp at cell centers 
     # these can be computed using finite differences and stored as new variables in the dataset for use in the budget calculations
 
+    
+
     dT_dt = terms.compute_storage(ds_domain['T'],
                                   ds_cell_volumes,
                                   ds_weights_volumes,
@@ -50,15 +52,27 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     domain_volume   = terms.compute_domain_volume(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     dV_dt           = terms.compute_time_derivative(domain_volume)
 
+    #extra terms:
+    #average T over the domain for each time step
+    T_domain_avg = terms.compute_T_domain_average(ds_domain['T'], domain_volume, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
+    T_domain_avg = T_domain_avg.sel(time=dT_dt['time'])
+
     advection_terms = terms.compute_advective_term(ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, DomainSpecs, integral_diagnostics_flag)
     #time crop advection
     advection_terms = advection_terms.sel(time=dT_dt['time'])
 
+    #estimate of uncertainty from mass continuity
+    # T_scale         = np.sqrt(np.mean(ds_domain['T'].sel(time=dT_dt['time']).values-T_domain_avg.values[:,None,None,None])**2.)
+    T_scale = ds_domain['T'].std().values
+    print(T_scale)
+
+    advection_error = (dV_dt + advection_terms['net_mass_advection']) * T_scale # mass * K
+
     #plot diagnostics for advective integrals
     plot_diagnostics.fig1_mass_continuity(dV_dt, advection_terms, plot_diag_path)
-    plot_diagnostics.fig2_advection_components_timeseries(advection_terms, plot_diag_path)
-    plot_diagnostics.fig3_mass_advection_residual_timeseries(advection_terms, dV_dt, plot_diag_path)
-
+    plot_diagnostics.fig2_mass_advection_residual_timeseries(advection_terms, dV_dt, domain_volume, plot_diag_path)
+    plot_diagnostics.fig3_advection_components_timeseries(advection_terms, dV_dt, advection_error, domain_volume, plot_diag_path)
+    
     adiabatic_term = terms.compute_adiabatic_term(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     #time crop adiabatic
     adiabatic_term = adiabatic_term.sel(time=dT_dt['time'])
@@ -70,10 +84,7 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
         adiabatic_term,
     )
 
-    #extra terms:
-    #average T over the domain for each time step
-    T_domain_avg = terms.compute_T_domain_average(ds_domain['T'], domain_volume, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
-    T_domain_avg = T_domain_avg.sel(time=dT_dt['time'])
+    
 
     domain_volume = domain_volume.sel(time=dT_dt['time']) 
     #combine all terms into a single output dataset
@@ -81,6 +92,7 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
         'dT_dt': dT_dt,
         'dV_dt': dV_dt,
         'advection_term': advection_terms['net_heat_advection'], # use actual variable name in advection_terms dataset
+        'advection_error': advection_error,
         'adiabatic_term': adiabatic_term,
         'diabatic_term': diabatic_term,
         'T_domain_avg': T_domain_avg,

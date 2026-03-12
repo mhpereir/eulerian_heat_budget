@@ -6,6 +6,8 @@ import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
 
+import matplotlib.dates as mdates
+
 #set label sizes 16
 plt.rcParams.update({'font.size': 16})
 
@@ -53,45 +55,187 @@ def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_
 
 
 
-def fig2_advection_components_timeseries(advection_terms: xr.Dataset, plot_dir: str):
+
+def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: xr.DataArray, domain_volume: xr.DataArray, plot_dir: str):
+
+    norm_factor          = 1/ domain_volume
+    mean_norm_factor     = 1/np.nanmean(domain_volume)
+    time_rate_conversion = 3600
+
+    fig, ax = plt.subplots(figsize=(10, 10), nrows=2, tight_layout=True, sharex=True)
+
+    residual = advection_terms['net_mass_advection'] + dV_dt
+    ax[0].plot(residual['time'], residual * mean_norm_factor * time_rate_conversion, label=r'$\delta M$', color='k', alpha=0.8)
+
+    ax[0].plot(residual['time'], advection_terms['net_mass_advection']* mean_norm_factor * time_rate_conversion, 
+               label='Net Mass Advection', alpha=0.5, color='C0')
+    ax[0].plot(residual['time'], dV_dt * mean_norm_factor * time_rate_conversion, 
+               label='dV/dt', alpha=0.5, color='C1')
+
+    ax[0].legend()
+    # ax[0].set_xlabel("Time")
+    ax[0].set_ylabel("Mass Terms (normalized) [1/hr]")
+    ax[0].set_title(r"Mass Advection Residual Time Series (normalized by $\bar V$)")
+    
+    #check advection_terms['time'] is in the correct format:
+    if np.issubdtype(advection_terms['time'].dtype, np.datetime64):
+        print("Time coordinate is in datetime format.")
+    else:
+        print("Time coordinate is NOT in datetime format. Check your dataset.")
+        raise ValueError("Time coordinate is not in datetime format.")
+
+    dt = (advection_terms['time'][1] - advection_terms['time'][0]).values.astype(float) / 1e9 # convert to seconds
+    cumulative_residual = np.cumsum( residual * dt)
+    cumulative_net_adv  = np.cumsum(advection_terms['net_mass_advection'] * dt)
+    cumulative_dvdt     = np.cumsum(dV_dt * dt)
+
+    ax[1].plot(advection_terms['time'], cumulative_residual * mean_norm_factor, color='k')
+    
+    ax[1].plot(advection_terms['time'], cumulative_net_adv * mean_norm_factor, color='C0')
+    ax[1].plot(advection_terms['time'], cumulative_dvdt * mean_norm_factor, color='C1')
+
+    locator   = mdates.AutoDateLocator()
+    formatter = mdates.ConciseDateFormatter(locator)
+
+    ax[1].xaxis.set_major_locator(locator)
+    ax[1].xaxis.set_major_formatter(formatter)
+
+    ax[1].set_xlabel("Time")
+    ax[1].set_ylabel(r"$\int \delta$ Mass dt/ $\bar V$(t) [unitless]")
+    ax[1].set_title(r"Cumulative $\delta$ Mass / $\bar V$(t) Time Series")
+    plt.savefig(plot_dir + '/fig2_mass_residual_time_series.png', dpi=300)
+    plt.close()
+
+    #parse through the vars in advection_terms
+    mass_vars = []
+    heat_vars = []
+    for component in advection_terms.data_vars:
+        if "mass" in str(component) or "net" in str(component):
+            mass_vars.append(str(component))
+            pass
+        else:
+            heat_vars.append(str(component))
+
+
+    # epsilon_mass_advection = abs(net) / sum (abs ( advection_per_surface ))
+    eps_mass = np.abs( dV_dt + advection_terms['net_mass_advection']) / np.sum(np.abs([advection_terms[mass] for mass in mass_vars]))
 
     fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
+    ax.plot(advection_terms['time'], eps_mass)
 
+    locator = mdates.AutoDateLocator()
+    formatter = mdates.ConciseDateFormatter(locator)
+
+    ax.xaxis.set_major_locator(locator)
+    ax.xaxis.set_major_formatter(formatter)
+
+    ax.set_xlabel("Time")
+    ax.set_ylabel("relative error")
+    ax.set_title(r'$|\delta M|/ \sum_{faces} |U\cdot A|$')
+    plt.savefig(plot_dir + '/fig2.1_epsilon_mass_timeseries.png', dpi=300)
+    plt.close()
+
+
+    mass_vars = []
+    heat_vars = []
+    # Plot each component of advection terms
+    for component in advection_terms.data_vars:
+        if "mass" in str(component) and not "net" in str(component):
+            mass_vars.append(str(component))
+        elif "heat" in str(component) and not "net" in str(component):
+            heat_vars.append(str(component))
+        else:
+            pass
+    
+    fig,ax = plt.subplots(figsize=(10, 6), tight_layout=True, nrows=2, sharex=True)
+    for var in mass_vars:
+        ax[0].plot(advection_terms['time'], advection_terms[var] * mean_norm_factor * time_rate_conversion, label=var)
+
+        cum_adv = np.cumsum(advection_terms[var].values * dt) * mean_norm_factor
+        ax[1].plot(advection_terms['time'], cum_adv, label=var)
+
+    locator = mdates.AutoDateLocator()
+    formatter = mdates.ConciseDateFormatter(locator)
+
+    ax[1].xaxis.set_major_locator(locator)
+    ax[1].xaxis.set_major_formatter(formatter)
+
+    ax[1].set_xlabel("Time")
+    ax[0].set_ylabel("Mass Advection Terms (normalized) [1/hr]")
+    ax[1].set_ylabel(r"Cumulative Mass Advection / $\bar V$(t) [unitless]")
+
+    ax[0].set_title("Mass Advection Terms Time Series")
+    ax[0].legend(fontsize=10)
+    plt.savefig(plot_dir + '/fig2.2_mass_advection_terms_timeseries.png', dpi=300)
+    plt.close()
+    
+    
+
+
+def fig3_advection_components_timeseries(advection_terms: xr.Dataset, dV_dt: xr.DataArray, delta_heat: xr.DataArray, domain_volume:xr.DataArray, plot_dir: str):
+
+    norm_factor = 1 / domain_volume
+    time_rate_conversion = 3600 # convert from per second to per hour
+
+    # delta_mass = dV_dt + advection_terms['net_mass_advection']
+
+
+    fig, ax = plt.subplots(figsize=(10, 10), nrows=2, tight_layout=True, sharex=True)
+
+    mass_vars = []
+    heat_vars = []
     # Plot each component of advection terms
     for component in advection_terms.data_vars:
         if "mass" in str(component) or "net" in str(component):
+            mass_vars.append(str(component))
             pass
         else:
-            ax.plot(advection_terms['time'], advection_terms[component], label=component)
+            heat_vars.append(str(component))
+            ax[0].plot(advection_terms['time'], advection_terms[component] * norm_factor * time_rate_conversion, label=component)
 
-    ax.plot(advection_terms['time'], advection_terms['net_heat_advection'], label='Net Heat Advection', linewidth=2, color='k')
+    ax[0].plot(advection_terms['time'], advection_terms['net_heat_advection'] * norm_factor * time_rate_conversion, label='Net Heat Advection', linewidth=2, color='k')
 
-    ax.legend(fontsize=10)
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Advection Terms")
-    plt.savefig(plot_dir + '/fig2_advection_components_timeseries.png', dpi=300)
-    plt.close()
+    ax[0].set_ylabel("[K / hr]")
+    ax[0].set_title("Advection Components Time Series")
 
-def fig3_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: xr.DataArray, plot_dir: str):
+    ax[1].plot(advection_terms['time'], advection_terms['net_heat_advection'] * norm_factor * time_rate_conversion, label='Net Heat Advection', linewidth=2, color='k')
+    ax[1].plot(advection_terms['time'], delta_heat * norm_factor * time_rate_conversion, label='Expected Residual', linewidth=1, color='red')
 
-    fig, ax = plt.subplots(figsize=(10, 6), nrows=2, tight_layout=True)
+    ax[1].set_title(r"Net Heat Advection and $\delta M T_{scale}$ Time Series")
+    ax[1].set_ylabel('[K / hr]')
 
-    # Plot net mass advection and dV/dt
-    ax[0].plot(advection_terms['time'], advection_terms['net_mass_advection'], label='Net Mass Advection')
-    ax[0].plot(dV_dt['time'], dV_dt, label='dV/dt')
+    locator = mdates.AutoDateLocator()
+    formatter = mdates.ConciseDateFormatter(locator)
 
-    # Plot residual (sum of net mass advection and dV/dt)
-    residual = advection_terms['net_mass_advection'] + dV_dt
-    ax[0].plot(residual['time'], residual, label='Residual')
+    ax[1].xaxis.set_major_locator(locator)
+    ax[1].xaxis.set_major_formatter(formatter)
 
-    ax[0].legend()
-    ax[0].set_xlabel("Time")
-    ax[0].set_ylabel("Mass Terms")
-
-    # Plot residual alone in second panel
-    ax[1].plot(residual['time'], advection_terms['abs_mass_advection_residual_fraction'])
-    ax[1].axhline(0, linestyle='--', color='k')
+    ax[0].legend(fontsize=10)
+    ax[1].legend(fontsize=10)
     ax[1].set_xlabel("Time")
-    ax[1].set_ylabel("Absolute Residual Fraction")
-    plt.savefig(plot_dir + '/fig3_mass_advection_residual_timeseries.png', dpi=300)
+    plt.savefig(plot_dir + '/fig3_advection_components_timeseries.png', dpi=300)
     plt.close()
+
+
+    # # epsilon_heat_advection = abs(net) / sum (abs ( advection_per_surface ))
+    # eps_heat = np.abs(advection_terms['net_heat_advection']) / np.sum(np.abs([advection_terms[heat] for heat in heat_vars]))
+    
+    # fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
+    # ax.plot(advection_terms['time'], eps_heat)
+
+    # locator = mdates.AutoDateLocator()
+    # formatter = mdates.ConciseDateFormatter(locator)
+
+    # ax.xaxis.set_major_locator(locator)
+    # ax.xaxis.set_major_formatter(formatter)
+
+    # ax.set_xlabel("Time")
+    # ax.set_ylabel("relative error")
+    # ax.set_title("Epsilon Heat Advection")
+    # plt.savefig(plot_dir + '/fig3.1_epsilon_heat_advection_timeseries.png', dpi=300)
+    # plt.close()
+
+    
+
+
+
