@@ -62,10 +62,10 @@ if __name__ == "__main__":
     # testing to see if a constant temperature field, yields a net heat advection error comparable to the estimated advection error from mass continuity (delta_mass * T_scale)
 
     ds_domain_test = ds_domain.copy(deep=True)
-    ds_domain_test['T'] = result.T_scale
+    ds_domain_test['T'] = xr.full_like(ds_domain['T'], result.T_scale)
 
     ds_halo_test = ds_halo.copy(deep=True)
-    ds_halo_test['T'] = result.T_scale
+    ds_halo_test['T'] = xr.full_like(ds_halo['T'], result.T_scale)
 
     result_test = budget.calculate_budget(ds_domain_test, ds_halo_test, DomainSpecs, integral_diagnostics_flag=True, plot_dir=config.DEFAULT_PLOTS_OUTPUT+'_2', plot_flag=True)
 

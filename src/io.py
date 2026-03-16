@@ -84,18 +84,6 @@ def load_era5_sp(filepath: str) -> xr.Dataset:
 
 #     return ds_zg  #[m]
 
-def load_era5_surface_u(filepath: str) -> xr.Dataset:
-    ds_u = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_3D1)
-    ds_u = ds_u.rename({'latitude': 'lat', 'longitude': 'lon'})
-
-    return ds_u #[m/s]
-
-def load_era5_surface_T(filepath: str) -> xr.Dataset:
-    ds_T = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_3D1)
-    ds_T = ds_T.rename({'latitude': 'lat', 'longitude': 'lon'})
-
-    return ds_T #[K]
-
 
 def load_era5_merge_dataset(ds_T, ds_u, ds_v, ds_w, ds_sp) -> xr.Dataset:
     # Merge all datasets into a single dataset
