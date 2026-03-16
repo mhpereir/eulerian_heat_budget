@@ -84,22 +84,34 @@ def load_era5_sp(filepath: str) -> xr.Dataset:
 
 #     return ds_zg  #[m]
 
-def load_era5_surface_u(filepath: str) -> xr.Dataset:
-    ds_u = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_3D1)
+def load_era5_surface_u(filepath: str) -> xr.Dataset: # u10, v10
+    ds_u = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_2D1)
     ds_u = ds_u.rename({'latitude': 'lat', 'longitude': 'lon'})
 
-    return ds_u #[m/s]
+    return ds_u #[m/s] 
 
-def load_era5_surface_T(filepath: str) -> xr.Dataset:
-    ds_T = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_3D1)
+def load_era5_surface_T(filepath: str) -> xr.Dataset: #t2m
+    ds_T = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_2D1)
     ds_T = ds_T.rename({'latitude': 'lat', 'longitude': 'lon'})
+
+    #check units are in Kelvin
+    if 'units' in ds_T['t2m'].attrs:
+        if ds_T['t2m'].attrs['units'] in ['K', 'kelvin', 'Kelvin']:
+            pass  # already in Kelvin
+        elif ds_T['t2m'].attrs['units'] in ['C', 'celsius', 'Celsius']:
+            ds_T['t2m'] = ds_T['t2m'] + 273.15  # convert to Kelvin
+            ds_T['t2m'].attrs['units'] = 'K'
+        else:
+            raise ValueError(f"Unexpected temperature units: {ds_T['t2m'].attrs['units']}")
+    else:
+        raise ValueError("Temperature variable 't2m' must have 'units' attribute.")
 
     return ds_T #[K]
 
 
-def load_era5_merge_dataset(ds_T, ds_u, ds_v, ds_w, ds_sp) -> xr.Dataset:
+def load_era5_merge_dataset(ds_T, ds_u, ds_v, ds_w, ds_sp, ds_sT, ds_su, ds_sv) -> xr.Dataset:
     # Merge all datasets into a single dataset
-    merged = xr.merge([ds_T, ds_u, ds_v, ds_w, ds_sp], 
+    merged = xr.merge([ds_T, ds_u, ds_v, ds_w, ds_sp, ds_sT, ds_su, ds_sv], 
                       compat='identical') 
 
     #Ensure dimensions are in correct order
