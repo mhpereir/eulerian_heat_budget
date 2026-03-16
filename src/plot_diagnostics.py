@@ -58,18 +58,20 @@ def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_
 
 def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: xr.DataArray, domain_volume: xr.DataArray, plot_dir: str):
 
+    
     norm_factor          = 1/ domain_volume
     mean_norm_factor     = 1/np.nanmean(domain_volume)
     time_rate_conversion = 3600
 
     fig, ax = plt.subplots(figsize=(10, 10), nrows=2, tight_layout=True, sharex=True)
 
-    residual = advection_terms['net_mass_advection'] + dV_dt
-    ax[0].plot(residual['time'], residual * mean_norm_factor * time_rate_conversion, label=r'$\delta M$', color='k', alpha=0.8)
+    delta_mass = dV_dt + advection_terms['net_mass_advection']
 
-    ax[0].plot(residual['time'], advection_terms['net_mass_advection']* mean_norm_factor * time_rate_conversion, 
+    ax[0].plot(delta_mass['time'], delta_mass * mean_norm_factor * time_rate_conversion, label=r'$\delta M$', color='k', alpha=0.8)
+
+    ax[0].plot(delta_mass['time'], advection_terms['net_mass_advection']* mean_norm_factor * time_rate_conversion, 
                label='Net Mass Advection', alpha=0.5, color='C0')
-    ax[0].plot(residual['time'], dV_dt * mean_norm_factor * time_rate_conversion, 
+    ax[0].plot(delta_mass['time'], dV_dt * mean_norm_factor * time_rate_conversion, 
                label='dV/dt', alpha=0.5, color='C1')
 
     ax[0].legend()
@@ -85,7 +87,7 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
         raise ValueError("Time coordinate is not in datetime format.")
 
     dt = (advection_terms['time'][1] - advection_terms['time'][0]).values.astype(float) / 1e9 # convert to seconds
-    cumulative_residual = np.cumsum( residual * dt)
+    cumulative_residual = np.cumsum( delta_mass * dt)
     cumulative_net_adv  = np.cumsum(advection_terms['net_mass_advection'] * dt)
     cumulative_dvdt     = np.cumsum(dV_dt * dt)
 
@@ -118,7 +120,7 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
 
 
     # epsilon_mass_advection = abs(net) / sum (abs ( advection_per_surface ))
-    eps_mass = np.abs( dV_dt + advection_terms['net_mass_advection']) / np.sum(np.abs([advection_terms[mass] for mass in mass_vars]))
+    eps_mass = np.abs( delta_mass) / np.sum(np.abs([advection_terms[mass] for mass in mass_vars]))
 
     fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
     ax.plot(advection_terms['time'], eps_mass)
@@ -140,32 +142,78 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
     heat_vars = []
     # Plot each component of advection terms
     for component in advection_terms.data_vars:
-        if "mass" in str(component) and not "net" in str(component):
+        if "mass" in str(component) and not "net" in str(component) and not "abs" in str(component):
             mass_vars.append(str(component))
-        elif "heat" in str(component) and not "net" in str(component):
+        elif "heat" in str(component) and not "net" in str(component) and not "abs" in str(component):
             heat_vars.append(str(component))
         else:
             pass
     
-    fig,ax = plt.subplots(figsize=(10, 6), tight_layout=True, nrows=2, sharex=True)
-    for var in mass_vars:
-        ax[0].plot(advection_terms['time'], advection_terms[var] * mean_norm_factor * time_rate_conversion, label=var)
 
-        cum_adv = np.cumsum(advection_terms[var].values * dt) * mean_norm_factor
-        ax[1].plot(advection_terms['time'], cum_adv, label=var)
+    net_zonal_mass_advection = np.zeros_like(advection_terms['net_mass_advection'].values)
+    net_meridional_mass_advection = np.zeros_like(advection_terms['net_mass_advection'].values)
+    net_vertical_mass_advection   = np.zeros_like(advection_terms['net_mass_advection'].values)
+    
+
+    net_cum_zonal_mass_advection = np.zeros_like(advection_terms['net_mass_advection'].values)
+    net_cum_meridional_mass_advection = np.zeros_like(advection_terms['net_mass_advection'].values)
+    net_cum_vertical_mass_advection   = np.zeros_like(advection_terms['net_mass_advection'].values)
+    
+    
+    fig,ax = plt.subplots(figsize=(10, 10), tight_layout=True, nrows=3, sharex=True)
+
+    advection_terms_smoothed = advection_terms.rolling(time=24, center=True).mean()
+
+    for var in mass_vars:
+        ax[0].plot(advection_terms_smoothed['time'], advection_terms_smoothed[var] * mean_norm_factor * time_rate_conversion, label=var)
+
+
+        if var.split('_')[-1] in ['east', 'west']:
+            net_zonal_mass_advection += advection_terms_smoothed[var].values* mean_norm_factor * time_rate_conversion
+            net_cum_zonal_mass_advection += np.cumsum(advection_terms[var].values * dt) * mean_norm_factor
+        elif var.split('_')[-1] in ['north', 'south']:
+            net_meridional_mass_advection += advection_terms_smoothed[var].values* mean_norm_factor * time_rate_conversion
+            net_cum_meridional_mass_advection += np.cumsum(advection_terms[var].values * dt) * mean_norm_factor
+        elif var.split('_')[-1] in ['top', 'bottom']:
+            net_vertical_mass_advection += advection_terms_smoothed[var].values* mean_norm_factor * time_rate_conversion
+            net_cum_vertical_mass_advection += np.cumsum(advection_terms[var].values * dt) * mean_norm_factor
+
+    net_horizontal_mass_advection     = net_zonal_mass_advection + net_meridional_mass_advection
+    net_cum_horizontal_mass_advection = net_cum_zonal_mass_advection + net_cum_meridional_mass_advection
+
+    ax[1].plot(advection_terms_smoothed['time'], delta_mass * mean_norm_factor * time_rate_conversion, label=r'$\delta M$', color='k', linewidth=2)
+
+    # ax[1].plot(advection_terms_smoothed['time'], net_zonal_mass_advection, label='Zonal', linestyle='--')
+    # ax[1].plot(advection_terms_smoothed['time'], net_meridional_mass_advection, label='Meridional', linestyle='--')
+    ax[1].plot(advection_terms_smoothed['time'], net_horizontal_mass_advection, label='Horizontal')
+    ax[1].plot(advection_terms_smoothed['time'], net_vertical_mass_advection, label='Vertical')
+
+
+    ax[2].plot(advection_terms_smoothed['time'], cumulative_residual * mean_norm_factor, label='Cumulative Residual', color='k', linewidth=2)
+
+    ax[2].plot(advection_terms_smoothed['time'], net_cum_zonal_mass_advection, label='Zonal', linestyle='--')
+    ax[2].plot(advection_terms_smoothed['time'], net_cum_meridional_mass_advection, label='Meridional', linestyle='--')
+    ax[2].plot(advection_terms_smoothed['time'], net_cum_horizontal_mass_advection, label='Horizontal')
+    ax[2].plot(advection_terms_smoothed['time'], net_cum_vertical_mass_advection, label='Vertical')
+
+    ax[0].set_title('Mass Advection Terms (normalized)')
+    ax[1].set_title('Net Mass Advection (normalized)')
+    ax[2].set_title(r"Cumulative Mass Advection / $\bar V$(t)")
 
     locator = mdates.AutoDateLocator()
     formatter = mdates.ConciseDateFormatter(locator)
 
-    ax[1].xaxis.set_major_locator(locator)
-    ax[1].xaxis.set_major_formatter(formatter)
+    ax[2].xaxis.set_major_locator(locator)
+    ax[2].xaxis.set_major_formatter(formatter)
 
-    ax[1].set_xlabel("Time")
-    ax[0].set_ylabel("Mass Advection Terms (normalized) [1/hr]")
-    ax[1].set_ylabel(r"Cumulative Mass Advection / $\bar V$(t) [unitless]")
+    ax[2].set_xlabel("Time")
+    ax[0].set_ylabel("[1/hr]")
+    ax[1].set_ylabel("[1/hr]")
+    ax[2].set_ylabel("[unitless]")
 
-    ax[0].set_title("Mass Advection Terms Time Series")
     ax[0].legend(fontsize=10)
+    ax[1].legend(fontsize=10)
+    ax[2].legend(fontsize=10)
     plt.savefig(plot_dir + '/fig2.2_mass_advection_terms_timeseries.png', dpi=300)
     plt.close()
     

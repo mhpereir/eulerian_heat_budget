@@ -18,7 +18,7 @@ from .specs import DomainSpec
 
 
 
-def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: DomainSpec, integral_diagnostics_flag: bool, plot_dir: str) -> xr.Dataset:
+def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: DomainSpec, integral_diagnostics_flag: bool, plot_dir: str, plot_flag: bool) -> xr.Dataset:
     plot_diag_path = os.path.join(plot_dir, "diagnostics")
     os.makedirs(plot_diag_path, exist_ok=True)
 
@@ -49,8 +49,8 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
                                   ds_weights_volumes,
                                   DomainSpecs)
 
-    domain_volume   = terms.compute_domain_volume(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
-    dV_dt           = terms.compute_time_derivative(domain_volume)
+    domain_volume = terms.compute_domain_volume(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
+    dV_dt         = terms.compute_time_derivative(domain_volume)
 
     #extra terms:
     #average T over the domain for each time step
@@ -63,16 +63,17 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
 
     #estimate of uncertainty from mass continuity
     # T_scale         = np.sqrt(np.mean(ds_domain['T'].sel(time=dT_dt['time']).values-T_domain_avg.values[:,None,None,None])**2.)
-    T_scale = ds_domain['T'].std().values
+    T_scale = np.mean(T_domain_avg.values)
     print(T_scale)
 
     advection_error = (dV_dt + advection_terms['net_mass_advection']) * T_scale # mass * K
 
-    #plot diagnostics for advective integrals
-    plot_diagnostics.fig1_mass_continuity(dV_dt, advection_terms, plot_diag_path)
-    plot_diagnostics.fig2_mass_advection_residual_timeseries(advection_terms, dV_dt, domain_volume, plot_diag_path)
-    plot_diagnostics.fig3_advection_components_timeseries(advection_terms, dV_dt, advection_error, domain_volume, plot_diag_path)
-    
+    if plot_flag:
+        #plot diagnostics for advective integrals
+        plot_diagnostics.fig1_mass_continuity(dV_dt, advection_terms, plot_diag_path)
+        plot_diagnostics.fig2_mass_advection_residual_timeseries(advection_terms, dV_dt, domain_volume, plot_diag_path)
+        plot_diagnostics.fig3_advection_components_timeseries(advection_terms, dV_dt, advection_error, domain_volume, plot_diag_path)
+        
     adiabatic_term = terms.compute_adiabatic_term(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     #time crop adiabatic
     adiabatic_term = adiabatic_term.sel(time=dT_dt['time'])
@@ -83,7 +84,6 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
         advection_terms["net_heat_advection"],
         adiabatic_term,
     )
-
     
 
     domain_volume = domain_volume.sel(time=dT_dt['time']) 
@@ -97,6 +97,7 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
         'diabatic_term': diabatic_term,
         'T_domain_avg': T_domain_avg,
         'domain_volume': domain_volume,
+        'T_scale': T_scale,
     })
 
 

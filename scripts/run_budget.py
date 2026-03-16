@@ -4,7 +4,6 @@ PROJECT_ROOT = "/home/mhpereir/eulerian_heat_budget"
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-
 from src import config, cli, specs, io, validate, grid, budget
 
 from src import plot_results
@@ -43,6 +42,7 @@ if __name__ == "__main__":
     # Merge datasets on common coordinates and variables
     ds_merged = io.load_era5_merge_dataset(ds_T, ds_u, ds_v, ds_omega, ds_sp)
 
+    
     # Validate merged dataset against strict schema
     validate.validate_schema(ds_merged)
 
@@ -51,11 +51,24 @@ if __name__ == "__main__":
     
     print('Proceeding with', DomainSpecs)
 
-    result = budget.calculate_budget(ds_domain, ds_halo, DomainSpecs, integral_diagnostics_flag=True, plot_dir=config.DEFAULT_PLOTS_OUTPUT)
+    result = budget.calculate_budget(ds_domain, ds_halo, DomainSpecs, integral_diagnostics_flag=True, plot_dir=config.DEFAULT_PLOTS_OUTPUT, plot_flag=True)
+
 
     plot_results.plot_budget_terms_hourly(result, smoothing_window=1, plot_dir=config.DEFAULT_PLOTS_OUTPUT)
     plot_results.plot_budget_terms_hourly(result, smoothing_window=24, plot_dir=config.DEFAULT_PLOTS_OUTPUT)
     plot_results.plot_budget_terms_day_bin(result, plot_dir=config.DEFAULT_PLOTS_OUTPUT)
 
-    print(result)
 
+    # testing to see if a constant temperature field, yields a net heat advection error comparable to the estimated advection error from mass continuity (delta_mass * T_scale)
+
+    ds_domain_test = ds_domain.copy(deep=True)
+    ds_domain_test['T'] = result.T_scale
+
+    ds_halo_test = ds_halo.copy(deep=True)
+    ds_halo_test['T'] = result.T_scale
+
+    result_test = budget.calculate_budget(ds_domain_test, ds_halo_test, DomainSpecs, integral_diagnostics_flag=True, plot_dir=config.DEFAULT_PLOTS_OUTPUT+'_2', plot_flag=True)
+
+    plot_results.plot_constant_T_results(result, result_test, plot_dir=config.DEFAULT_PLOTS_OUTPUT+'_2')
+
+    print(result)

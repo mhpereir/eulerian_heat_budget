@@ -1,51 +1,118 @@
 Dataset schema validation passed.
-Proceeding with DomainSpec(lat_min=40.25, lat_max=59.75, lon_min=-129.75, lon_max=-110.25, zg_top_pressure=70000, zg_bottom='surface_pressure', zg_bottom_pressure=60000, allow_bottom_overflow=True)
+Proceeding with DomainSpec(lat_min=40.25, lat_max=59.75, lon_min=-129.75, lon_max=-110.25, zg_top_pressure=60000, zg_bottom='surface_pressure', zg_bottom_pressure=60000, allow_bottom_overflow=False)
 Residual from mass advection into domain through the surfaces: 
- MEAN=0.042121724568463366, MAX=0.36230101305998563 of time series.
+ MEAN=0.027464234281670552, MAX=0.21328118043855793 of time series.
+14.603600516980075
 Time coordinate is in datetime format.
-1.5679571189321392e-17
+1.0690353911302195e-17
 yes <xarray.DataArray ()> Size: 8B
-array(0.00337893)
-Attributes: (12/19)
+array(0.00563886)
+Attributes: (12/18)
     horizontal_coord_type:            cell_center_with_bounds
     vertical_coord_type:              level_center_with_bounds
     longitude_closure:                open_domain
-    zg_top_pressure_pa:               70000.0
+    zg_top_pressure_pa:               60000.0
     zg_bottom_pressure_pa:            None
     zg_bottom_mode:                   surface_pressure
     ...                               ...
+    fixed_coord:                      lat
     orientation:                      zonal
     face:                             top
-    face_pressure_pa:                 70000.0
+    face_pressure_pa:                 60000.0
     bottom_boundary_mode:             surface_pressure
-    standard_name:                    surface_air_pressure
     description:                      0=layer fully below ground; 1=layer ful...
 yes <xarray.DataArray ()> Size: 8B
-array(0.00337893)
-Attributes: (12/19)
+array(0.00563886)
+Attributes: (12/18)
     horizontal_coord_type:            cell_center_with_bounds
     vertical_coord_type:              level_center_with_bounds
     longitude_closure:                open_domain
-    zg_top_pressure_pa:               70000.0
+    zg_top_pressure_pa:               60000.0
     zg_bottom_pressure_pa:            None
     zg_bottom_mode:                   surface_pressure
     ...                               ...
+    fixed_coord:                      lat
     orientation:                      zonal
     face:                             top
-    face_pressure_pa:                 70000.0
+    face_pressure_pa:                 60000.0
     bottom_boundary_mode:             surface_pressure
-    standard_name:                    surface_air_pressure
+    description:                      0=layer fully below ground; 1=layer ful...
+1.0690032650958775e-17
+yes <xarray.DataArray ()> Size: 8B
+array(0.00207615)
+Attributes: (12/18)
+    horizontal_coord_type:            cell_center_with_bounds
+    vertical_coord_type:              level_center_with_bounds
+    longitude_closure:                open_domain
+    zg_top_pressure_pa:               60000.0
+    zg_bottom_pressure_pa:            None
+    zg_bottom_mode:                   surface_pressure
+    ...                               ...
+    fixed_coord:                      lat
+    orientation:                      zonal
+    face:                             top
+    face_pressure_pa:                 60000.0
+    bottom_boundary_mode:             surface_pressure
+    description:                      0=layer fully below ground; 1=layer ful...
+yes <xarray.DataArray ()> Size: 8B
+array(0.00207615)
+Attributes: (12/18)
+    horizontal_coord_type:            cell_center_with_bounds
+    vertical_coord_type:              level_center_with_bounds
+    longitude_closure:                open_domain
+    zg_top_pressure_pa:               60000.0
+    zg_bottom_pressure_pa:            None
+    zg_bottom_mode:                   surface_pressure
+    ...                               ...
+    fixed_coord:                      lat
+    orientation:                      zonal
+    face:                             top
+    face_pressure_pa:                 60000.0
+    bottom_boundary_mode:             surface_pressure
+    description:                      0=layer fully below ground; 1=layer ful...
+1.0690326299895374e-17
+yes <xarray.DataArray ()> Size: 8B
+array(0.05004357)
+Attributes: (12/18)
+    horizontal_coord_type:            cell_center_with_bounds
+    vertical_coord_type:              level_center_with_bounds
+    longitude_closure:                open_domain
+    zg_top_pressure_pa:               60000.0
+    zg_bottom_pressure_pa:            None
+    zg_bottom_mode:                   surface_pressure
+    ...                               ...
+    fixed_coord:                      lat
+    orientation:                      zonal
+    face:                             top
+    face_pressure_pa:                 60000.0
+    bottom_boundary_mode:             surface_pressure
+    description:                      0=layer fully below ground; 1=layer ful...
+yes <xarray.DataArray ()> Size: 8B
+array(0.05004357)
+Attributes: (12/18)
+    horizontal_coord_type:            cell_center_with_bounds
+    vertical_coord_type:              level_center_with_bounds
+    longitude_closure:                open_domain
+    zg_top_pressure_pa:               60000.0
+    zg_bottom_pressure_pa:            None
+    zg_bottom_mode:                   surface_pressure
+    ...                               ...
+    fixed_coord:                      lat
+    orientation:                      zonal
+    face:                             top
+    face_pressure_pa:                 60000.0
+    bottom_boundary_mode:             surface_pressure
     description:                      0=layer fully below ground; 1=layer ful...
 <xarray.Dataset> Size: 159kB
 Dimensions:          (time: 2206)
 Coordinates:
   * time             (time) datetime64[ns] 18kB 1941-06-01T01:00:00 ... 1941-...
 Data variables:
-    dT_dt            (time) float64 18kB 1.051e+12 -1.551e+12 ... -9.017e+12
-    dV_dt            (time) float64 18kB 8.627e+09 3.359e+09 ... -3.011e+10
-    advection_term   (time) float64 18kB -5.186e+12 -1.4e+11 ... -7.657e+12
-    advection_error  (time) float64 18kB -1.376e+11 9.616e+10 ... -9.83e+11
-    adiabatic_term   (time) float64 18kB -2.792e+12 -2.938e+12 ... -1.8e+12
-    diabatic_term    (time) float64 18kB -1.343e+12 1.248e+12 ... -1.487e+13
-    T_domain_avg     (time) float64 18kB 278.5 278.4 278.3 ... 280.1 280.3 280.1
-    domain_volume    (time) float64 18kB 6.363e+16 6.363e+16 ... 6.254e+16
+    dT_dt            (time) float64 18kB 1.081e+12 -1.876e+12 ... -8.637e+12
+    dV_dt            (time) float64 18kB 8.109e+09 3.058e+09 ... -2.904e+10
+    advection_term   (time) float64 18kB -5.723e+12 -7.709e+11 ... -7.81e+12
+    advection_error  (time) float64 18kB -8.968e+10 9.53e+10 ... -7.496e+11
+    adiabatic_term   (time) float64 18kB -4.65e+12 -4.795e+12 ... -2.859e+12
+    diabatic_term    (time) float64 18kB 7.516e+09 2.148e+12 ... -1.359e+13
+    T_domain_avg     (time) float64 18kB 275.0 274.9 274.8 ... 276.4 276.7 276.5
+    domain_volume    (time) float64 18kB 9.344e+16 9.343e+16 ... 9.253e+16

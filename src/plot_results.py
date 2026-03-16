@@ -109,8 +109,6 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
     norm_factor            = 1 / domain_volume
     time_conversion_factor = 3600
 
-    print(np.nanmean(norm_factor))
-
     dT_dt = ds_budget["dT_dt"] * norm_factor * time_conversion_factor  # convert to K/s by dividing by volume and multiplying by T scale (using domain average T as scale)
 
     dT_dt_2 = (term_signs["advection_term"] * ds_budget["advection_term"] + \
@@ -168,7 +166,6 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
                 alpha=0.2,
                 linewidth=0,
             )
-            print('yes', np.mean(error))
 
         lines.append(line[0])
 
@@ -246,8 +243,6 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     norm_factor            = 1 / domain_volume
     time_conversion_factor = 3600
 
-    print(np.nanmean(norm_factor))
-
     dT_dt = ds_budget["dT_dt"] * norm_factor * time_conversion_factor  # convert to K/s by dividing by volume and multiplying by T scale (using domain average T as scale)
 
     dT_dt_2 = (term_signs["advection_term"] * ds_budget["advection_term"] + \
@@ -309,7 +304,6 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
                 linewidth=0,
                 step="post"
             )
-            print('yes', np.mean(error))
 
         lines.append(line[0])
 
@@ -344,4 +338,20 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
 
     out_path = os.path.join(plot_dir, "budget_terms_timeseries_daily.png")
     plt.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+
+
+
+def plot_constant_T_results(ds_budget: xr.Dataset, ds_test:xr.Dataset, plot_dir: str) -> None:
+    # comparison plot between original budget "uncertainty in advection" and test budget net heat advection
+
+    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
+
+    ax.plot(ds_budget["time"], ds_budget["advection_error"], label="Advection Error Estimate", color='C0')
+    ax.plot(ds_test["time"], ds_test["advection_term"], label="Net Heat Advection (Constant T)", color='C1')
+
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Advection (K/s)")
+
+    plt.savefig(os.path.join(plot_dir, "constant_T_advection_comparison.png"), bbox_inches="tight")
     plt.close(fig)

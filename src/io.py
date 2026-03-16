@@ -16,11 +16,30 @@ Contract requirement: `io.py` is where any renaming between external conventions
 import xarray as xr
 import numpy as np
 
+from collections.abc import Mapping
+
 from . import config
+
+n_time:int = 24
+n_lat :int = 32
+n_lon :int = 32
+
+DEFAULT_CHUNKS_3D1 = {
+    "time": n_time,      # 1 day per chunk
+    "level": -1,     # keep full vertical column together
+    "latitude": n_lat,
+    "longitude": n_lon,
+}
+
+DEFAULT_CHUNKS_2D1 = {
+    "time": n_time,
+    "latitude": n_lat,
+    "longitude": n_lon,
+}
 
 
 def load_era5_T(filepath: str) -> xr.Dataset:
-    ds_T = xr.open_dataset(filepath)
+    ds_T = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_3D1)
     ds_T = ds_T.rename({'latitude': 'lat', 'longitude': 'lon'}) 
     ds_T = ds_T.rename({'t': 'T'})  # rename temperature variable to 'T' for consistency
 
@@ -39,19 +58,19 @@ def load_era5_T(filepath: str) -> xr.Dataset:
     return ds_T
 
 def load_era5_u(filepath: str) -> xr.Dataset:
-    ds_u = xr.open_dataset(filepath)
+    ds_u = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_3D1)
     ds_u = ds_u.rename({'latitude': 'lat', 'longitude': 'lon'})
 
     return ds_u #[m/s]
 
 def load_era5_omega(filepath: str) -> xr.Dataset:
-    ds_omega = xr.open_dataset(filepath)
+    ds_omega = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_3D1)
     ds_omega = ds_omega.rename({'latitude': 'lat', 'longitude': 'lon'})
 
     return ds_omega #[Pa/s]
 
 def load_era5_sp(filepath: str) -> xr.Dataset:
-    ds_sp = xr.open_dataset(filepath)
+    ds_sp = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_2D1)
     ds_sp = ds_sp.rename({'latitude': 'lat', 'longitude': 'lon'})
 
     return ds_sp #[Pa]
@@ -64,6 +83,18 @@ def load_era5_sp(filepath: str) -> xr.Dataset:
 #     ds_zg = ds_zg.rename({'z': 'zg'})  # rename variable to 'zg' for consistency
 
 #     return ds_zg  #[m]
+
+def load_era5_surface_u(filepath: str) -> xr.Dataset:
+    ds_u = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_3D1)
+    ds_u = ds_u.rename({'latitude': 'lat', 'longitude': 'lon'})
+
+    return ds_u #[m/s]
+
+def load_era5_surface_T(filepath: str) -> xr.Dataset:
+    ds_T = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_3D1)
+    ds_T = ds_T.rename({'latitude': 'lat', 'longitude': 'lon'})
+
+    return ds_T #[K]
 
 
 def load_era5_merge_dataset(ds_T, ds_u, ds_v, ds_w, ds_sp) -> xr.Dataset:
@@ -90,3 +121,5 @@ def load_era5_merge_dataset(ds_T, ds_u, ds_v, ds_w, ds_sp) -> xr.Dataset:
     merged['level'].attrs['units'] = 'Pa'  # ensure pressure levels are in Pa
 
     return merged
+
+
