@@ -11,7 +11,11 @@ Defines:
 Contains minimal/no runtime logic.
 """
 
+from pathlib import Path
+
+
 path_data = "/home/mhpereir/downloads-mhpereir/ERA5_zg_PNW"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # constants
 g: float        = 9.806e0 #[m/s2] gravitational acceleration constant
@@ -30,9 +34,13 @@ DEFAULT_ZG_BOT_MODE = "surface_pressure" #"pressure_level" # or "surface_pressur
 # else False if "pressure_level"
 DEFAULT_ALLOW_BOTTOM_OVERFLOW = False # allow bottom layer weights to exceed 1 if surface pressure exceeds grid bottom pressure (accounts for ps below grid bottom)
 
+DEFAULT_USE_SURFACE_VARIABLES:bool = False # if True, include surface variables (T2m, u10, v10) in budget calculations; else use lowest model level variables
+DEFAULT_SURFACE_VARIABLE_MODE = 'combined' # 'none', 'combined', or 'diagnostic_only'; only relevant if DEFAULT_USE_SURFACE_VARIABLES is True
+
+
 # pressure levels for geopotential height domain boundaries (in Pa)
 # zg_bottom_pressure only used if zg_bottom == "pressure_level"; else surface pressure determines bottom boundary
 DEFAULT_ZG_BOT_PA: float = 600 * 100 # lower boundary pressure for geopotential height budget in Pa
 DEFAULT_ZG_TOP_PA: float = 600 * 100 # upper boundary pressure for geopotential height budget in Pa
 
-DEFAULT_PLOTS_OUTPUT:str = "/home/mhpereir/eulerian_heat_budget/results/plots"
+DEFAULT_PLOTS_OUTPUT:str = str(PROJECT_ROOT / "results" / "plots")

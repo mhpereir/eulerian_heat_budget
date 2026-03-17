@@ -14,11 +14,19 @@ import numpy as np
 from . import grid, weights, terms
 from . import plot_diagnostics
 
-from .specs import DomainSpec
+from .specs import DomainSpec, SurfaceBehaviour
 
 
 
-def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: DomainSpec, integral_diagnostics_flag: bool, plot_dir: str, plot_flag: bool) -> xr.Dataset:
+def calculate_budget(
+    ds_domain: xr.Dataset,
+    ds_halo: xr.Dataset,
+    DomainSpecs: DomainSpec,
+    SurfaceSpecs: SurfaceBehaviour,
+    integral_diagnostics_flag: bool,
+    plot_dir: str,
+    plot_flag: bool,
+) -> xr.Dataset:
     plot_diag_path = os.path.join(plot_dir, "diagnostics")
     os.makedirs(plot_diag_path, exist_ok=True)
 
@@ -32,17 +40,30 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     ds_cell_volumes = grid.get_cell_volumes(ds_domain).astype("float64")
 
     ds_weights_horizontal = weights.area_weights_horizontal(ds_domain, DomainSpecs)
-    ds_weights_vertical   = weights.area_weights_vertical(ds_domain, DomainSpecs)
-    ds_weights_volumes    = weights.volume_weights(ds_domain, DomainSpecs)
+    ds_weights_vertical   = weights.area_weights_vertical(ds_domain, DomainSpecs, SurfaceSpecs)
+    ds_weights_volumes    = weights.volume_weights(ds_domain, DomainSpecs, SurfaceSpecs)
 
     ds_weights_areas = xr.merge([ds_weights_horizontal, ds_weights_vertical])
 
-    # pre-compute differential terms for advective, and adiabatic components
-    # advective term needs du/dx, dv/dy, dw/dp @ each wall (east, west, north, south, top, bottom)
-    # adiabatic term needs dT/dp at cell centers 
-    # these can be computed using finite differences and stored as new variables in the dataset for use in the budget calculations
 
-    
+    if SurfaceSpecs is not None and SurfaceSpecs.use_surface_variables: #condition for whether to use surface variables or lowest model level variables in budget calculations; if True, ds_domain should contain surface variables T2m, u10, v10 and the budget calculations will use those; if False, it will use the lowest model level variables as before
+        print("Using surface variables in budget calculations")
+
+        
+
+        #call function that re-assigns T, u, v in ds_domain to be a weighted combination of surface variable and lowest model level variables; this way the rest of the budget code can remain unchanged and just use ds_domain['T'], ds_domain['u'], ds_domain['v'] as before, but now they will refer to surface variables if DomainSpec.in_surface_variables is True
+
+        # ds_halo   = adjust_surface_variables(ds_halo, DomainSpecs)
+        # ds_domain = adjust_surface_variables(ds_domain, DomainSpecs)
+
+        pass
+
+
+    else:
+        print("Using lowest model level variables in budget calculations")
+        pass
+
+
 
     dT_dt = terms.compute_storage(ds_domain['T'],
                                   ds_cell_volumes,
@@ -64,7 +85,6 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     #estimate of uncertainty from mass continuity
     # T_scale         = np.sqrt(np.mean(ds_domain['T'].sel(time=dT_dt['time']).values-T_domain_avg.values[:,None,None,None])**2.)
     T_scale = np.mean(T_domain_avg.values)
-    print(T_scale)
 
     advection_error = (dV_dt + advection_terms['net_mass_advection']) * T_scale # mass * K
 

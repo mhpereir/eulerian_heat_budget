@@ -1,6 +1,6 @@
 import sys
 
-PROJECT_ROOT = "/home/mhpereir/eulerian_heat_budget"
+PROJECT_ROOT = "/home/mhpereir/eulerian_heat_budget_surface"
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -48,6 +48,7 @@ def _make_request(*,
         zg_bottom="pressure_level",
         zg_bottom_pressure=1000*100,
         allow_bottom_overflow=True,
+        in_surface_variables=False,
     )
 
 

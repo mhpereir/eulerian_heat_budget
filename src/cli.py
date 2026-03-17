@@ -90,9 +90,32 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Clip bottom-layer contribution instead of allowing overflow.",
     )
 
+
+    surface_var_group = parser.add_mutually_exclusive_group()
+    surface_var_group.add_argument(
+        "--use-surface-variables",
+        dest="in_surface_variables",
+        action="store_true",
+        default=None,
+        help="Include surface variables (T2m, u10, v10) in budget calculations instead of lowest model level variables.",
+    )
+    surface_var_group.add_argument(
+        "--no-use-surface-variables",
+        dest="in_surface_variables",
+        action="store_false",
+        help="Use lowest model level variables in budget calculations instead of surface variables.",
+    )
+
+    parser.add_argument(
+        "--surface-variable-mode",
+        dest="surface_variable_mode",
+        choices=("none", "combined", "diagnostic_only"),
+        default=None,
+        help="How surface variables should be handled when they are enabled.",
+    )
+
     return parser
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """Parse CLI args and return a Namespace for build_request_from_cli."""
     return build_arg_parser().parse_args(argv)
-

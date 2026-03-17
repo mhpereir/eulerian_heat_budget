@@ -1,6 +1,6 @@
 import sys
 
-PROJECT_ROOT = "/home/mhpereir/eulerian_heat_budget"
+PROJECT_ROOT = "/home/mhpereir/eulerian_heat_budget_surface"
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -90,6 +90,7 @@ def _build_geometry_and_weights(ds_full):
         zg_bottom="pressure_level",
         zg_bottom_pressure=1000e2,
         allow_bottom_overflow=False,
+        in_surface_variables=False,
     )
 
     ds_domain, ds_halo, spec = determine_domain(ds_full, req)
@@ -128,6 +129,7 @@ def _build_geometry_and_weights_surface(ds_full):
         zg_bottom="surface_pressure",
         zg_bottom_pressure=1000e2,
         allow_bottom_overflow=False,
+        in_surface_variables=False,
     )
 
     ds_domain, ds_halo, spec = determine_domain(ds_full, req)
