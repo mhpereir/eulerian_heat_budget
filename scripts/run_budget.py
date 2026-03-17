@@ -71,4 +71,6 @@ if __name__ == "__main__":
 
     plot_results.plot_constant_T_results(result, result_test, plot_dir=config.DEFAULT_PLOTS_OUTPUT+'_2')
 
+    plot_results.plot_budget_terms_day_bin(result_test, plot_dir=config.DEFAULT_PLOTS_OUTPUT+'_2')
+
     print(result)

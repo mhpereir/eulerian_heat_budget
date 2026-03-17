@@ -1,0 +1,57 @@
+[info] 2026-03-17T13:15:51-07:00 starting eulerian heat budget calculation on host venus03
+/home/mhpereir/eulerian_heat_budget/src/plot_diagnostics.py:44: RuntimeWarning: Mean of empty slice
+  xb = np.array([np.nanmean(x[bin_id==i]) for i in range(nbin)])
+/home/mhpereir/eulerian_heat_budget/src/plot_diagnostics.py:45: RuntimeWarning: Mean of empty slice
+  rb = np.array([np.nanmean(r[bin_id==i]) for i in range(nbin)])
+/home/mhpereir/eulerian_heat_budget/src/plot_diagnostics.py:44: RuntimeWarning: Mean of empty slice
+  xb = np.array([np.nanmean(x[bin_id==i]) for i in range(nbin)])
+/home/mhpereir/eulerian_heat_budget/src/plot_diagnostics.py:45: RuntimeWarning: Mean of empty slice
+  rb = np.array([np.nanmean(r[bin_id==i]) for i in range(nbin)])
+Dataset schema validation passed.
+Proceeding with DomainSpec(lat_min=40.25, lat_max=59.75, lon_min=-129.75, lon_max=-110.25, zg_top_pressure=30000, zg_bottom='pressure_level', zg_bottom_pressure=60000, allow_bottom_overflow=False)
+Residual from mass advection into domain through the surfaces: 
+ MEAN=0.001419310667430335, MAX=0.00741818009517041 of time series.
+252.23247739861924
+Time coordinate is in datetime format.
+Residual from mass advection into domain through the surfaces: 
+ MEAN=0.001419310667430335, MAX=0.00741818009517041 of time series.
+252.2324773986167
+Time coordinate is in datetime format.
+<xarray.Dataset> Size: 159kB
+Dimensions:          (time: 2206)
+Coordinates:
+  * time             (time) datetime64[ns] 18kB 1941-06-01T01:00:00 ... 1941-...
+Data variables:
+    dT_dt            (time) float64 18kB dask.array<chunksize=(23,), meta=np.ndarray>
+    dV_dt            (time) float64 18kB dask.array<chunksize=(23,), meta=np.ndarray>
+    advection_term   (time) float64 18kB dask.array<chunksize=(24,), meta=np.ndarray>
+    advection_error  (time) float64 18kB dask.array<chunksize=(23,), meta=np.ndarray>
+    adiabatic_term   (time) float64 18kB dask.array<chunksize=(24,), meta=np.ndarray>
+    diabatic_term    (time) float64 18kB dask.array<chunksize=(23,), meta=np.ndarray>
+    T_domain_avg     (time) float64 18kB dask.array<chunksize=(24,), meta=np.ndarray>
+    domain_volume    (time) float64 18kB dask.array<chunksize=(24,), meta=np.ndarray>
+    T_scale          float64 8B 252.2
+	Command being timed: "python run_budget.py"
+	User time (seconds): 5294.85
+	System time (seconds): 777.46
+	Percent of CPU this job got: 201%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 50:17.20
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 2034544
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 945
+	Minor (reclaiming a frame) page faults: 33650187
+	Voluntary context switches: 38896303
+	Involuntary context switches: 21736
+	Swaps: 0
+	File system inputs: 5872888
+	File system outputs: 13664
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+[info] 2026-03-17T14:06:08-07:00 done

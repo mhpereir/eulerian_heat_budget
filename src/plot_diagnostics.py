@@ -86,7 +86,7 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
         print("Time coordinate is NOT in datetime format. Check your dataset.")
         raise ValueError("Time coordinate is not in datetime format.")
 
-    dt = (advection_terms['time'][1] - advection_terms['time'][0]).values.astype(float) / 1e9 # convert to seconds
+    dt = (advection_terms["time"][1] - advection_terms["time"][0]).values / np.timedelta64(1, 's') # convert to seconds
     cumulative_residual = np.cumsum( delta_mass * dt)
     cumulative_net_adv  = np.cumsum(advection_terms['net_mass_advection'] * dt)
     cumulative_dvdt     = np.cumsum(dV_dt * dt)
@@ -166,7 +166,6 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
 
     for var in mass_vars:
         ax[0].plot(advection_terms_smoothed['time'], advection_terms_smoothed[var] * mean_norm_factor * time_rate_conversion, label=var)
-
 
         if var.split('_')[-1] in ['east', 'west']:
             net_zonal_mass_advection += advection_terms_smoothed[var].values* mean_norm_factor * time_rate_conversion

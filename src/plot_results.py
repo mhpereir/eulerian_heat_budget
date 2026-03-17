@@ -345,13 +345,29 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
 def plot_constant_T_results(ds_budget: xr.Dataset, ds_test:xr.Dataset, plot_dir: str) -> None:
     # comparison plot between original budget "uncertainty in advection" and test budget net heat advection
 
-    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
+    norm_factor            = 1 / ds_budget["domain_volume"]
+    time_conversion_factor = 3600
 
-    ax.plot(ds_budget["time"], ds_budget["advection_error"], label="Advection Error Estimate", color='C0')
-    ax.plot(ds_test["time"], ds_test["advection_term"], label="Net Heat Advection (Constant T)", color='C1')
+    fig, ax = plt.subplots(figsize=(10, 10), tight_layout=True, nrows=2, sharex=True)
 
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Advection (K/s)")
+    ax[0].plot(ds_budget["time"], ds_budget["advection_error"] * norm_factor * time_conversion_factor, label=r"$\delta M T_{scale}$", color='red')
+    ax[0].plot(ds_test["time"], ds_test["advection_term"] * norm_factor * time_conversion_factor, label=r"$\mathcal{F}_{advection}$", color='k')
 
+    ax[0].legend(fontsize=10)
+
+    #integrated quantities
+    dt = (ds_budget["time"][1] - ds_budget["time"][0]).values / np.timedelta64(1, 's')  # time step in seconds
+    integrated_advection_error = (ds_budget["advection_error"] * norm_factor * dt).cumsum(dim="time")
+    integrated_net_heat_advection = (ds_test["advection_term"] * norm_factor * dt).cumsum(dim="time")
+
+    ax[1].plot(ds_budget["time"], integrated_advection_error, label=r"$T_{scale} \int \delta M dt$", color='red')
+    ax[1].plot(ds_test["time"], integrated_net_heat_advection, label=r"$\int \mathcal{F}_{advection} dt$", color='k')
+
+    ax[1].legend(fontsize=10)
+
+    ax[1].set_xlabel("Time")
+    ax[0].set_ylabel("Advection (K/hr)")
+    ax[1].set_ylabel("Integrated Advection (K)")
+    fig.suptitle("Comparison of Advection Error and Net Heat Advection (Constant T Test)")
     plt.savefig(os.path.join(plot_dir, "constant_T_advection_comparison.png"), bbox_inches="tight")
     plt.close(fig)
