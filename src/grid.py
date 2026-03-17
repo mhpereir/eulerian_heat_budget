@@ -22,7 +22,7 @@ import numpy as np
 from typing import Tuple
 
 from . import config
-from .specs import DomainRequest, DomainSpec
+from .specs import DomainRequest, DomainSpec, SurfaceBehaviour
 
 def _cell_edges_from_centers(coord: xr.DataArray, name: str) -> np.ndarray:
     """Build 1D cell edges from 1D center coordinates.

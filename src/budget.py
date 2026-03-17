@@ -45,26 +45,6 @@ def calculate_budget(
 
     ds_weights_areas = xr.merge([ds_weights_horizontal, ds_weights_vertical])
 
-
-    if SurfaceSpecs is not None and SurfaceSpecs.use_surface_variables: #condition for whether to use surface variables or lowest model level variables in budget calculations; if True, ds_domain should contain surface variables T2m, u10, v10 and the budget calculations will use those; if False, it will use the lowest model level variables as before
-        print("Using surface variables in budget calculations")
-
-        
-
-        #call function that re-assigns T, u, v in ds_domain to be a weighted combination of surface variable and lowest model level variables; this way the rest of the budget code can remain unchanged and just use ds_domain['T'], ds_domain['u'], ds_domain['v'] as before, but now they will refer to surface variables if DomainSpec.in_surface_variables is True
-
-        # ds_halo   = adjust_surface_variables(ds_halo, DomainSpecs)
-        # ds_domain = adjust_surface_variables(ds_domain, DomainSpecs)
-
-        pass
-
-
-    else:
-        print("Using lowest model level variables in budget calculations")
-        pass
-
-
-
     dT_dt = terms.compute_storage(ds_domain['T'],
                                   ds_cell_volumes,
                                   ds_weights_volumes,
@@ -78,7 +58,7 @@ def calculate_budget(
     T_domain_avg = terms.compute_T_domain_average(ds_domain['T'], domain_volume, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     T_domain_avg = T_domain_avg.sel(time=dT_dt['time'])
 
-    advection_terms = terms.compute_advective_term(ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, DomainSpecs, integral_diagnostics_flag)
+    advection_terms = terms.compute_advective_term(ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, DomainSpecs, SurfaceSpecs, integral_diagnostics_flag)
     #time crop advection
     advection_terms = advection_terms.sel(time=dT_dt['time'])
 

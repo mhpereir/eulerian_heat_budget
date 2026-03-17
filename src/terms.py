@@ -16,7 +16,7 @@ import numpy as np
 
 from . import integrals, weights, config
 
-from .specs import DomainSpec
+from .specs import DomainSpec, SurfaceBehaviour
 
 
 def compute_domain_volume(ds_domain: xr.Dataset,
@@ -66,11 +66,23 @@ def compute_storage(T: xr.DataArray,
 
     return dT_dt
 
+def _surface_adjust_wall_velocity(
+    v_plev: xr.DataArray,
+    v_sfc: xr.DataArray,
+    p_start: xr.DataArray,
+    p_end: xr.DataArray,
+    sp_wall: xr.DataArray,
+    w_wall: xr.DataArray,
+) -> xr.DataArray:
+    ...
+
+
 def compute_advective_term(ds_domain: xr.Dataset, #A
                            ds_halo: xr.Dataset,
                            ds_cell_areas: xr.Dataset,
                            ds_weights_areas: xr.Dataset,
                            DomainSpecs: DomainSpec,
+                           SurfaceSpecs: SurfaceBehaviour,
                            integral_diagnostics_flag: bool) -> xr.Dataset:
     r'''
     math term: -\int T U \cdot dA
@@ -92,6 +104,8 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
     else:
         raise ValueError(f"Invalid zg_bottom mode: {DomainSpecs.zg_bottom}")
     
+
+
     # Compute normal velocity components at east/west/north/south walls for advective fluxes
     # also compute cell face T for advective fluxes
     # halo cells are needed to compute these at the domain boundaries
@@ -130,6 +144,24 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
     wT_top   = weights._drop_if_present(wT_top, ["p_mid", "p_start", "p_end", "p_cell_id"])
     if wT_bottom is not None:
         wT_bottom = weights._drop_if_present(wT_bottom, ["p_mid", "p_start", "p_end", "p_cell_id"])
+
+
+    if SurfaceSpecs.use_surface_variables:
+        ds_sT = ds_halo['T_surface']
+        ds_su = ds_halo['u_surface']
+        ds_sv = ds_halo['v_surface']
+
+        # compute surface variable contributions to wall fluxes
+        u_surf_west  = 0.5*(ds_su.isel(lon=0) + ds_su.isel(lon=1))     # time, lat @ sfp
+        u_surf_east  = 0.5*(ds_su.isel(lon=-1) + ds_su.isel(lon=-2))  # time, lat @ sfp
+        v_surf_south = 0.5*(ds_sv.isel(lat=0) + ds_sv.isel(lat=1))    # time, lon @ sfp
+        v_surf_north = 0.5*(ds_sv.isel(lat=-1) + ds_sv.isel(lat=-2))  # time, lon @ sfp
+
+
+        
+
+
+
 
 
     if integral_diagnostics_flag:
