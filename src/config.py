@@ -24,7 +24,7 @@ DEFAULT_BBOX          = (40, 60, -130, -110) # lat_min, lat_max, lon_min, lon_ma
 
 DEFAULT_MARGIN_N: int = 1 # number of grid points to keep as margin when determining domain extent
 
-DEFAULT_ZG_BOT_MODE = "pressure_level" #"pressure_level" # or "surface_pressure"
+DEFAULT_ZG_BOT_MODE = "surface_pressure" #"pressure_level" # or "surface_pressure"
 
 # set True if "surface_pressure" is used as bottom boundary for geopotential height budget
 # else False if "pressure_level"
@@ -33,6 +33,6 @@ DEFAULT_ALLOW_BOTTOM_OVERFLOW = False # allow bottom layer weights to exceed 1 i
 # pressure levels for geopotential height domain boundaries (in Pa)
 # zg_bottom_pressure only used if zg_bottom == "pressure_level"; else surface pressure determines bottom boundary
 DEFAULT_ZG_BOT_PA: float = 600 * 100 # lower boundary pressure for geopotential height budget in Pa
-DEFAULT_ZG_TOP_PA: float = 300 * 100 # upper boundary pressure for geopotential height budget in Pa
+DEFAULT_ZG_TOP_PA: float = 600 * 100 # upper boundary pressure for geopotential height budget in Pa
 
 DEFAULT_PLOTS_OUTPUT:str = "/home/mhpereir/eulerian_heat_budget/results/plots"
