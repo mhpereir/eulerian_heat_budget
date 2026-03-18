@@ -24,7 +24,7 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
 
     # Construct integand cell areas and weights for integration
     ds_horizontal_cell_areas = grid.get_horizontal_cell_areas(ds_domain).astype("float64")
-    ds_vertical_cell_areas   = grid.get_vertical_cell_areas(ds_domain).astype("float64")
+    ds_vertical_cell_areas   = grid.get_vertical_cell_areas(ds_halo).astype("float64")
 
     # combine east, west, south, north + top (and bottom)
     ds_cell_areas = xr.merge([ds_horizontal_cell_areas, ds_vertical_cell_areas])
@@ -32,10 +32,13 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     ds_cell_volumes = grid.get_cell_volumes(ds_domain).astype("float64")
 
     ds_weights_horizontal = weights.area_weights_horizontal(ds_domain, DomainSpecs)
-    ds_weights_vertical   = weights.area_weights_vertical(ds_domain, DomainSpecs)
+    ds_weights_vertical   = weights.area_weights_vertical(ds_halo, DomainSpecs)
     ds_weights_volumes    = weights.volume_weights(ds_domain, DomainSpecs)
 
-    ds_weights_areas = xr.merge([ds_weights_horizontal, ds_weights_vertical])
+    ds_weights_areas = xr.merge(
+        [ds_weights_horizontal, ds_weights_vertical],
+        compat="no_conflicts",
+    )
 
     # pre-compute differential terms for advective, and adiabatic components
     # advective term needs du/dx, dv/dy, dw/dp @ each wall (east, west, north, south, top, bottom)

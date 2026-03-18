@@ -128,10 +128,10 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
         raise ValueError(f"area_weights_vertical: unsupported zg_bottom={domain_spec.zg_bottom}")
 
     # Bottom boundary pressure
-    p_bot_eff_e = p_bot_eff.isel(lon=-1)  # (time, lat)  east boundary (lon_max)
-    p_bot_eff_w = p_bot_eff.isel(lon=0)   # (time, lat)  west boundary (lon_min)
-    p_bot_eff_s = p_bot_eff.isel(lat=0)   # (time, lon)  south boundary (lat_min)
-    p_bot_eff_n = p_bot_eff.isel(lat=-1)  # (time, lon)  north boundary (lat_max)
+    p_bot_eff_e = 0.5*(p_bot_eff.isel(lon=-1, lat=slice(1,-1)) + p_bot_eff.isel(lon=-2, lat=slice(1,-1)))  # (time, lat)  east boundary (lon_max)
+    p_bot_eff_w = 0.5*(p_bot_eff.isel(lon=0, lat=slice(1,-1)) + p_bot_eff.isel(lon=1, lat=slice(1,-1)))    # (time, lat)  west boundary (lon_min)
+    p_bot_eff_s = 0.5*(p_bot_eff.isel(lat=0, lon=slice(1,-1)) + p_bot_eff.isel(lat=1, lon=slice(1,-1)))    # (time, lon)  south boundary (lat_min)
+    p_bot_eff_n = 0.5*(p_bot_eff.isel(lat=-1, lon=slice(1,-1)) + p_bot_eff.isel(lat=-2, lon=slice(1,-1)))  # (time, lon)  north boundary (lat_max)
 
     # Drop scalar coords that will conflict during Dataset merge
     p_bot_eff_e = _drop_if_present(p_bot_eff_e, ["lon", "lon_start", "lon_end", "lon_cell_id"])

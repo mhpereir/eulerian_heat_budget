@@ -148,14 +148,17 @@ def test_area_weights_horizontal_binary_top_and_bottom():
 
 def test_area_weights_vertical_uses_boundary_slices():
     """
-    Ensure W_east/W_west use lon boundary slices and W_north/W_south use lat boundary slices.
-    This is a shape + value test for one simple level.
+    Ensure vertical wall weights use the halo-cell edge values that match the wall
+    flux convention:
+      - east/west average the two halo columns adjacent to the boundary
+      - north/south average the two halo rows adjacent to the boundary
+    The retained boundary points should line up with the interior domain cells.
     """
     bbox=(0,4,10,14)
     ds = _make_dataset(
-        level=[950*100, 850*100],              # 1 level -> easier expected values
-        lat=[0.0, 1.0, 2.0, 3.0, 4.0],           # 2 cells => lat centers len=2 after determine_domain
-        lon=[10.0, 11.0, 12.0, 13.0, 14.0],        # 2 cells => lon centers len=2
+        level=[950*100, 850*100],                  # 2 levels -> easier expected values
+        lat=[0.0,  1.0,  2.0,  3.0,  4.0],         # 4 cells => lat centers len=2 after determine_domain
+        lon=[10.0, 11.0, 12.0, 13.0, 14.0],        # 4 cells => lon centers len=2
     )
     req = _make_request(
         bbox=bbox,
@@ -167,15 +170,21 @@ def test_area_weights_vertical_uses_boundary_slices():
     )
     dom, halo, spec = determine_domain(ds, req)
 
-    # Create sp(time,lat,lon) with distinct boundary values:
-    # west boundary (lon=0) differs from east boundary (lon=-1)
+    # Halo surface pressure field on the 4x4 halo grid.
+    # The wall pressures are taken from the halo-adjacent cell-edge values:
+    #   west  = 0.5 * (col 0 + col 1) at interior halo rows
+    #   east  = 0.5 * (col-2 + col-1) at interior halo rows
+    #   south = 0.5 * (row 0 + row 1) at interior halo cols
+    #   north = 0.5 * (row-2 + row-1) at interior halo cols
     sp_vals = np.array([[
-        [910*100, 930*100],  # lat0: west=910, east=930
-        [920*100, 890*100],  # lat1: west=920, east=890
+        [900*100, 910*100, 930*100, 940*100], 
+        [910*100, 920*100, 910*100, 920*100],
+        [920*100, 930*100, 890*100, 900*100],
+        [930*100, 940*100, 1200*100, 880*100],
     ]])
-    dom = _attach_sp(dom, sp_vals=sp_vals)
+    halo = _attach_sp(halo, sp_vals=sp_vals)
 
-    out = area_weights_vertical(dom, spec)
+    out = area_weights_vertical(halo, spec) 
 
     for k in ["W_east", "W_west", "W_south", "W_north"]:
         assert k in out
@@ -190,35 +199,133 @@ def test_area_weights_vertical_uses_boundary_slices():
     assert Ww.dims == ("time", "level", "lat")
     assert Ws.dims == ("time", "level", "lon")
     assert Wn.dims == ("time", "level", "lon")
+    assert We.shape == (1, 2, 2)
+    assert Ww.shape == (1, 2, 2)
+    assert Ws.shape == (1, 2, 2)
+    assert Wn.shape == (1, 2, 2)
 
-    # Expectation given CV top = 880 hPa and two layers ~[900,1000] and ~[800,900]:
-    # - level=950 hPa layer fraction = (sp - 900) / 100
-    # - level=850 hPa layer fraction = 0
+    # Expected boundary pressures (Pa), after averaging the two halo cells adjacent
+    # to each wall:
+    #   west  = [91500, 92500]
+    #   east  = [91500, 89500]
+    #   south = [91500, 92000]
+    #   north = [93500, 104500]
     #
-    # East wall uses sp[:, :, -1] (lon=-1), West wall uses sp[:, :, 0] (lon=0)
-    # South wall uses sp[:, 0, :] (lat=0), North wall uses sp[:, -1, :] (lat=-1)
-
-    # level index 0 corresponds to 950 hPa in your descending input list
-    # level index 1 corresponds to 850 hPa
+    # With levels [950, 850] hPa, the layer bounds are [900,1000] and [800,900] hPa.
+    # For the bottom layer, overflow is allowed, so raw bottom weights may exceed 1 (not tested right now)
 
     expected_We = np.array([[
-        [0.30, 0.00],   # level=950: (930-900)/100=0.3, (890<900)/100=0.0 for lat0/lat1
-        [0.20, 0.10],   # level=850: (900-880)/100=0.2, (890-880)/100=0.1 for lat0/lat1
+        [0.15, 0.00], #1000-900 # 915-900=15, 895<900 so 0
+        [0.20, 0.15], #900-800  # 880-900=20, 880-895=15
     ]])
 
     expected_Ww = np.array([[
-        [0.10, 0.20],   # level=950: (910-900)/100=0.1, (920-900)/100=0.2 for lat0/lat1
-        [0.20, 0.20],   # level=850: (900-880)/100=0.2, (900-880)/100=0.2 for lat0/lat1
+        [0.15, 0.25], #1000-900 # 915-900=15, 925-900=25
+        [0.20, 0.20], #900-800  # 880-900=20, 880-900=10 
     ]])
 
     expected_Ws = np.array([[
-        [0.10, 0.30],   # lat0 level=950: (910-900)/100=0.1, (930-900)/100=0.3 for lon0/lon1
-        [0.20, 0.20],   # lat0 level=850: (900-880)/100=0.2, (900-880)/100=0.2 for lon0/lon1
+        [0.15, 0.20], #1000-900 # 915-900=15, 920-900=20
+        [0.20, 0.20], #900-800  # 880-900=20, 880-900=10
     ]])
 
     expected_Wn = np.array([[
-        [0.20, 0.00],   # lat1 level=950: (920-900)/100=0.2, (890<900)/100=0.0 for lon0/lon1
-        [0.20, 0.10],   # lat1 level=850: (900-880)/100=0.2, (890-880)/100=0.1 for lon0/lon1
+        [0.35, 1.45], #1000-900 # 935-900=35, 1045-900=145
+        [0.20, 0.20], #900-800  # 880-900=20, 880-900=20
+    ]])
+
+    np.testing.assert_allclose(We.values, expected_We, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(Ww.values, expected_Ww, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(Ws.values, expected_Ws, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(Wn.values, expected_Wn, rtol=0, atol=1e-12)
+
+
+def test_area_weights_vertical_uses_boundary_slices_no_bottom_overflow():
+    """
+    Ensure vertical wall weights use the halo-cell edge values that match the wall
+    flux convention:
+      - east/west average the two halo columns adjacent to the boundary
+      - north/south average the two halo rows adjacent to the boundary
+    The retained boundary points should line up with the interior domain cells.
+    """
+    bbox=(0,4,10,14)
+    ds = _make_dataset(
+        level=[950*100, 850*100],                  # 2 levels -> easier expected values
+        lat=[0.0,  1.0,  2.0,  3.0,  4.0],         # 4 cells => lat centers len=2 after determine_domain
+        lon=[10.0, 11.0, 12.0, 13.0, 14.0],        # 4 cells => lon centers len=2
+    )
+    req = _make_request(
+        bbox=bbox,
+        zg_top_pressure=880*100,
+        zg_bottom="surface_pressure",
+        zg_bottom_pressure=None,
+        allow_bottom_overflow=False,
+        margin_n=1,
+    )
+    dom, halo, spec = determine_domain(ds, req)
+
+    # Halo surface pressure field on the 4x4 halo grid.
+    # The wall pressures are taken from the halo-adjacent cell-edge values:
+    #   west  = 0.5 * (col 0 + col 1) at interior halo rows
+    #   east  = 0.5 * (col-2 + col-1) at interior halo rows
+    #   south = 0.5 * (row 0 + row 1) at interior halo cols
+    #   north = 0.5 * (row-2 + row-1) at interior halo cols
+    sp_vals = np.array([[
+        [900*100, 910*100, 930*100, 940*100], 
+        [910*100, 920*100, 910*100, 920*100],
+        [920*100, 930*100, 890*100, 900*100],
+        [930*100, 940*100, 1200*100, 880*100],
+    ]])
+    halo = _attach_sp(halo, sp_vals=sp_vals)
+
+    out = area_weights_vertical(halo, spec) 
+
+    for k in ["W_east", "W_west", "W_south", "W_north"]:
+        assert k in out
+
+    We = out["W_east"]
+    Ww = out["W_west"]
+    Ws = out["W_south"]
+    Wn = out["W_north"]
+
+    # dims
+    assert We.dims == ("time", "level", "lat")
+    assert Ww.dims == ("time", "level", "lat")
+    assert Ws.dims == ("time", "level", "lon")
+    assert Wn.dims == ("time", "level", "lon")
+    assert We.shape == (1, 2, 2)
+    assert Ww.shape == (1, 2, 2)
+    assert Ws.shape == (1, 2, 2)
+    assert Wn.shape == (1, 2, 2)
+
+    # Expected boundary pressures (Pa), after averaging the two halo cells adjacent
+    # to each wall:
+    #   west  = [91500, 92500]
+    #   east  = [91500, 89500]
+    #   south = [91500, 92000]
+    #   north = [93500, 104500]
+    #
+    # With levels [950, 850] hPa, the layer bounds are [900,1000] and [800,900] hPa.
+    # For the bottom layer, overflow is allowed, so raw bottom weights may exceed 1 (not tested right now)
+
+    expected_We = np.array([[
+        [0.15, 0.00], #1000-900 # 915-900=15, 895<900 so 0
+        [0.20, 0.15], #900-800  # 880-900=20, 880-895=15
+    ]])
+
+    expected_Ww = np.array([[
+        [0.15, 0.25], #1000-900 # 915-900=15, 925-900=25
+        [0.20, 0.20], #900-800  # 880-900=20, 880-900=10 
+    ]])
+
+    expected_Ws = np.array([[
+        [0.15, 0.20], #1000-900 # 915-900=15, 920-900=20
+        [0.20, 0.20], #900-800  # 880-900=20, 880-900=10
+    ]])
+
+    expected_Wn = np.array([[
+        [0.35, 1.00], #1000-900 # 935-900=35, 1045-900=145
+        [0.20, 0.20], #900-800  # 880-900=20, 880-900=20
     ]])
 
     np.testing.assert_allclose(We.values, expected_We, rtol=0, atol=1e-12)
@@ -231,5 +338,4 @@ def test_area_weights_vertical_uses_boundary_slices():
     assert float(Ww.min()) >= 0.0 and float(Ww.max()) <= 1.0
     assert float(Ws.min()) >= 0.0 and float(Ws.max()) <= 1.0
     assert float(Wn.min()) >= 0.0 and float(Wn.max()) <= 1.0
-
 
