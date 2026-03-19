@@ -27,7 +27,8 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     ds_vertical_cell_areas   = grid.get_vertical_cell_areas(ds_halo).astype("float64")
 
     # combine east, west, south, north + top (and bottom)
-    ds_cell_areas = xr.merge([ds_horizontal_cell_areas, ds_vertical_cell_areas])
+    ds_cell_areas = xr.merge([ds_horizontal_cell_areas, ds_vertical_cell_areas],
+                             compat="override", join='outer')
 
     ds_cell_volumes = grid.get_cell_volumes(ds_domain).astype("float64")
 
@@ -37,7 +38,7 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
 
     ds_weights_areas = xr.merge(
         [ds_weights_horizontal, ds_weights_vertical],
-        compat="no_conflicts",
+        compat="override", join='outer'
     )
 
     # pre-compute differential terms for advective, and adiabatic components
@@ -61,10 +62,10 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     T_domain_avg = T_domain_avg.sel(time=dT_dt['time'])
 
     ds_domain_adv      = ds_domain.copy(deep=True)
-    ds_domain_adv['T'] = ds_domain['T'] - 273
+    ds_domain_adv['T'] = ds_domain_adv['T'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
 
     ds_halo_adv      = ds_halo.copy(deep=True)
-    ds_halo_adv['T'] = ds_halo['T'] - 273
+    ds_halo_adv['T'] = ds_halo_adv['T'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
 
     print(np.nanmean(T_domain_avg.values))
     print(np.nanmean(ds_domain_adv['T'].values))
