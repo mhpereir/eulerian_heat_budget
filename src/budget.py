@@ -65,9 +65,9 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     advection_terms = advection_terms.sel(time=dT_dt['time'])
 
     #estimate of uncertainty from mass continuity
-    # T_scale         = np.sqrt(np.mean(ds_domain['T'].sel(time=dT_dt['time']).values-T_domain_avg.values[:,None,None,None])**2.)
-    T_scale = np.mean(T_domain_avg.values)
-    print(T_scale)
+    T_scale         = np.sqrt(np.mean(ds_domain['T'].sel(time=dT_dt['time']).values-T_domain_avg.values[:,None,None,None])**2.)
+    # T_scale = np.mean(T_domain_avg.values)
+    # print(T_scale)
 
     advection_error = (dV_dt + advection_terms['net_mass_advection']) * T_scale # mass * K
 
@@ -76,7 +76,7 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
         plot_diagnostics.fig1_mass_continuity(dV_dt, advection_terms, plot_diag_path)
         plot_diagnostics.fig2_mass_advection_residual_timeseries(advection_terms, dV_dt, domain_volume, plot_diag_path)
         plot_diagnostics.fig3_advection_components_timeseries(advection_terms, dV_dt, advection_error, domain_volume, plot_diag_path)
-        
+    
     adiabatic_term = terms.compute_adiabatic_term(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     #time crop adiabatic
     adiabatic_term = adiabatic_term.sel(time=dT_dt['time'])

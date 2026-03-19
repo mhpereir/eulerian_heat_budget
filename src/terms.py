@@ -66,8 +66,8 @@ def compute_storage(T: xr.DataArray,
 
     return dT_dt
 
-def compute_advective_term(ds_domain: xr.Dataset, #A
-                           ds_halo: xr.Dataset,
+def compute_advective_term(ds_domain_in: xr.Dataset, #A
+                           ds_halo_in: xr.Dataset,
                            ds_cell_areas: xr.Dataset,
                            ds_weights_areas: xr.Dataset,
                            DomainSpecs: DomainSpec,
@@ -76,6 +76,12 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
     math term: -\int T U \cdot dA
     '''
     
+    ds_halo = ds_halo_in.copy(deep=True)
+    ds_domain = ds_domain_in.copy(deep=True)
+
+    ds_halo['T']   = ds_halo['T'] - 273.15
+    ds_domain['T'] = ds_domain['T'] - 273.15
+
     # Compute velocity at cell faces for advection term
     # top/bottom - vertical velocity at top/bottom walls needed for advective fluxes
     w_top = ds_halo['w'].sel(level=DomainSpecs.zg_top_pressure, method=None)  # vertical velocity at top wall
