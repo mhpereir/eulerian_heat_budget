@@ -60,11 +60,14 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     T_domain_avg = terms.compute_T_domain_average(ds_domain['T'], domain_volume, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     T_domain_avg = T_domain_avg.sel(time=dT_dt['time'])
 
-    ds_domain_adv = ds_domain.copy(deep=True)
-    ds_domain_adv['T'] = ds_domain['T'] - np.nanmean(T_domain_avg.values)
+    ds_domain_adv      = ds_domain.copy(deep=True)
+    ds_domain_adv['T'] = ds_domain['T'] - 273
 
-    ds_halo_adv = ds_halo.copy(deep=True)
-    ds_halo_adv['T'] = ds_halo['T'] - np.nanmean(T_domain_avg.values)
+    ds_halo_adv      = ds_halo.copy(deep=True)
+    ds_halo_adv['T'] = ds_halo['T'] - 273
+
+    print(np.nanmean(T_domain_avg.values))
+    print(np.nanmean(ds_domain_adv['T'].values))
 
     advection_terms = terms.compute_advective_term(ds_domain_adv, ds_halo_adv, ds_cell_areas, ds_weights_areas, DomainSpecs, integral_diagnostics_flag)
     #time crop advection
@@ -73,7 +76,7 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     #estimate of uncertainty from mass continuity
     T_scale         = np.sqrt(np.mean(ds_domain['T'].sel(time=dT_dt['time']).values-T_domain_avg.values[:,None,None,None])**2.)
     # T_scale = np.mean(T_domain_avg.values)
-    # print(T_scale)
+    print(T_scale)
 
     advection_error = (dV_dt + advection_terms['net_mass_advection']) * T_scale # mass * K
 

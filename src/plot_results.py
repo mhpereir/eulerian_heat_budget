@@ -243,26 +243,48 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     norm_factor            = 1 / domain_volume
     time_conversion_factor = 3600
 
-    dT_dt = ds_budget["dT_dt"] * norm_factor * time_conversion_factor  # convert to K/s by dividing by volume and multiplying by T scale (using domain average T as scale)
+    #storage term
+    ddt_TV = ds_budget["dT_dt"] * norm_factor * time_conversion_factor  # convert to K/s by dividing by volume and multiplying by T scale (using domain average T as scale)
 
-    dT_dt_2 = (term_signs["advection_term"] * ds_budget["advection_term"] + \
-             term_signs["adiabatic_term"] * ds_budget["adiabatic_term"] + \
-             term_signs["diabatic_term"] * ds_budget["diabatic_term"] ) * norm_factor * time_conversion_factor
+    #change in internal energy from volume change
 
-    line_dT = dT_dt.plot.line(
+    dT_from_dV = (T_domain_avg * norm_factor) * ds_budget['dV_dt'] * time_conversion_factor
+
+    #change in average energy
+    # d<T>/dt
+    dTT_dt = ddt_TV - dT_from_dV
+
+    lines = []
+
+    line_ddt_TV = ddt_TV.plot.line(
         ax=ax[1],
         add_legend=False,
         color='C1',
         drawstyle="steps-post"
     )
+    lines.append(line_ddt_TV)
 
-    line_dT_2 = dT_dt_2.plot.line(
+    line_dT_from_dV = dT_from_dV.plot.line(
         ax=ax[1],
         add_legend=False,
-        color='C1',
-        linestyle='--',
+        color='C0',
         drawstyle="steps-post"
     )
+    lines.append(line_dT_from_dV)
+
+    line_dTT_dt = dTT_dt.plot.line(
+        ax=ax[1],
+        add_legend=False,
+        color='C2',
+        drawstyle="steps-post"
+    )
+    lines.append(line_dTT_dt)
+
+    ax[1].legend(lines, [
+        r"d/dt$\int T dV$",
+        r"$\langle T \rangle$/V dV/dt",
+        r"d$\langle T \rangle$/dt"
+    ], fontsize=10)
 
     ax[1].axhline(0, color='k', linestyle='-', linewidth=1)
 
@@ -335,6 +357,14 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     # Remove duplicate x-labels from upper panels
     ax[0].set_xlabel("")
     ax[1].set_xlabel("")
+
+    ymax = max(
+        abs(ax[1].get_ylim()[0]), abs(ax[1].get_ylim()[1]),
+        abs(ax[2].get_ylim()[0]), abs(ax[2].get_ylim()[1]),
+    )
+    ax[1].set_ylim(-ymax, ymax)
+    ax[2].set_ylim(-ymax, ymax)
+
 
     out_path = os.path.join(plot_dir, "budget_terms_timeseries_daily.png")
     plt.savefig(out_path, bbox_inches="tight")
