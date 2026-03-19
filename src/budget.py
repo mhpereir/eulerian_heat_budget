@@ -43,7 +43,7 @@ def calculate_budget(
     ds_weights_vertical   = weights.area_weights_vertical(ds_domain, DomainSpecs, SurfaceSpecs)
     ds_weights_volumes    = weights.volume_weights(ds_domain, DomainSpecs, SurfaceSpecs)
 
-    ds_weights_areas = xr.merge([ds_weights_horizontal, ds_weights_vertical])
+    ds_weights_areas = xr.merge([ds_weights_horizontal, ds_weights_vertical], compat="override", join='outer')
 
     dT_dt = terms.compute_storage(ds_domain['T'],
                                   ds_cell_volumes,
@@ -58,7 +58,15 @@ def calculate_budget(
     T_domain_avg = terms.compute_T_domain_average(ds_domain['T'], domain_volume, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     T_domain_avg = T_domain_avg.sel(time=dT_dt['time'])
 
-    advection_terms = terms.compute_advective_term(ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, DomainSpecs, SurfaceSpecs, integral_diagnostics_flag)
+
+    ds_domain_adv      = ds_domain.copy(deep=True)
+    ds_domain_adv['T'] = ds_domain_adv['T'] - np.mean(T_domain_avg.values) # subtract domain average from T field for advection term calculation
+
+    ds_halo_adv      = ds_halo.copy(deep=True)
+    ds_halo_adv['T'] = ds_halo_adv['T'] - np.mean(T_domain_avg.values) # subtract domain average from T field for advection term calculation
+
+
+    advection_terms = terms.compute_advective_term(ds_domain_adv, ds_halo_adv, ds_cell_areas, ds_weights_areas, DomainSpecs, SurfaceSpecs, integral_diagnostics_flag)
     #time crop advection
     advection_terms = advection_terms.sel(time=dT_dt['time'])
 
