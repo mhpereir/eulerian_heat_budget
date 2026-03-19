@@ -254,7 +254,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     # d<T>/dt
     dTT_dt = ddt_TV - dT_from_dV
 
-    lines = []
+    lines_dT = []
 
     line_ddt_TV = ddt_TV.plot.line(
         ax=ax[1],
@@ -262,7 +262,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         color='C1',
         drawstyle="steps-post"
     )
-    lines.append(line_ddt_TV)
+    lines_dT.append(line_ddt_TV)
 
     line_dT_from_dV = dT_from_dV.plot.line(
         ax=ax[1],
@@ -270,7 +270,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         color='C0',
         drawstyle="steps-post"
     )
-    lines.append(line_dT_from_dV)
+    lines_dT.append(line_dT_from_dV)
 
     line_dTT_dt = dTT_dt.plot.line(
         ax=ax[1],
@@ -278,9 +278,9 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         color='C2',
         drawstyle="steps-post"
     )
-    lines.append(line_dTT_dt)
+    lines_dT.append(line_dTT_dt)
 
-    ax[1].legend(lines, [
+    ax[1].legend(lines_dT, [
         r"d/dt$\int T dV$",
         r"$\langle T \rangle$/V dV/dt",
         r"d$\langle T \rangle$/dt"
