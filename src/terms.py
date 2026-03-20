@@ -66,18 +66,50 @@ def compute_storage(T: xr.DataArray,
 
     return dT_dt
 
-def _surface_adjust_wall_velocity(
-    v_plev: xr.DataArray,
-    v_sfc: xr.DataArray,
-    p_start: xr.DataArray,
-    p_end: xr.DataArray,
-    sp_wall: xr.DataArray,
-    w_wall: xr.DataArray,
+
+def _adjust_surface_field(
+    da_var: xr.DataArray,
+    da_var_surface: xr.DataArray,
+    SurfaceSpecs: SurfaceBehaviour,
 ) -> xr.DataArray:
-    ...
+    '''
+    Calculation to change the effective velocity (u, v) of
+    the layer that intersects the surface.
+    V_effective = 
+        dP1 * V(level) + dP2 * 0.5* (V(level)+V(surface)) / (dP1 + dP2)
+    where dP1+dP2= surface_pressure - pressure_level_top 
+    '''
+
+    sp       = da_var['sp']
+    p_top    = da_var['p_end']
+    p_mid    = da_var['p_mid']   # pressure level mid point
+    p_bottom = da_var['p_start'] #
+
+    dp_upper = np.clip(np.minimum(np.maximum(sp, p_top), p_mid) - p_top, 0.0, None)
+    dp_lower = np.clip(sp - np.maximum(p_mid, p_top), 0.0, None)
+    dp_total = dp_upper + dp_lower
 
 
-def compute_advective_term(ds_domain: xr.Dataset, #A
+    is_cut = (sp > p_top) & (sp < p_bottom)
+    # is_overflow = is_lowest_layer & (sp >= p_bottom)
+    is_surface_adjacent = is_cut #| is_overflow
+
+    #ensure that surface_adjacent mask is only true once per time/lat/lon column
+    assert np.all(is_surface_adjacent.sum(dim='level') <= 1), "Surface adjacent mask is true for multiple levels in the same column, check pressure levels and surface pressure values."
+
+    var_surface = da_var_surface  # velocity at surface pressure level
+    var_level   = da_var          # velocity at all levels
+
+    var_effective = xr.where(
+        is_surface_adjacent,
+        (dp_upper * var_level + dp_lower * 0.5 * (var_level + var_surface)) / dp_total,
+        var_level
+    )
+    
+    return var_effective
+    
+
+def compute_advective_term(ds_domain: xr.Dataset,
                            ds_halo: xr.Dataset,
                            ds_cell_areas: xr.Dataset,
                            ds_weights_areas: xr.Dataset,
@@ -88,6 +120,17 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
     math term: -\int T U \cdot dA
     '''
     
+    if SurfaceSpecs.use_surface_variables:
+        
+        u_for_flux = _adjust_surface_field(ds_halo['u'], ds_halo['su'], SurfaceSpecs)
+        v_for_flux = _adjust_surface_field(ds_halo['v'], ds_halo['sv'], SurfaceSpecs)
+
+    else:
+
+        u_for_flux = ds_halo['u']
+        v_for_flux = ds_halo['v']
+
+
     # Compute velocity at cell faces for advection term
     # top/bottom - vertical velocity at top/bottom walls needed for advective fluxes
     w_top = ds_halo['w'].sel(level=DomainSpecs.zg_top_pressure, method=None)  # vertical velocity at top wall
@@ -110,19 +153,19 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
     # also compute cell face T for advective fluxes
     # halo cells are needed to compute these at the domain boundaries
     # note lat/lon monotonic ascending;
-    u_west = 0.5 * (ds_halo['u'].isel(lon=0) + ds_halo['u'].isel(lon=1))
+    u_west = 0.5 * (u_for_flux.isel(lon=0)   + u_for_flux.isel(lon=1))
     T_west = 0.5 * (ds_halo['T'].isel(lon=0) + ds_halo['T'].isel(lon=1))
     uT_west = u_west * T_west
 
-    u_east = 0.5 * (ds_halo['u'].isel(lon=-1) + ds_halo['u'].isel(lon=-2))
+    u_east = 0.5 * (u_for_flux.isel(lon=-1)   + u_for_flux.isel(lon=-2))
     T_east = 0.5 * (ds_halo['T'].isel(lon=-1) + ds_halo['T'].isel(lon=-2))
     uT_east = u_east * T_east
 
-    v_south = 0.5 * (ds_halo['v'].isel(lat=0) + ds_halo['v'].isel(lat=1))
+    v_south = 0.5 * (v_for_flux.isel(lat=0)   + v_for_flux.isel(lat=1))
     T_south = 0.5 * (ds_halo['T'].isel(lat=0) + ds_halo['T'].isel(lat=1))
     vT_south = v_south * T_south
 
-    v_north = 0.5 * (ds_halo['v'].isel(lat=-1) + ds_halo['v'].isel(lat=-2))
+    v_north = 0.5 * (v_for_flux.isel(lat=-1)   + v_for_flux.isel(lat=-2))
     T_north = 0.5 * (ds_halo['T'].isel(lat=-1) + ds_halo['T'].isel(lat=-2))
     vT_north = v_north * T_north
 
@@ -144,24 +187,6 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
     wT_top   = weights._drop_if_present(wT_top, ["p_mid", "p_start", "p_end", "p_cell_id"])
     if wT_bottom is not None:
         wT_bottom = weights._drop_if_present(wT_bottom, ["p_mid", "p_start", "p_end", "p_cell_id"])
-
-
-    if SurfaceSpecs.use_surface_variables:
-        ds_sT = ds_halo['T_surface']
-        ds_su = ds_halo['u_surface']
-        ds_sv = ds_halo['v_surface']
-
-        # compute surface variable contributions to wall fluxes
-        u_surf_west  = 0.5*(ds_su.isel(lon=0) + ds_su.isel(lon=1))     # time, lat @ sfp
-        u_surf_east  = 0.5*(ds_su.isel(lon=-1) + ds_su.isel(lon=-2))  # time, lat @ sfp
-        v_surf_south = 0.5*(ds_sv.isel(lat=0) + ds_sv.isel(lat=1))    # time, lon @ sfp
-        v_surf_north = 0.5*(ds_sv.isel(lat=-1) + ds_sv.isel(lat=-2))  # time, lon @ sfp
-
-
-        
-
-
-
 
 
     if integral_diagnostics_flag:

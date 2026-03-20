@@ -94,14 +94,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     surface_var_group = parser.add_mutually_exclusive_group()
     surface_var_group.add_argument(
         "--use-surface-variables",
-        dest="in_surface_variables",
+        dest="use_surface_variables",
         action="store_true",
         default=None,
         help="Include surface variables (T2m, u10, v10) in budget calculations instead of lowest model level variables.",
     )
     surface_var_group.add_argument(
         "--no-use-surface-variables",
-        dest="in_surface_variables",
+        dest="use_surface_variables",
         action="store_false",
         help="Use lowest model level variables in budget calculations instead of surface variables.",
     )
