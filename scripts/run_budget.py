@@ -34,7 +34,7 @@ def build_request_from_cli(args) -> specs.DomainRequest:
 def build_surface_behaviour_from_cli(args) -> specs.SurfaceBehaviour:
 
     if args.use_surface_variables if args.use_surface_variables is not None else config.DEFAULT_USE_SURFACE_VARIABLES:
-        if args.surface_variable_mode is 'none' or args.surface_variable_mode is None:
+        if (args.surface_variable_mode is None or args.surface_variable_mode == 'none') and config.DEFAULT_SURFACE_VARIABLE_MODE == 'none':
             raise ValueError("surface_variable_mode must be set when use_surface_variables is True")
 
     return specs.SurfaceBehaviour(
@@ -64,7 +64,7 @@ def main() -> None:
     if SurfaceSpecs.use_surface_variables:
         ds_sT = io.load_era5_surface_T(f"{config.path_data}/surface_temperature.nc")
         ds_su = io.load_era5_surface_u(f"{config.path_data}/surface_ux.nc", 'u10')
-        ds_sv = io.load_era5_surface_u(f"{config.path_data}/surface_uv.nc", 'v10')
+        ds_sv = io.load_era5_surface_u(f"{config.path_data}/surface_uy.nc", 'v10')
     
     # Merge datasets on common coordinates and variables
 
@@ -103,12 +103,9 @@ def main() -> None:
         plot_flag=True,
     )
 
-
     plot_results.plot_budget_terms_hourly(result, smoothing_window=1, plot_dir=run_paths.plot_dir)
     plot_results.plot_budget_terms_hourly(result, smoothing_window=24, plot_dir=run_paths.plot_dir)
     plot_results.plot_budget_terms_day_bin(result, plot_dir=run_paths.plot_dir)
-
-
 
     print(result)
 

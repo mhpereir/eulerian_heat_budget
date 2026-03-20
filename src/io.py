@@ -31,12 +31,6 @@ DEFAULT_CHUNKS_3D1 = {
     "lon": n_lon,
 }
 
-# DEFAULT_CHUNKS_2D1 = {
-#     "time": n_time,
-#     "latitude": n_lat,
-#     "longitude": n_lon,
-# }
-
 
 def load_era5_T(filepath: str) -> xr.Dataset:
     ds = xr.open_dataset(filepath)
@@ -165,6 +159,9 @@ def load_era5_merge_dataset(
     merged["level"].attrs["units"]  = "Pa"
 
     merged = merged.chunk(DEFAULT_CHUNKS_3D1)  # apply chunking for dask compatibility
+
+    #hack to speed up calculation (cropped time range)
+    merged = merged.sel(time=slice(config.DEFAULT_TIME_START, config.DEFAULT_TIME_END))
 
     return merged
 

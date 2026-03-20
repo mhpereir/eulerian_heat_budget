@@ -60,10 +60,10 @@ def calculate_budget(
 
 
     ds_domain_adv      = ds_domain.copy(deep=True)
-    ds_domain_adv['T'] = ds_domain_adv['T'] - np.mean(T_domain_avg.values) # subtract domain average from T field for advection term calculation
+    ds_domain_adv['T'] = ds_domain_adv['T'] - np.nanmean(T_domain_avg.values) # subtract domain average from T field for advection term calculation
 
     ds_halo_adv      = ds_halo.copy(deep=True)
-    ds_halo_adv['T'] = ds_halo_adv['T'] - np.mean(T_domain_avg.values) # subtract domain average from T field for advection term calculation
+    ds_halo_adv['T'] = ds_halo_adv['T'] - np.nanmean(T_domain_avg.values) # subtract domain average from T field for advection term calculation
 
 
     advection_terms = terms.compute_advective_term(ds_domain_adv, ds_halo_adv, ds_cell_areas, ds_weights_areas, DomainSpecs, SurfaceSpecs, integral_diagnostics_flag)
@@ -71,8 +71,10 @@ def calculate_budget(
     advection_terms = advection_terms.sel(time=dT_dt['time'])
 
     #estimate of uncertainty from mass continuity
-    # T_scale         = np.sqrt(np.mean(ds_domain['T'].sel(time=dT_dt['time']).values-T_domain_avg.values[:,None,None,None])**2.)
-    T_scale = np.mean(T_domain_avg.values)
+    T_scale         = np.sqrt(
+        np.mean( (ds_domain['T'].sel(time=dT_dt['time']).values-T_domain_avg.values[:,None,None,None])**2.) 
+    )
+    # T_scale = np.nanmean(T_domain_avg.values)
 
     advection_error = (dV_dt + advection_terms['net_mass_advection']) * T_scale # mass * K
 

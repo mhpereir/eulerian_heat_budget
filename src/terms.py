@@ -70,6 +70,7 @@ def compute_storage(T: xr.DataArray,
 def _adjust_surface_field(
     da_var: xr.DataArray,
     da_var_surface: xr.DataArray,
+    da_sp: xr.DataArray,
     SurfaceSpecs: SurfaceBehaviour,
 ) -> xr.DataArray:
     '''
@@ -80,7 +81,7 @@ def _adjust_surface_field(
     where dP1+dP2= surface_pressure - pressure_level_top 
     '''
 
-    sp       = da_var['sp']
+    sp       = da_sp
     p_top    = da_var['p_end']
     p_mid    = da_var['p_mid']   # pressure level mid point
     p_bottom = da_var['p_start'] #
@@ -91,11 +92,18 @@ def _adjust_surface_field(
 
 
     is_cut = (sp > p_top) & (sp < p_bottom)
-    # is_overflow = is_lowest_layer & (sp >= p_bottom)
-    is_surface_adjacent = is_cut #| is_overflow
+    is_lowest_layer = p_bottom == da_var['level'].isel(level=-1) #
+    if SurfaceSpecs.allow_bottom_overflow:
+        is_overflow = is_lowest_layer & (sp >= p_bottom)
+        is_surface_adjacent = is_cut | is_overflow
+    else:
+        is_surface_adjacent = is_cut
 
     #ensure that surface_adjacent mask is only true once per time/lat/lon column
     assert np.all(is_surface_adjacent.sum(dim='level') <= 1), "Surface adjacent mask is true for multiple levels in the same column, check pressure levels and surface pressure values."
+
+    #print percent of columns that have a surface adjacent cell (should be nearly 100%)
+    print(f"Percent of columns that have surface adjacency: {is_surface_adjacent.sum().values / is_surface_adjacent.count().values * 100:.2f}%")
 
     var_surface = da_var_surface  # velocity at surface pressure level
     var_level   = da_var          # velocity at all levels
@@ -122,8 +130,8 @@ def compute_advective_term(ds_domain: xr.Dataset,
     
     if SurfaceSpecs.use_surface_variables:
         
-        u_for_flux = _adjust_surface_field(ds_halo['u'], ds_halo['su'], SurfaceSpecs)
-        v_for_flux = _adjust_surface_field(ds_halo['v'], ds_halo['sv'], SurfaceSpecs)
+        u_for_flux = _adjust_surface_field(ds_halo['u'], ds_halo['u10'], ds_halo['sp'], SurfaceSpecs)
+        v_for_flux = _adjust_surface_field(ds_halo['v'], ds_halo['v10'], ds_halo['sp'], SurfaceSpecs)
 
     else:
 

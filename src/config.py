@@ -26,6 +26,9 @@ cp: float       = 1.005e3 #specific heat capacity of air in [J/(kg*K)]
 # default config values
 DEFAULT_BBOX          = (40, 60, -130, -110) # lat_min, lat_max, lon_min, lon_max for domain extent (before margin/snap)
 
+DEFAULT_TIME_START    = "1941-06-01T00:00:00" # start time for budget period
+DEFAULT_TIME_END      = "1941-06-07T23:00:00" # end time for budget period 
+
 DEFAULT_MARGIN_N: int = 1 # number of grid points to keep as margin when determining domain extent
 
 DEFAULT_ZG_BOT_MODE = "surface_pressure" #"pressure_level" # or "surface_pressure"
@@ -34,7 +37,7 @@ DEFAULT_ZG_BOT_MODE = "surface_pressure" #"pressure_level" # or "surface_pressur
 # else False if "pressure_level"
 DEFAULT_ALLOW_BOTTOM_OVERFLOW = False # allow bottom layer weights to exceed 1 if surface pressure exceeds grid bottom pressure (accounts for ps below grid bottom)
 
-DEFAULT_USE_SURFACE_VARIABLES:bool = False # if True, include surface variables (T2m, u10, v10) in budget calculations; else use lowest model level variables
+DEFAULT_USE_SURFACE_VARIABLES:bool = True # if True, include surface variables (T2m, u10, v10) in budget calculations; else use lowest model level variables
 DEFAULT_SURFACE_VARIABLE_MODE = 'combined' # 'none', 'combined', or 'diagnostic_only'; only relevant if DEFAULT_USE_SURFACE_VARIABLES is True
 
 
