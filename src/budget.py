@@ -18,7 +18,15 @@ from .specs import DomainSpec
 
 
 
-def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: DomainSpec, integral_diagnostics_flag: bool, plot_dir: str, plot_flag: bool) -> xr.Dataset:
+def calculate_budget(ds_domain: xr.Dataset, 
+                     ds_halo: xr.Dataset, 
+                     DomainSpecs: DomainSpec, 
+                     integral_diagnostics_flag: bool, 
+                     plot_dir: str, 
+                     plot_flag: bool,
+                     *,
+                     test_constant_T: bool = False
+                     ) -> xr.Dataset:
     plot_diag_path = os.path.join(plot_dir, "diagnostics")
     os.makedirs(plot_diag_path, exist_ok=True)
 
@@ -61,23 +69,43 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     T_domain_avg = terms.compute_T_domain_average(ds_domain['T'], domain_volume, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     T_domain_avg = T_domain_avg.sel(time=dT_dt['time'])
 
-    ds_domain_adv      = ds_domain.copy(deep=True)
-    ds_domain_adv['T'] = ds_domain_adv['T'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
+    #logic to distinguish between normal calculation and test with constant T field 
+    # (to see if advection error matches estimate from mass continuity) 
+    # within test, set T to domain average (constant), 
+    # so that any spatial anomalies are removed and only the advective error
+    # from mass continuity remains
+    if not test_constant_T:
+        ds_domain_adv      = ds_domain.copy(deep=True)
+        ds_domain_adv['T'] = ds_domain_adv['T'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
 
-    ds_halo_adv      = ds_halo.copy(deep=True)
-    ds_halo_adv['T'] = ds_halo_adv['T'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
+        ds_halo_adv      = ds_halo.copy(deep=True)
+        ds_halo_adv['T'] = ds_halo_adv['T'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
 
-    print(np.nanmean(T_domain_avg.values))
-    print(np.nanmean(ds_domain_adv['T'].values))
+    else:
+        ds_domain_adv      = ds_domain.copy(deep=True)
+        ds_domain_adv['T'] = xr.full_like(ds_domain['T'], np.nanmean(T_domain_avg.values)) # set T to constant value equal to domain average
+        
+        ds_halo_adv        = ds_halo.copy(deep=True)
+        ds_halo_adv['T']   = xr.full_like(ds_halo['T'], np.nanmean(T_domain_avg.values)) # set T to constant value equal to domain average
+
+    print('T_domain_avg:',     np.nanmean(T_domain_avg.values))
+    print('T_domain_adv_avg:', np.nanmean(ds_domain_adv['T'].values))
 
     advection_terms = terms.compute_advective_term(ds_domain_adv, ds_halo_adv, ds_cell_areas, ds_weights_areas, DomainSpecs, integral_diagnostics_flag)
     #time crop advection
     advection_terms = advection_terms.sel(time=dT_dt['time'])
 
-    #estimate of uncertainty from mass continuity
-    T_scale         = np.sqrt(np.mean(ds_domain['T'].sel(time=dT_dt['time']).values-T_domain_avg.values[:,None,None,None])**2.)
+    #needed to estimate heat advection uncertainty from mass continuity
+    if not test_constant_T:
+        T_scale:float  = np.sqrt(
+            np.mean( (ds_domain['T'].sel(time=dT_dt['time']).values-T_domain_avg.values[:,None,None,None])**2. )
+        )
+    else:
+        T_scale:float = np.nanmean(T_domain_avg.values) #type:ignore
+
     # T_scale = np.mean(T_domain_avg.values)
-    print(T_scale)
+    print('Is T_constant:', test_constant_T)
+    print('T_scale:', T_scale)
 
     advection_error = (dV_dt + advection_terms['net_mass_advection']) * T_scale # mass * K
 
@@ -97,7 +125,6 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
         advection_terms["net_heat_advection"],
         adiabatic_term,
     )
-    
 
     domain_volume = domain_volume.sel(time=dT_dt['time']) 
     #combine all terms into a single output dataset

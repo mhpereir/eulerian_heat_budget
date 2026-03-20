@@ -262,7 +262,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         color='C1',
         drawstyle="steps-post"
     )
-    lines_dT.append(line_ddt_TV)
+    lines_dT.append(line_ddt_TV[0])
 
     line_dT_from_dV = dT_from_dV.plot.line(
         ax=ax[1],
@@ -270,7 +270,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         color='C0',
         drawstyle="steps-post"
     )
-    lines_dT.append(line_dT_from_dV)
+    lines_dT.append(line_dT_from_dV[0])
 
     line_dTT_dt = dTT_dt.plot.line(
         ax=ax[1],
@@ -278,7 +278,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         color='C2',
         drawstyle="steps-post"
     )
-    lines_dT.append(line_dTT_dt)
+    lines_dT.append(line_dTT_dt[0])
 
     ax[1].legend(lines_dT, [
         r"d/dt$\int T dV$",
@@ -288,7 +288,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
 
     ax[1].axhline(0, color='k', linestyle='-', linewidth=1)
 
-    ax[1].set_ylabel(rf"dT/dt {units}")
+    ax[1].set_ylabel(rf"{units}")
     ax[1].set_title("Storage Term (normalized by volume)")
 
     # ---------------- Panel 3 ----------------
@@ -380,17 +380,17 @@ def plot_constant_T_results(ds_budget: xr.Dataset, ds_test:xr.Dataset, plot_dir:
 
     fig, ax = plt.subplots(figsize=(10, 10), tight_layout=True, nrows=2, sharex=True)
 
-    ax[0].plot(ds_budget["time"], ds_budget["advection_error"] * norm_factor * time_conversion_factor, label=r"$\delta M T_{scale}$", color='red')
+    ax[0].plot(ds_test["time"], ds_test["advection_error"] * norm_factor * time_conversion_factor, label=r"$\delta M T_{scale}$", color='red')
     ax[0].plot(ds_test["time"], ds_test["advection_term"] * norm_factor * time_conversion_factor, label=r"$\mathcal{F}_{advection}$", color='k')
 
     ax[0].legend(fontsize=10)
 
     #integrated quantities
-    dt = (ds_budget["time"][1] - ds_budget["time"][0]).values / np.timedelta64(1, 's')  # time step in seconds
-    integrated_advection_error = (ds_budget["advection_error"] * norm_factor * dt).cumsum(dim="time")
+    dt = (ds_test["time"][1] - ds_test["time"][0]).values / np.timedelta64(1, 's')  # time step in seconds
+    integrated_advection_error = (ds_test["advection_error"] * norm_factor * dt).cumsum(dim="time")
     integrated_net_heat_advection = (ds_test["advection_term"] * norm_factor * dt).cumsum(dim="time")
 
-    ax[1].plot(ds_budget["time"], integrated_advection_error, label=r"$T_{scale} \int \delta M dt$", color='red')
+    ax[1].plot(ds_test["time"], integrated_advection_error, label=r"$T_{scale} \int \delta M dt$", color='red')
     ax[1].plot(ds_test["time"], integrated_net_heat_advection, label=r"$\int \mathcal{F}_{advection} dt$", color='k')
 
     ax[1].legend(fontsize=10)
