@@ -244,7 +244,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     time_conversion_factor = 3600
 
     #storage term
-    ddt_TV = ds_budget["dT_dt"] * norm_factor * time_conversion_factor  # convert to K/s by dividing by volume and multiplying by T scale (using domain average T as scale)
+    ddt_TV = ds_budget["d_dt_T"] * norm_factor * time_conversion_factor  # convert to K/s by dividing by volume and multiplying by T scale (using domain average T as scale)
 
     #change in internal energy from volume change
 

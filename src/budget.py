@@ -56,7 +56,7 @@ def calculate_budget(ds_domain: xr.Dataset,
 
     
 
-    dT_dt = terms.compute_storage(ds_domain['T'],
+    d_dt_T = terms.compute_storage(ds_domain['T'],
                                   ds_cell_volumes,
                                   ds_weights_volumes,
                                   DomainSpecs)
@@ -64,10 +64,16 @@ def calculate_budget(ds_domain: xr.Dataset,
     domain_volume = terms.compute_domain_volume(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     dV_dt         = terms.compute_time_derivative(domain_volume)
 
+    
+
     #extra terms:
     #average T over the domain for each time step
     T_domain_avg = terms.compute_T_domain_average(ds_domain['T'], domain_volume, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
-    T_domain_avg = T_domain_avg.sel(time=dT_dt['time'])
+    dT_dt = (terms.compute_time_derivative(T_domain_avg)) * domain_volume
+    T_domain_avg = T_domain_avg.sel(time=d_dt_T['time'])
+
+    dT_dt_2 = d_dt_T - T_domain_avg * dV_dt
+
 
     #logic to distinguish between normal calculation and test with constant T field 
     # (to see if advection error matches estimate from mass continuity) 
@@ -93,12 +99,12 @@ def calculate_budget(ds_domain: xr.Dataset,
 
     advection_terms = terms.compute_advective_term(ds_domain_adv, ds_halo_adv, ds_cell_areas, ds_weights_areas, DomainSpecs, integral_diagnostics_flag)
     #time crop advection
-    advection_terms = advection_terms.sel(time=dT_dt['time'])
+    advection_terms = advection_terms.sel(time=d_dt_T['time'])
 
     #needed to estimate heat advection uncertainty from mass continuity
     if not test_constant_T:
         T_scale:float  = np.sqrt(
-            np.mean( (ds_domain['T'].sel(time=dT_dt['time']).values-T_domain_avg.values[:,None,None,None])**2. )
+            np.mean( (ds_domain['T'].sel(time=d_dt_T['time']).values-T_domain_avg.values[:,None,None,None])**2. )
         )
     else:
         T_scale:float = np.nanmean(T_domain_avg.values) #type:ignore
@@ -114,10 +120,11 @@ def calculate_budget(ds_domain: xr.Dataset,
         plot_diagnostics.fig1_mass_continuity(dV_dt, advection_terms, plot_diag_path)
         plot_diagnostics.fig2_mass_advection_residual_timeseries(advection_terms, dV_dt, domain_volume, plot_diag_path)
         plot_diagnostics.fig3_advection_components_timeseries(advection_terms, dV_dt, advection_error, domain_volume, plot_diag_path)
-    
+        plot_diagnostics.fig4_temperature_derivative_timeseries(d_dt_T, dT_dt, dT_dt_2, domain_volume, plot_diag_path)
+
     adiabatic_term = terms.compute_adiabatic_term(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     #time crop adiabatic
-    adiabatic_term = adiabatic_term.sel(time=dT_dt['time'])
+    adiabatic_term = adiabatic_term.sel(time=d_dt_T['time'])
 
     # compute the residual term (diabatic term) from the scalar net advection term
     diabatic_term = terms.compute_diabatic_term(
@@ -126,9 +133,10 @@ def calculate_budget(ds_domain: xr.Dataset,
         adiabatic_term,
     )
 
-    domain_volume = domain_volume.sel(time=dT_dt['time']) 
+    domain_volume = domain_volume.sel(time=d_dt_T['time']) 
     #combine all terms into a single output dataset
     out = xr.Dataset({
+        'd_dt_T': d_dt_T,
         'dT_dt': dT_dt,
         'dV_dt': dV_dt,
         'advection_term': advection_terms['net_heat_advection'], # use actual variable name in advection_terms dataset
