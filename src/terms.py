@@ -128,6 +128,7 @@ def compute_advective_term(ds_domain: xr.Dataset,
     r'''
     math term: -\int T U \cdot dA
     '''
+<<<<<<< HEAD
     
     if SurfaceSpecs.use_surface_variables:
         
@@ -140,6 +141,8 @@ def compute_advective_term(ds_domain: xr.Dataset,
         v_for_flux = ds_halo['v']
 
 
+=======
+>>>>>>> main
     # Compute velocity at cell faces for advection term
     # top/bottom - vertical velocity at top/bottom walls needed for advective fluxes
     w_top = ds_halo['w'].sel(level=DomainSpecs.zg_top_pressure, method=None)  # vertical velocity at top wall

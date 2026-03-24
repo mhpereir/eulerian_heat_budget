@@ -5,8 +5,9 @@ PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src import config, cli, specs, io, validate, grid, budget, run_outputs
+import xarray as xr
 
+from src import config, cli, specs, io, validate, grid, budget, run_outputs
 from src import plot_results
 
 def build_request_from_cli(args) -> specs.DomainRequest:
@@ -107,8 +108,28 @@ def main() -> None:
     plot_results.plot_budget_terms_hourly(result, smoothing_window=24, plot_dir=run_paths.plot_dir)
     plot_results.plot_budget_terms_day_bin(result, plot_dir=run_paths.plot_dir)
 
-    print(result)
+  
+    # testing to see if a constant temperature field, yields a net heat advection error comparable to the estimated advection error from mass continuity (delta_mass * T_scale)
+
+    ds_domain_test = ds_domain.copy(deep=True)
+    ds_domain_test['T'] = xr.full_like(ds_domain['T'], result.T_scale)
+
+    ds_halo_test = ds_halo.copy(deep=True)
+    ds_halo_test['T'] = xr.full_like(ds_halo['T'], result.T_scale)
+
+    result_test = budget.calculate_budget(
+        ds_domain_test, 
+        ds_halo_test, 
+        DomainSpecs, 
+        SurfaceSpecs,
+        integral_diagnostics_flag=True, 
+        plot_dir=run_paths.plot_dir+'_2', 
+        plot_flag=True, 
+        test_constant_T=True)
+    
+    plot_results.plot_budget_terms_day_bin(result_test, plot_dir=run_paths.plot_dir+'_2')
 
 
 if __name__ == "__main__":
     main()
+    

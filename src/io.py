@@ -57,6 +57,7 @@ def load_era5_omega(filepath: str) -> xr.Dataset:
     return _standardize_surface_era5(ds, {'w': 'w'}) #[Pa/s]
 
 def load_era5_sp(filepath: str) -> xr.Dataset:
+<<<<<<< HEAD
     ds = xr.open_dataset(filepath)
     return _standardize_surface_era5(ds, {'sp': 'sp'}) #[Pa]
 
@@ -162,6 +163,45 @@ def load_era5_merge_dataset(
 
     #hack to speed up calculation (cropped time range)
     merged = merged.sel(time=slice(config.DEFAULT_TIME_START, config.DEFAULT_TIME_END))
+=======
+    ds_sp = xr.open_dataset(filepath, chunks=DEFAULT_CHUNKS_2D1)
+    ds_sp = ds_sp.rename({'latitude': 'lat', 'longitude': 'lon'})
+
+    return ds_sp #[Pa]
+
+# def load_era5_zg(filepath: str) -> xr.Dataset:
+#     ds_z = xr.open_dataset(filepath)
+#     ds_z = ds_z.rename({'latitude': 'lat', 'longitude': 'lon'})
+
+#     ds_zg = ds_z * config.g  # convert geopotential to geopotential height
+#     ds_zg = ds_zg.rename({'z': 'zg'})  # rename variable to 'zg' for consistency
+
+#     return ds_zg  #[m]
+
+
+def load_era5_merge_dataset(ds_T, ds_u, ds_v, ds_w, ds_sp) -> xr.Dataset:
+    # Merge all datasets into a single dataset
+    merged = xr.merge([ds_T, ds_u, ds_v, ds_w, ds_sp], 
+                      compat='identical') 
+
+    #Ensure dimensions are in correct order
+    expected_order = ['time', 'level', 'lat', 'lon']
+    merged = merged.transpose(*expected_order)
+
+    #Enforce lat/lon monotonic ascending
+    if not merged['lat'].diff('lat').min() > 0:
+        merged = merged.sortby('lat')
+    if not merged['lon'].diff('lon').min() > 0:
+        merged = merged.sortby('lon')
+
+    #Enforce pressure coordinates are monotonic decreasing
+    dlev = merged['level'].diff('level')
+    if not ((dlev < 0).all() and merged['level'].to_index().is_unique):
+        merged = merged.sortby('level', ascending=False)
+
+    merged['level']                = merged['level'] * 100.0  # convert hPa to Pa
+    merged['level'].attrs['units'] = 'Pa'  # ensure pressure levels are in Pa
+>>>>>>> main
 
     return merged
 

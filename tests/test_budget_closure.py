@@ -108,9 +108,10 @@ def _build_geometry_and_weights(ds_full):
 
     ds_weights_areas = xr.merge(
         [
-            area_weights_vertical(ds_domain, spec),
+            area_weights_vertical(ds_halo, spec),
             area_weights_horizontal(ds_domain, spec),
-        ]
+        ],
+        compat="no_conflicts",
     )
 
     return ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec
@@ -147,9 +148,10 @@ def _build_geometry_and_weights_surface(ds_full):
 
     ds_weights_areas = xr.merge(
         [
-            area_weights_vertical(ds_domain, spec),
+            area_weights_vertical(ds_halo, spec),
             area_weights_horizontal(ds_domain, spec),
-        ]
+        ],
+        compat="no_conflicts",
     )
 
     return ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec

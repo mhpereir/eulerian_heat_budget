@@ -1,2 +1,5 @@
 *.OU
 *.venus
+*.png
+__pycache__/
+.pytest_cache/
