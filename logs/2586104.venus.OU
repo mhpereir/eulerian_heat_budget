@@ -1,0 +1,56 @@
+[info] 2026-03-23T19:51:12-07:00 starting eulerian heat budget calculation on host venus03
+Dataset schema validation passed.
+Proceeding with DomainSpec(lat_min=40.25, lat_max=59.75, lon_min=-129.75, lon_max=-110.25, zg_top_pressure=70000, zg_bottom='surface_pressure', zg_bottom_pressure=60000, allow_bottom_overflow=False)
+T_domain_avg: 282.3277133710802
+T_domain_adv_avg: -18.055040679259314
+Residual from mass advection into domain through the surfaces: 
+ MEAN=0.042042916563900974, MAX=0.3636323699841034 of time series.
+Is T_constant: False
+T_scale: 32.039482324903425
+Time coordinate is in datetime format.
+Traceback (most recent call last):
+  File "/home/mhpereir/eulerian_heat_budget/scripts/run_budget.py", line 58, in <module>
+    plot_results.plot_budget_terms_day_bin(result, plot_dir=config.DEFAULT_PLOTS_OUTPUT)
+  File "/home/mhpereir/eulerian_heat_budget/src/plot_results.py", line 326, in plot_budget_terms_day_bin
+    ax[2].fill_between(
+  File "/home/mhpereir/.conda/envs/dev_env/lib/python3.12/site-packages/matplotlib/__init__.py", line 1524, in inner
+    return func(
+           ^^^^^
+  File "/home/mhpereir/.conda/envs/dev_env/lib/python3.12/site-packages/matplotlib/axes/_axes.py", line 5722, in fill_between
+    return self._fill_between_x_or_y(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/mhpereir/.conda/envs/dev_env/lib/python3.12/site-packages/matplotlib/axes/_axes.py", line 5707, in _fill_between_x_or_y
+    collection = mcoll.FillBetweenPolyCollection(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/mhpereir/.conda/envs/dev_env/lib/python3.12/site-packages/matplotlib/collections.py", line 1331, in __init__
+    verts = self._make_verts(t, f1, f2, where)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/mhpereir/.conda/envs/dev_env/lib/python3.12/site-packages/matplotlib/collections.py", line 1395, in _make_verts
+    self._validate_shapes(self.t_direction, self._f_direction, t, f1, f2)
+  File "/home/mhpereir/.conda/envs/dev_env/lib/python3.12/site-packages/matplotlib/collections.py", line 1437, in _validate_shapes
+    raise ValueError(msg)
+ValueError: 'x' has size 92, but 'y1' has an unequal size of 91
+Command exited with non-zero status 1
+	Command being timed: "python run_budget.py"
+	User time (seconds): 2151.90
+	System time (seconds): 350.80
+	Percent of CPU this job got: 165%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 25:09.95
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 6636068
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 1
+	Minor (reclaiming a frame) page faults: 47425021
+	Voluntary context switches: 15105930
+	Involuntary context switches: 794444
+	Swaps: 0
+	File system inputs: 5490456
+	File system outputs: 9232
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 1

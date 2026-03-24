@@ -133,19 +133,17 @@ def calculate_budget(ds_domain: xr.Dataset,
         adiabatic_term,
     )
 
-    domain_volume = domain_volume.sel(time=d_dt_T['time'])
-    dV_dt = dV_dt.sel(time=d_dt_T['time'])
     #combine all terms into a single output dataset
     out = xr.Dataset({
-        'd_dt_T': d_dt_T,
-        'dT_dt': dT_dt,
-        'dV_dt': dV_dt,
-        'advection_term': advection_terms['net_heat_advection'], # use actual variable name in advection_terms dataset
-        'advection_error': advection_error,
-        'adiabatic_term': adiabatic_term,
-        'diabatic_term': diabatic_term,
-        'T_domain_avg': T_domain_avg,
-        'domain_volume': domain_volume,
+        'd_dt_T': d_dt_T.sel(time=d_dt_T['time']),
+        'dT_dt': dT_dt.sel(time=d_dt_T['time']),
+        'dV_dt': dV_dt.sel(time=d_dt_T['time']),
+        'advection_term': advection_terms['net_heat_advection'].sel(time=d_dt_T['time']), # use actual variable name in advection_terms dataset
+        'advection_error': advection_error.sel(time=d_dt_T['time']),
+        'adiabatic_term': adiabatic_term.sel(time=d_dt_T['time']),
+        'diabatic_term': diabatic_term.sel(time=d_dt_T['time']),
+        'T_domain_avg': T_domain_avg.sel(time=d_dt_T['time']),
+        'domain_volume': domain_volume.sel(time=d_dt_T['time']),
         'T_scale': T_scale,
     })
 

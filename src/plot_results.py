@@ -163,6 +163,7 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
 
         if error_var is not None and var in {"advection_term", "diabatic_term"}:
             error = np.abs(ds_budget[error_var]) * norm_factor  * time_conversion_factor
+            error = error.rolling(time=smoothing_window, center=True).mean() #type:ignore
             ax[2].fill_between(
                 term["time"].values,
                 (term - error).values,
@@ -323,6 +324,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
 
         if error_var is not None and var in {"advection_term", "diabatic_term"}:
             error = np.abs(ds_budget[error_var]) * norm_factor  * time_conversion_factor
+            error = error.resample(time="1D").sum() # type:ignore 
             ax[2].fill_between(
                 term["time"].values,
                 (term - error).values,
@@ -337,7 +339,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
 
 
     # add faint vertical lines
-    day_boundaries = ds_budget.time.values
+    day_boundaries = domain_volume.time.values
     for a in ax:
         for t in day_boundaries:
             a.axvline(
