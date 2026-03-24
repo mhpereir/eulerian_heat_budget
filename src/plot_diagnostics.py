@@ -264,25 +264,40 @@ def fig3_advection_components_timeseries(advection_terms: xr.Dataset, dV_dt: xr.
     plt.close()
 
 
-    # # epsilon_heat_advection = abs(net) / sum (abs ( advection_per_surface ))
-    # eps_heat = np.abs(advection_terms['net_heat_advection']) / np.sum(np.abs([advection_terms[heat] for heat in heat_vars]))
+
+
+def fig4_temperature_derivative_timeseries(d_dt_T: xr.DataArray, dT_dt_1:xr.DataArray, dT_dt_2:xr.DataArray, domain_volume: xr.DataArray, plot_dir: str):
+
+    norm_factor = 1 / domain_volume
+    time_rate_conversion = 3600 # convert from per second to per hour
+
+    # delta_mass = dV_dt + advection_terms['net_mass_advection']
+
+    fig, ax = plt.subplots(figsize=(10, 10), nrows=2, tight_layout=True, sharex=True)
+
+    ax[0].plot(d_dt_T['time'], d_dt_T * norm_factor * time_rate_conversion, label=r'd/dt $\int TdV$', linewidth=2, color='k')
+
+    ax[0].set_ylabel("[K / hr]")
+    ax[0].set_title("Storage term: d/dt of domain integrated T")
+
+    ax[1].plot(dT_dt_2['time'], dT_dt_2 * norm_factor * time_rate_conversion, label=r'd/dt$\int TdV$-$\langle T \rangle $dV/dt', linewidth=2, color='b')
+    ax[1].plot(dT_dt_1['time'], dT_dt_1 * norm_factor * time_rate_conversion, label=r'd$\langle T \rangle $/dt', linewidth=2, color='k')
     
-    # fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
-    # ax.plot(advection_terms['time'], eps_heat)
+    ax[1].set_title(r"Domain Average Temperature Tendency Time Series")
+    ax[1].set_ylabel('[K / hr]')
 
-    # locator = mdates.AutoDateLocator()
-    # formatter = mdates.ConciseDateFormatter(locator)
+    locator = mdates.AutoDateLocator()
+    formatter = mdates.ConciseDateFormatter(locator)
 
-    # ax.xaxis.set_major_locator(locator)
-    # ax.xaxis.set_major_formatter(formatter)
+    ax[1].xaxis.set_major_locator(locator)
+    ax[1].xaxis.set_major_formatter(formatter)
 
-    # ax.set_xlabel("Time")
-    # ax.set_ylabel("relative error")
-    # ax.set_title("Epsilon Heat Advection")
-    # plt.savefig(plot_dir + '/fig3.1_epsilon_heat_advection_timeseries.png', dpi=300)
-    # plt.close()
+    ax[0].legend(fontsize=10)
+    ax[1].legend(fontsize=10)
+    ax[1].set_xlabel("Time")
+    plt.savefig(plot_dir + '/fig4_temperature_derivative_timeseries.png', dpi=300)
+    plt.close()
 
-    
 
 
 

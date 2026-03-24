@@ -53,7 +53,6 @@ if __name__ == "__main__":
 
     result = budget.calculate_budget(ds_domain, ds_halo, DomainSpecs, integral_diagnostics_flag=True, plot_dir=config.DEFAULT_PLOTS_OUTPUT, plot_flag=True)
 
-
     plot_results.plot_budget_terms_hourly(result, smoothing_window=1, plot_dir=config.DEFAULT_PLOTS_OUTPUT)
     plot_results.plot_budget_terms_hourly(result, smoothing_window=24, plot_dir=config.DEFAULT_PLOTS_OUTPUT)
     plot_results.plot_budget_terms_day_bin(result, plot_dir=config.DEFAULT_PLOTS_OUTPUT)
@@ -67,7 +66,7 @@ if __name__ == "__main__":
     ds_halo_test = ds_halo.copy(deep=True)
     ds_halo_test['T'] = xr.full_like(ds_halo['T'], result.T_scale)
 
-    result_test = budget.calculate_budget(ds_domain_test, ds_halo_test, DomainSpecs, integral_diagnostics_flag=True, plot_dir=config.DEFAULT_PLOTS_OUTPUT+'_2', plot_flag=True)
+    result_test = budget.calculate_budget(ds_domain_test, ds_halo_test, DomainSpecs, integral_diagnostics_flag=True, plot_dir=config.DEFAULT_PLOTS_OUTPUT+'_2', plot_flag=True, test_constant_T=True)
 
     plot_results.plot_constant_T_results(result, result_test, plot_dir=config.DEFAULT_PLOTS_OUTPUT+'_2')
 

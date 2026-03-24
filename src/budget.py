@@ -18,24 +18,36 @@ from .specs import DomainSpec
 
 
 
-def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: DomainSpec, integral_diagnostics_flag: bool, plot_dir: str, plot_flag: bool) -> xr.Dataset:
+def calculate_budget(ds_domain: xr.Dataset, 
+                     ds_halo: xr.Dataset, 
+                     DomainSpecs: DomainSpec, 
+                     integral_diagnostics_flag: bool, 
+                     plot_dir: str, 
+                     plot_flag: bool,
+                     *,
+                     test_constant_T: bool = False
+                     ) -> xr.Dataset:
     plot_diag_path = os.path.join(plot_dir, "diagnostics")
     os.makedirs(plot_diag_path, exist_ok=True)
 
     # Construct integand cell areas and weights for integration
     ds_horizontal_cell_areas = grid.get_horizontal_cell_areas(ds_domain).astype("float64")
-    ds_vertical_cell_areas   = grid.get_vertical_cell_areas(ds_domain).astype("float64")
+    ds_vertical_cell_areas   = grid.get_vertical_cell_areas(ds_halo).astype("float64")
 
     # combine east, west, south, north + top (and bottom)
-    ds_cell_areas = xr.merge([ds_horizontal_cell_areas, ds_vertical_cell_areas])
+    ds_cell_areas = xr.merge([ds_horizontal_cell_areas, ds_vertical_cell_areas],
+                             compat="override", join='outer')
 
     ds_cell_volumes = grid.get_cell_volumes(ds_domain).astype("float64")
 
     ds_weights_horizontal = weights.area_weights_horizontal(ds_domain, DomainSpecs)
-    ds_weights_vertical   = weights.area_weights_vertical(ds_domain, DomainSpecs)
+    ds_weights_vertical   = weights.area_weights_vertical(ds_halo, DomainSpecs)
     ds_weights_volumes    = weights.volume_weights(ds_domain, DomainSpecs)
 
-    ds_weights_areas = xr.merge([ds_weights_horizontal, ds_weights_vertical])
+    ds_weights_areas = xr.merge(
+        [ds_weights_horizontal, ds_weights_vertical],
+        compat="override", join='outer'
+    )
 
     # pre-compute differential terms for advective, and adiabatic components
     # advective term needs du/dx, dv/dy, dw/dp @ each wall (east, west, north, south, top, bottom)
@@ -44,7 +56,7 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
 
     
 
-    dT_dt = terms.compute_storage(ds_domain['T'],
+    d_dt_T = terms.compute_storage(ds_domain['T'],
                                   ds_cell_volumes,
                                   ds_weights_volumes,
                                   DomainSpecs)
@@ -55,16 +67,51 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
     #extra terms:
     #average T over the domain for each time step
     T_domain_avg = terms.compute_T_domain_average(ds_domain['T'], domain_volume, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
-    T_domain_avg = T_domain_avg.sel(time=dT_dt['time'])
+    dT_dt = terms.compute_time_derivative(T_domain_avg) * domain_volume.sel(time=d_dt_T['time'])
+    
+    T_domain_avg = T_domain_avg.sel(time=d_dt_T['time'])
+    dT_dt        = dT_dt.sel(time=d_dt_T['time'])
 
-    advection_terms = terms.compute_advective_term(ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, DomainSpecs, integral_diagnostics_flag)
+    dT_dt_2 = d_dt_T - T_domain_avg * dV_dt
+
+
+    #logic to distinguish between normal calculation and test with constant T field 
+    # (to see if advection error matches estimate from mass continuity) 
+    # within test, set T to domain average (constant), 
+    # so that any spatial anomalies are removed and only the advective error
+    # from mass continuity remains
+    if not test_constant_T:
+        ds_domain_adv      = ds_domain.copy(deep=True)
+        ds_domain_adv['T'] = ds_domain_adv['T'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
+
+        ds_halo_adv      = ds_halo.copy(deep=True)
+        ds_halo_adv['T'] = ds_halo_adv['T'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
+
+    else:
+        ds_domain_adv      = ds_domain.copy(deep=True)
+        ds_domain_adv['T'] = xr.full_like(ds_domain['T'], np.nanmean(T_domain_avg.values)) # set T to constant value equal to domain average
+        
+        ds_halo_adv        = ds_halo.copy(deep=True)
+        ds_halo_adv['T']   = xr.full_like(ds_halo['T'], np.nanmean(T_domain_avg.values)) # set T to constant value equal to domain average
+
+    print('T_domain_avg:',     np.nanmean(T_domain_avg.values))
+    print('T_domain_adv_avg:', np.nanmean(ds_domain_adv['T'].values))
+
+    advection_terms = terms.compute_advective_term(ds_domain_adv, ds_halo_adv, ds_cell_areas, ds_weights_areas, DomainSpecs, integral_diagnostics_flag)
     #time crop advection
-    advection_terms = advection_terms.sel(time=dT_dt['time'])
+    advection_terms = advection_terms.sel(time=d_dt_T['time'])
 
-    #estimate of uncertainty from mass continuity
-    # T_scale         = np.sqrt(np.mean(ds_domain['T'].sel(time=dT_dt['time']).values-T_domain_avg.values[:,None,None,None])**2.)
-    T_scale = np.mean(T_domain_avg.values)
-    print(T_scale)
+    #needed to estimate heat advection uncertainty from mass continuity
+    if not test_constant_T:
+        T_scale:float  = np.sqrt(
+            np.mean( (ds_domain['T'].sel(time=d_dt_T['time']).values-T_domain_avg.values[:,None,None,None])**2. )
+        )
+    else:
+        T_scale:float = np.nanmean(T_domain_avg.values) #type:ignore
+
+    # T_scale = np.mean(T_domain_avg.values)
+    print('Is T_constant:', test_constant_T)
+    print('T_scale:', T_scale)
 
     advection_error = (dV_dt + advection_terms['net_mass_advection']) * T_scale # mass * K
 
@@ -73,10 +120,11 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
         plot_diagnostics.fig1_mass_continuity(dV_dt, advection_terms, plot_diag_path)
         plot_diagnostics.fig2_mass_advection_residual_timeseries(advection_terms, dV_dt, domain_volume, plot_diag_path)
         plot_diagnostics.fig3_advection_components_timeseries(advection_terms, dV_dt, advection_error, domain_volume, plot_diag_path)
-        
+        plot_diagnostics.fig4_temperature_derivative_timeseries(d_dt_T, dT_dt, dT_dt_2, domain_volume, plot_diag_path)
+
     adiabatic_term = terms.compute_adiabatic_term(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     #time crop adiabatic
-    adiabatic_term = adiabatic_term.sel(time=dT_dt['time'])
+    adiabatic_term = adiabatic_term.sel(time=d_dt_T['time'])
 
     # compute the residual term (diabatic term) from the scalar net advection term
     diabatic_term = terms.compute_diabatic_term(
@@ -84,19 +132,18 @@ def calculate_budget(ds_domain: xr.Dataset, ds_halo: xr.Dataset, DomainSpecs: Do
         advection_terms["net_heat_advection"],
         adiabatic_term,
     )
-    
 
-    domain_volume = domain_volume.sel(time=dT_dt['time']) 
     #combine all terms into a single output dataset
     out = xr.Dataset({
-        'dT_dt': dT_dt,
-        'dV_dt': dV_dt,
-        'advection_term': advection_terms['net_heat_advection'], # use actual variable name in advection_terms dataset
-        'advection_error': advection_error,
-        'adiabatic_term': adiabatic_term,
-        'diabatic_term': diabatic_term,
-        'T_domain_avg': T_domain_avg,
-        'domain_volume': domain_volume,
+        'd_dt_T': d_dt_T.sel(time=d_dt_T['time']),
+        'dT_dt': dT_dt.sel(time=d_dt_T['time']),
+        'dV_dt': dV_dt.sel(time=d_dt_T['time']),
+        'advection_term': advection_terms['net_heat_advection'].sel(time=d_dt_T['time']), # use actual variable name in advection_terms dataset
+        'advection_error': advection_error.sel(time=d_dt_T['time']),
+        'adiabatic_term': adiabatic_term.sel(time=d_dt_T['time']),
+        'diabatic_term': diabatic_term.sel(time=d_dt_T['time']),
+        'T_domain_avg': T_domain_avg.sel(time=d_dt_T['time']),
+        'domain_volume': domain_volume.sel(time=d_dt_T['time']),
         'T_scale': T_scale,
     })
 
