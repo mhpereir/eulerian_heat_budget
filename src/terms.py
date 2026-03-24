@@ -93,7 +93,8 @@ def _adjust_surface_field(
 
     is_cut = (sp > p_top) & (sp < p_bottom)
     is_lowest_layer = p_bottom == da_var['level'].isel(level=-1) #
-    if SurfaceSpecs.allow_bottom_overflow:
+    if SurfaceSpecs.allow_bottom_overflow: #sometime the surface will be below the lowest pressure level, 
+                                           #in that case we allow the bottom layer to be surface adjacent
         is_overflow = is_lowest_layer & (sp >= p_bottom)
         is_surface_adjacent = is_cut | is_overflow
     else:
