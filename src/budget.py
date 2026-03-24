@@ -64,13 +64,13 @@ def calculate_budget(ds_domain: xr.Dataset,
     domain_volume = terms.compute_domain_volume(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     dV_dt         = terms.compute_time_derivative(domain_volume)
 
-    
-
     #extra terms:
     #average T over the domain for each time step
     T_domain_avg = terms.compute_T_domain_average(ds_domain['T'], domain_volume, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
-    dT_dt = (terms.compute_time_derivative(T_domain_avg)) * domain_volume
+    dT_dt = terms.compute_time_derivative(T_domain_avg) * domain_volume.sel(time=d_dt_T['time'])
+    
     T_domain_avg = T_domain_avg.sel(time=d_dt_T['time'])
+    dT_dt        = dT_dt.sel(time=d_dt_T['time'])
 
     dT_dt_2 = d_dt_T - T_domain_avg * dV_dt
 
@@ -133,7 +133,8 @@ def calculate_budget(ds_domain: xr.Dataset,
         adiabatic_term,
     )
 
-    domain_volume = domain_volume.sel(time=d_dt_T['time']) 
+    domain_volume = domain_volume.sel(time=d_dt_T['time'])
+    dV_dt = dV_dt.sel(time=d_dt_T['time'])
     #combine all terms into a single output dataset
     out = xr.Dataset({
         'd_dt_T': d_dt_T,

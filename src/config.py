@@ -33,6 +33,6 @@ DEFAULT_ALLOW_BOTTOM_OVERFLOW = False # allow bottom layer weights to exceed 1 i
 # pressure levels for geopotential height domain boundaries (in Pa)
 # zg_bottom_pressure only used if zg_bottom == "pressure_level"; else surface pressure determines bottom boundary
 DEFAULT_ZG_BOT_PA: float = 600 * 100 # lower boundary pressure for geopotential height budget in Pa
-DEFAULT_ZG_TOP_PA: float = 850 * 100 # upper boundary pressure for geopotential height budget in Pa
+DEFAULT_ZG_TOP_PA: float = 700 * 100 # upper boundary pressure for geopotential height budget in Pa
 
 DEFAULT_PLOTS_OUTPUT:str = "/home/mhpereir/eulerian_heat_budget/results/plots"
