@@ -27,7 +27,7 @@ cp: float       = 1.005e3 #specific heat capacity of air in [J/(kg*K)]
 DEFAULT_BBOX          = (40, 60, -130, -110) # lat_min, lat_max, lon_min, lon_max for domain extent (before margin/snap)
 
 DEFAULT_TIME_START    = "1941-06-01T00:00:00" # start time for budget period
-DEFAULT_TIME_END      = "1941-06-07T23:00:00" # end time for budget period 
+DEFAULT_TIME_END      = "1941-08-31T23:00:00" # end time for budget period 
 
 DEFAULT_MARGIN_N: int = 1 # number of grid points to keep as margin when determining domain extent
 

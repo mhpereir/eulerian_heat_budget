@@ -44,7 +44,7 @@ def calculate_budget(
     ds_cell_volumes = grid.get_cell_volumes(ds_domain).astype("float64")
 
     ds_weights_horizontal = weights.area_weights_horizontal(ds_domain, DomainSpecs)
-    ds_weights_vertical   = weights.area_weights_vertical(ds_domain, DomainSpecs, SurfaceSpecs)
+    ds_weights_vertical   = weights.area_weights_vertical(ds_halo, DomainSpecs, SurfaceSpecs)
     ds_weights_volumes    = weights.volume_weights(ds_domain, DomainSpecs, SurfaceSpecs)
 
     ds_weights_areas = xr.merge([ds_weights_horizontal, ds_weights_vertical], compat="override", join='outer')
