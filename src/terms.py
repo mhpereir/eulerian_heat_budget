@@ -71,6 +71,7 @@ def _adjust_surface_field(
     da_var: xr.DataArray,
     da_var_surface: xr.DataArray,
     da_sp: xr.DataArray,
+    DomainSpecs: DomainSpec,
     SurfaceSpecs: SurfaceBehaviour,
 ) -> xr.DataArray:
     '''
@@ -86,13 +87,8 @@ def _adjust_surface_field(
     p_mid    = da_var['p_mid']   # pressure level mid point
     p_bottom = da_var['p_start'] #
 
-    dp_upper = np.clip(np.minimum(np.maximum(sp, p_top), p_mid) - p_top, 0.0, None)
-    dp_lower = np.clip(sp - np.maximum(p_mid, p_top), 0.0, None)
-    dp_total = dp_upper + dp_lower
-
-
     is_cut = (sp > p_top) & (sp < p_bottom)
-    is_lowest_layer = p_bottom == da_var['level'].isel(level=-1) #
+    is_lowest_layer = da_var["level"] == da_var["level"].isel(level=0) #
     if SurfaceSpecs.allow_bottom_overflow: #sometime the surface will be below the lowest pressure level, 
                                            #in that case we allow the bottom layer to be surface adjacent
         is_overflow = is_lowest_layer & (sp >= p_bottom)
@@ -103,18 +99,45 @@ def _adjust_surface_field(
     #ensure that surface_adjacent mask is only true once per time/lat/lon column
     assert np.all(is_surface_adjacent.sum(dim='level') <= 1), "Surface adjacent mask is true for multiple levels in the same column, check pressure levels and surface pressure values."
 
-    #print percent of columns that have a surface adjacent cell (should be nearly 100%)
-    print(f"Percent of columns that have surface adjacency: {is_surface_adjacent.sum().values / is_surface_adjacent.count().values * 100:.2f}%")
+    pct_columns = is_surface_adjacent.any(dim="level").mean().compute().item() * 100
+    active_columns = da_sp > DomainSpecs.zg_top_pressure
+    pct_active = (
+        is_surface_adjacent.any(dim="level").where(active_columns).mean().compute().item() * 100
+    )
+    print(f"Percent of columns that have surface adjacency: {pct_columns:.2f}%")
+    print(f"Percent of active columns (surface pressure above top boundary) that have surface adjacency: {pct_active:.2f}%")
 
     var_surface = da_var_surface  # velocity at surface pressure level
     var_level   = da_var          # velocity at all levels
 
-    var_effective = xr.where(
-        is_surface_adjacent,
-        (dp_upper * var_level + dp_lower * 0.5 * (var_level + var_surface)) / dp_total,
-        var_level
-    )
-    
+    #case A
+    # Surface pressure >= P_bottom: then the entire layer is above the surface, keep original value
+    var_effective = var_level.copy(deep=True)
+
+    #case B
+    # P_mid < Surface pressure < P_bottom: then the layer is cut by the surface, compute weighted average
+    is_B = is_surface_adjacent & (sp > p_mid)      # includes overflow D naturally
+
+    dp_upper_B = np.clip(p_mid - p_top, 0.0, None)
+    dp_lower_B = np.clip(sp - p_mid, 0.0, None)
+    dp_total_B = dp_upper_B + dp_lower_B
+
+    v_eff_B = (
+        dp_upper_B * var_level
+        + dp_lower_B * 0.5 * (var_level + var_surface)
+    ) / dp_total_B
+
+    var_effective = xr.where(is_B, v_eff_B, var_effective)
+    #case C
+    # Surface pressure <= P_mid: then the entire layer is below the surface, use blend is surface and next layer above the surface
+    is_C = is_surface_adjacent & (sp <= p_mid)
+    var_above = var_level.shift(level=-1)
+    var_above = var_above.fillna(var_surface)
+
+    v_eff_C = 0.5 * (var_above + var_surface)
+
+    var_effective = xr.where(is_C, v_eff_C, var_effective)
+
     return var_effective
     
 
@@ -131,13 +154,26 @@ def compute_advective_term(ds_domain: xr.Dataset,
     
     if SurfaceSpecs.use_surface_variables:
         
-        u_for_flux = _adjust_surface_field(ds_halo['u'], ds_halo['u10'], ds_halo['sp'], SurfaceSpecs)
-        v_for_flux = _adjust_surface_field(ds_halo['v'], ds_halo['v10'], ds_halo['sp'], SurfaceSpecs)
+        u_for_flux = _adjust_surface_field(ds_halo['u'], ds_halo['u10'], ds_halo['sp'], DomainSpecs, SurfaceSpecs)
+        v_for_flux = _adjust_surface_field(ds_halo['v'], ds_halo['v10'], ds_halo['sp'], DomainSpecs, SurfaceSpecs)
+        T_for_flux = _adjust_surface_field(ds_halo['T'], ds_halo['T2m'], ds_halo['sp'], DomainSpecs, SurfaceSpecs)
+
+        du = (u_for_flux - ds_halo["u"]).where(np.isfinite(u_for_flux))
+        dv = (v_for_flux - ds_halo["v"]).where(np.isfinite(v_for_flux))
+        dT = (T_for_flux - ds_halo["T"]).where(np.isfinite(T_for_flux))
+
+        print("max |du|:", np.abs(du).max().compute().item())
+        print("mean |du| on changed cells:", np.abs(du).where(du != 0).mean().compute().item()) #type: ignore
+        print("max |dv|:", np.abs(dv).max().compute().item())
+        print("mean |dv| on changed cells:", np.abs(dv).where(dv != 0).mean().compute().item()) #type: ignore
+        print("max |dT|:", np.abs(dT).max().compute().item())
+        print("mean |dT| on changed cells:", np.abs(dT).where(dT != 0).mean().compute().item()) #type: ignore
 
     else:
 
         u_for_flux = ds_halo['u']
         v_for_flux = ds_halo['v']
+        T_for_flux = ds_halo['T']
 
 
     # Compute velocity at cell faces for advection term
@@ -163,19 +199,19 @@ def compute_advective_term(ds_domain: xr.Dataset,
     # halo cells are needed to compute these at the domain boundaries
     # note lat/lon monotonic ascending;
     u_west = 0.5 * (u_for_flux.isel(lon=0)   + u_for_flux.isel(lon=1))
-    T_west = 0.5 * (ds_halo['T'].isel(lon=0) + ds_halo['T'].isel(lon=1))
+    T_west = 0.5 * (T_for_flux.isel(lon=0) + T_for_flux.isel(lon=1))
     uT_west = u_west * T_west
 
     u_east = 0.5 * (u_for_flux.isel(lon=-1)   + u_for_flux.isel(lon=-2))
-    T_east = 0.5 * (ds_halo['T'].isel(lon=-1) + ds_halo['T'].isel(lon=-2))
+    T_east = 0.5 * (T_for_flux.isel(lon=-1) + T_for_flux.isel(lon=-2))
     uT_east = u_east * T_east
 
     v_south = 0.5 * (v_for_flux.isel(lat=0)   + v_for_flux.isel(lat=1))
-    T_south = 0.5 * (ds_halo['T'].isel(lat=0) + ds_halo['T'].isel(lat=1))
+    T_south = 0.5 * (T_for_flux.isel(lat=0) + T_for_flux.isel(lat=1))
     vT_south = v_south * T_south
 
     v_north = 0.5 * (v_for_flux.isel(lat=-1)   + v_for_flux.isel(lat=-2))
-    T_north = 0.5 * (ds_halo['T'].isel(lat=-1) + ds_halo['T'].isel(lat=-2))
+    T_north = 0.5 * (T_for_flux.isel(lat=-1) + T_for_flux.isel(lat=-2))
     vT_north = v_north * T_north
 
     # Ensure ds_halo derived variables are cropped to ds_domain

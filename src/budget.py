@@ -76,16 +76,21 @@ def calculate_budget(
     if not test_constant_T:
         ds_domain_adv      = ds_domain.copy(deep=True)
         ds_domain_adv['T'] = ds_domain_adv['T'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
+        ds_domain_adv['T2m'] = ds_domain_adv['T2m'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
 
         ds_halo_adv      = ds_halo.copy(deep=True)
         ds_halo_adv['T'] = ds_halo_adv['T'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
+        ds_halo_adv['T2m'] = ds_halo_adv['T2m'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
+
 
     else:
         ds_domain_adv      = ds_domain.copy(deep=True)
         ds_domain_adv['T'] = xr.full_like(ds_domain['T'], np.nanmean(T_domain_avg.values)) # set T to constant value equal to domain average
-        
+        ds_domain_adv['T2m'] = xr.full_like(ds_domain['T2m'], np.nanmean(T_domain_avg.values)) # set T2m to constant value equal to domain average
+
         ds_halo_adv        = ds_halo.copy(deep=True)
         ds_halo_adv['T']   = xr.full_like(ds_halo['T'], np.nanmean(T_domain_avg.values)) # set T to constant value equal to domain average
+        ds_halo_adv['T2m'] = xr.full_like(ds_halo['T2m'], np.nanmean(T_domain_avg.values)) # set T2m to constant value equal to domain average
 
     print('T_domain_avg:',     np.nanmean(T_domain_avg.values))
     print('T_domain_adv_avg:', np.nanmean(ds_domain_adv['T'].values))

@@ -121,7 +121,6 @@ def main() -> None:
     ds_halo_test['T'] = xr.full_like(ds_halo['T'], result.T_scale)
 
 
-
     result_test = budget.calculate_budget(
         ds_domain_test, 
         ds_halo_test, 
