@@ -47,8 +47,6 @@ def _make_request(*,
         zg_top_pressure=500*100,
         zg_bottom="pressure_level",
         zg_bottom_pressure=1000*100,
-        allow_bottom_overflow=True,
-        in_surface_variables=False,
     )
 
 
@@ -101,7 +99,6 @@ def test_determine_domain_crops_to_cells_and_sets_bounds():
     assert spec.zg_top_pressure == 500*100
     assert spec.zg_bottom == "pressure_level"
     assert spec.zg_bottom_pressure == 1000*100
-    assert spec.allow_bottom_overflow is True
 
     # traceability ids exist on the same dims
     np.testing.assert_array_equal(dom["lat_cell_id"].values, np.array([1, 2, 3, 4]))

@@ -23,9 +23,9 @@ def test_prepare_run_paths_uses_pbs_jobid(tmp_path):
 
     assert paths.run_id == "2586030.venus"
     assert Path(paths.run_root) == tmp_path / "2586030.venus"
-    assert Path(paths.plot_dir) == tmp_path / "2586030.venus" / "outputs_here"
+    assert Path(paths.plot_dir) == tmp_path / "2586030.venus" / "plots"
     assert Path(paths.plot_dir).is_dir()
-    assert Path(paths.metadata_path) == tmp_path / "2586030.venus" / "outputs_here" / "run_info.json"
+    assert Path(paths.metadata_path) == tmp_path / "2586030.venus" / "run_info.json"
 
 
 def test_write_run_info_serializes_specs_to_json(tmp_path):
@@ -72,7 +72,7 @@ def test_write_run_info_serializes_specs_to_json(tmp_path):
 
     assert payload["run_id"] == "2586030.venus"
     assert payload["pbs_job_id"] == "2586030.venus"
-    assert payload["plot_dir"] == str(tmp_path / "2586030.venus" / "outputs_here")
+    assert payload["plot_dir"] == str(tmp_path / "2586030.venus" / "plots")
     assert payload["request"]["bbox"] == [40.0, 60.0, -130.0, -110.0]
     assert payload["domain_spec"]["lat_min"] == 40.25
     assert payload["surface_behaviour"]["surface_variable_mode"] == "combined"

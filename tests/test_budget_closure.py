@@ -12,7 +12,7 @@ import pytest
 
 from src import config
 
-from src.specs import DomainRequest
+from src.specs import DomainRequest, SurfaceBehaviour
 from src.grid import (
     determine_domain,
     get_horizontal_cell_areas,
@@ -89,8 +89,11 @@ def _build_geometry_and_weights(ds_full):
         zg_top_pressure=500e2,
         zg_bottom="pressure_level",
         zg_bottom_pressure=1000e2,
+    )
+    surface_spec = SurfaceBehaviour(
         allow_bottom_overflow=False,
-        in_surface_variables=False,
+        use_surface_variables=False,
+        surface_variable_mode="none",
     )
 
     ds_domain, ds_halo, spec = determine_domain(ds_full, req)
@@ -108,13 +111,13 @@ def _build_geometry_and_weights(ds_full):
 
     ds_weights_areas = xr.merge(
         [
-            area_weights_vertical(ds_halo, spec),
+            area_weights_vertical(ds_halo, spec, surface_spec),
             area_weights_horizontal(ds_domain, spec),
         ],
         compat="no_conflicts",
     )
 
-    return ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec
+    return ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec, surface_spec
 
 
 
@@ -128,9 +131,12 @@ def _build_geometry_and_weights_surface(ds_full):
         margin_n=1,
         zg_top_pressure=500e2,
         zg_bottom="surface_pressure",
-        zg_bottom_pressure=1000e2,
+        zg_bottom_pressure=None,
+    )
+    surface_spec = SurfaceBehaviour(
         allow_bottom_overflow=False,
-        in_surface_variables=False,
+        use_surface_variables=False,
+        surface_variable_mode="none",
     )
 
     ds_domain, ds_halo, spec = determine_domain(ds_full, req)
@@ -148,13 +154,13 @@ def _build_geometry_and_weights_surface(ds_full):
 
     ds_weights_areas = xr.merge(
         [
-            area_weights_vertical(ds_halo, spec),
+            area_weights_vertical(ds_halo, spec, surface_spec),
             area_weights_horizontal(ds_domain, spec),
         ],
         compat="no_conflicts",
     )
 
-    return ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec
+    return ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec, surface_spec
 
 
 def test_mass_advection_zero_flow_closed_to_machine_precision():
@@ -174,7 +180,7 @@ def test_mass_advection_zero_flow_closed_to_machine_precision():
         sp0=1015e2,
     )
 
-    ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec = _build_geometry_and_weights(ds_full)
+    ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec, surface_spec = _build_geometry_and_weights(ds_full)
 
     out = compute_advective_term(
         ds_domain=ds_domain,
@@ -182,6 +188,7 @@ def test_mass_advection_zero_flow_closed_to_machine_precision():
         ds_cell_areas=ds_cell_areas,
         ds_weights_areas=ds_weights_areas,
         DomainSpecs=spec,
+        SurfaceSpecs=surface_spec,
         integral_diagnostics_flag=True,
     )
 
@@ -222,7 +229,7 @@ def test_mass_advection_uniform_zonal_flow_closed_to_machine_precision():
         sp0=1015e2,
     )
 
-    ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec = _build_geometry_and_weights(ds_full)
+    ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec, surface_spec = _build_geometry_and_weights(ds_full)
 
     out = compute_advective_term(
         ds_domain=ds_domain,
@@ -230,6 +237,7 @@ def test_mass_advection_uniform_zonal_flow_closed_to_machine_precision():
         ds_cell_areas=ds_cell_areas,
         ds_weights_areas=ds_weights_areas,
         DomainSpecs=spec,
+        SurfaceSpecs=surface_spec,
         integral_diagnostics_flag=True,
     )
 
@@ -274,7 +282,7 @@ def test_mass_advection_uniform_meridional_flow_closed_to_machine_precision():
         sp0=1015e2,
     )
 
-    ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec = _build_geometry_and_weights(ds_full)
+    ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec, surface_spec = _build_geometry_and_weights(ds_full)
 
     out = compute_advective_term(
         ds_domain=ds_domain,
@@ -282,6 +290,7 @@ def test_mass_advection_uniform_meridional_flow_closed_to_machine_precision():
         ds_cell_areas=ds_cell_areas,
         ds_weights_areas=ds_weights_areas,
         DomainSpecs=spec,
+        SurfaceSpecs=surface_spec,
         integral_diagnostics_flag=True,
     )
 
@@ -338,7 +347,7 @@ def test_mass_advection_uniform_meridional_and_compensating_vertical_flow_closed
         sp0=1000e2,
     )
 
-    ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec = _build_geometry_and_weights_surface(ds_full)
+    ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec, surface_spec = _build_geometry_and_weights_surface(ds_full)
 
     F_ns = v0 * (
         (ds_cell_areas["A_north"] * ds_weights_areas["W_north"]).sum(dim=("level", "lon"))
@@ -375,7 +384,7 @@ def test_mass_advection_uniform_meridional_and_compensating_vertical_flow_closed
         sp0=1000e2,
     )
 
-    ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec = _build_geometry_and_weights_surface(ds_full)
+    ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec, surface_spec = _build_geometry_and_weights_surface(ds_full)
 
     out = compute_advective_term(
         ds_domain=ds_domain,
@@ -383,6 +392,7 @@ def test_mass_advection_uniform_meridional_and_compensating_vertical_flow_closed
         ds_cell_areas=ds_cell_areas,
         ds_weights_areas=ds_weights_areas,
         DomainSpecs=spec,
+        SurfaceSpecs=surface_spec,
         integral_diagnostics_flag=True,
     )
 

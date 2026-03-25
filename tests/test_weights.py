@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from src.specs import DomainRequest
+from src.specs import DomainRequest, SurfaceBehaviour
 from src.grid import determine_domain
 from src.weights import volume_weights, area_weights_vertical, area_weights_horizontal
 
@@ -34,7 +34,6 @@ def _make_request(
     zg_top_pressure: float,
     zg_bottom: str,
     zg_bottom_pressure: float | None,
-    allow_bottom_overflow: bool,
     margin_n: int = 0,
 ) -> DomainRequest:
     return DomainRequest(
@@ -43,8 +42,14 @@ def _make_request(
         zg_top_pressure=zg_top_pressure,
         zg_bottom=zg_bottom,  # "surface_pressure" | "pressure_level" #type:ignore
         zg_bottom_pressure=zg_bottom_pressure,
+    )
+
+
+def _make_surface_behaviour(*, allow_bottom_overflow: bool) -> SurfaceBehaviour:
+    return SurfaceBehaviour(
         allow_bottom_overflow=allow_bottom_overflow,
-        in_surface_variables=False
+        use_surface_variables=False,
+        surface_variable_mode="none",
     )
 
 
@@ -82,9 +87,9 @@ def test_volume_weights_surface_and_top_intersections_exact():
         zg_top_pressure=790*100,
         zg_bottom="surface_pressure",
         zg_bottom_pressure=None,
-        allow_bottom_overflow=False,
         margin_n=1,
     )
+    surface_spec = _make_surface_behaviour(allow_bottom_overflow=False)
     dom, halo, spec = determine_domain(ds, req)
 
     # Define sp such that it cuts the *bottom* layer halfway:
@@ -92,7 +97,7 @@ def test_volume_weights_surface_and_top_intersections_exact():
     # The top layer is [80000, 90000], but CV top is 85000 so only [85000, 90000] included => 0.5
     dom = _attach_sp(dom, sp_vals=np.zeros((1, 3, 3)) + np.array([[[1000*100]]]))  # shape (time=1, lat=6, lon=6)
 
-    W = volume_weights(dom, spec)
+    W = volume_weights(dom, spec, surface_spec)
     assert W.dims == ("time", "level", "lat", "lon")
     assert np.isfinite(W.values).all()
 
@@ -118,7 +123,6 @@ def test_area_weights_horizontal_binary_top_and_bottom():
         zg_top_pressure=800*100,
         zg_bottom="pressure_level",
         zg_bottom_pressure=900*100,
-        allow_bottom_overflow=False,
         margin_n=1,
     )
     dom, halo, spec = determine_domain(ds, req)
@@ -166,9 +170,9 @@ def test_area_weights_vertical_uses_boundary_slices():
         zg_top_pressure=880*100,
         zg_bottom="surface_pressure",
         zg_bottom_pressure=None,
-        allow_bottom_overflow=True,
         margin_n=1,
     )
+    surface_spec = _make_surface_behaviour(allow_bottom_overflow=True)
     dom, halo, spec = determine_domain(ds, req)
 
     # Halo surface pressure field on the 4x4 halo grid.
@@ -185,7 +189,7 @@ def test_area_weights_vertical_uses_boundary_slices():
     ]])
     halo = _attach_sp(halo, sp_vals=sp_vals)
 
-    out = area_weights_vertical(halo, spec) 
+    out = area_weights_vertical(halo, spec, surface_spec) 
 
     for k in ["W_east", "W_west", "W_south", "W_north"]:
         assert k in out
@@ -260,9 +264,9 @@ def test_area_weights_vertical_uses_boundary_slices_no_bottom_overflow():
         zg_top_pressure=880*100,
         zg_bottom="surface_pressure",
         zg_bottom_pressure=None,
-        allow_bottom_overflow=False,
         margin_n=1,
     )
+    surface_spec = _make_surface_behaviour(allow_bottom_overflow=False)
     dom, halo, spec = determine_domain(ds, req)
 
     # Halo surface pressure field on the 4x4 halo grid.
@@ -279,7 +283,7 @@ def test_area_weights_vertical_uses_boundary_slices_no_bottom_overflow():
     ]])
     halo = _attach_sp(halo, sp_vals=sp_vals)
 
-    out = area_weights_vertical(halo, spec) 
+    out = area_weights_vertical(halo, spec, surface_spec) 
 
     for k in ["W_east", "W_west", "W_south", "W_north"]:
         assert k in out
@@ -339,4 +343,3 @@ def test_area_weights_vertical_uses_boundary_slices_no_bottom_overflow():
     assert float(Ww.min()) >= 0.0 and float(Ww.max()) <= 1.0
     assert float(Ws.min()) >= 0.0 and float(Ws.max()) <= 1.0
     assert float(Wn.min()) >= 0.0 and float(Wn.max()) <= 1.0
-
