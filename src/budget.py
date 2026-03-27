@@ -60,12 +60,10 @@ def calculate_budget(
     #extra terms:
     #average T over the domain for each time step
     T_domain_avg = terms.compute_T_domain_average(ds_domain['T'], domain_volume, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
-    dT_dt = terms.compute_time_derivative(T_domain_avg) * domain_volume.sel(time=d_dt_T['time'])
-    
-    T_domain_avg = T_domain_avg.sel(time=d_dt_T['time'])
+    dT_dt        = terms.compute_time_derivative(T_domain_avg) * domain_volume.sel(time=d_dt_T['time'])
     dT_dt        = dT_dt.sel(time=d_dt_T['time'])
 
-    dT_dt_2 = d_dt_T - T_domain_avg * dV_dt
+    dT_dt_2 = d_dt_T - T_domain_avg.sel(time=d_dt_T['time']) * dV_dt
 
 
     #logic to distinguish between normal calculation and test with constant T field 
@@ -75,12 +73,12 @@ def calculate_budget(
     # from mass continuity remains
     if not test_constant_T:
         ds_domain_adv      = ds_domain.copy(deep=True)
-        ds_domain_adv['T'] = ds_domain_adv['T'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
-        ds_domain_adv['T2m'] = ds_domain_adv['T2m'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
+        ds_domain_adv['T'] = ds_domain_adv['T'] - T_domain_avg.values[:,None,None,None] # remove domain average to isolate advective anomalies
+        ds_domain_adv['T2m'] = ds_domain_adv['T2m'] - T_domain_avg.values[:,None,None] # remove domain average to isolate advective anomalies
 
         ds_halo_adv      = ds_halo.copy(deep=True)
-        ds_halo_adv['T'] = ds_halo_adv['T'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
-        ds_halo_adv['T2m'] = ds_halo_adv['T2m'] - np.nanmean(T_domain_avg.values) # remove domain average to isolate advective anomalies
+        ds_halo_adv['T'] = ds_halo_adv['T'] - T_domain_avg.values[:,None,None,None] # remove domain average to isolate advective anomalies
+        ds_halo_adv['T2m'] = ds_halo_adv['T2m'] - T_domain_avg.values[:,None,None] # remove domain average to isolate advective anomalies
 
 
     else:
@@ -102,7 +100,7 @@ def calculate_budget(
     #needed to estimate heat advection uncertainty from mass continuity
     if not test_constant_T:
         T_scale:float  = np.sqrt(
-            np.mean( (ds_domain['T'].sel(time=d_dt_T['time']).values-T_domain_avg.values[:,None,None,None])**2. )
+            np.nanmean( (ds_domain['T'].values-T_domain_avg.values[:,None,None,None])**2. ) 
         )
     else:
         T_scale:float = np.nanmean(T_domain_avg.values) #type:ignore
