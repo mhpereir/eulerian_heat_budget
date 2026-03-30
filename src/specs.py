@@ -12,8 +12,26 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Literal, Optional, Dict, Any, Tuple
 
-BotMode = Literal["surface_pressure", "pressure_level"]
+from . import config
 
+BotMode    = Literal["surface_pressure", "pressure_level"]
+SourceKind = Literal["local_era5", "arco_era5"]
+
+@dataclass(frozen=True)
+class DataSourceConfig:
+    kind: SourceKind
+
+    # local
+    path_data: Optional[str] = None
+
+    # ARCO
+    arco_path: Optional[str] = None
+    arco_storage_token: str = config.DEFAULT_ARCO_TOKEN
+    chunks_time: int = config.n_time # number of time steps per chunk in ARCO dataset; used to optimize chunking for loading time slices
+
+    # common selection
+    time_start: Optional[str] = None
+    time_end: Optional[str] = None
 
 @dataclass(frozen=True)
 class DomainRequest:

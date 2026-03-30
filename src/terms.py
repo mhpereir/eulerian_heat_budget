@@ -342,7 +342,7 @@ def compute_advective_term(ds_domain: xr.Dataset,
 
         out["abs_mass_advection_residual_fraction"] = eps
 
-        print(f"Residual from mass advection into domain through the surfaces: \n MEAN={eps.mean().values}, MAX={eps.max().values} of time series.")
+        # print(f"Residual from mass advection into domain through the surfaces: \n MEAN={eps.mean().values}, MAX={eps.max().values} of time series.")
     
     return out
 

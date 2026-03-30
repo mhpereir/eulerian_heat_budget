@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
-from .specs import DomainRequest, DomainSpec, SurfaceBehaviour
+from .specs import DomainRequest, DomainSpec, SurfaceBehaviour, DataSourceConfig
 
 
 @dataclass(frozen=True)
@@ -67,6 +67,7 @@ def write_run_info(
     paths: RunPaths,
     *,
     request: DomainRequest,
+    source_spec: DataSourceConfig,
     domain_spec: DomainSpec,
     surface_behaviour: SurfaceBehaviour,
     cli_args: Mapping[str, Any],
@@ -83,6 +84,7 @@ def write_run_info(
         "run_root": paths.run_root,
         "plot_dir": paths.plot_dir,
         "request": request,
+        "source_spec": source_spec,
         "domain_spec": domain_spec,
         "surface_behaviour": surface_behaviour,
         "cli_args": dict(cli_args),

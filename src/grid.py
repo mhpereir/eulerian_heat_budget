@@ -243,7 +243,6 @@ def determine_domain(
     return ds_domain, ds_halo, spec
 
 
-
 def get_horizontal_cell_areas(ds: xr.Dataset) -> xr.DataArray:
     """
     Compute geometric horizontal cell areas for the (lat, lon) cell grid.

@@ -114,6 +114,30 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="How surface variables should be handled when they are enabled.",
     )
 
+    parser.add_argument(
+        "--data-source",
+        dest="data_source",
+        choices=("local_era5", "arco_era5"),
+        default=None,
+        help="Data source to load input dataset from.",
+    )
+
+    parser.add_argument(
+        "--time-start",
+        dest="time_start",
+        type=str,
+        default=None,
+        help="Start time for data selection (ISO format, e.g. 1941-06-01T00:00:00).",
+    )
+    parser.add_argument(
+        "--time-end",
+        dest="time_end",        
+        type=str,
+        default=None,
+        help="End time for data selection (ISO format, e.g. 1941-06-07T23:00:00).",
+    )
+
+
     return parser
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
