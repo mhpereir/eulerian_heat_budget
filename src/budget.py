@@ -74,17 +74,64 @@ def calculate_budget(
     # from mass continuity remains
 
 
+    # # advection domain vars
+    # domain_vars = ["T"]
+    # halo_vars   = ["T", "u", "v", "w", "sp"]
+    # if not test_constant_T:
+        
+
+    #     if SurfaceSpecs.use_surface_variables:
+    #         domain_vars += ["T2m"]
+    #         halo_vars   += ["T2m", "u10", "v10"]
+
+    #     ds_domain_adv_base = ds_domain[domain_vars] # reduced dataset for advection term calculation (only includes variables needed for advection, and only at levels needed for advection)
+    #     ds_halo_adv_base   = ds_halo[halo_vars]
+
+    #     assign_domain = {"T": ds_domain_adv_base["T"] - T_domain_avg}
+    #     assign_halo   = {"T": ds_halo_adv_base["T"] - T_domain_avg}
+
+    #     if SurfaceSpecs.use_surface_variables:
+    #         assign_domain["T2m"] = ds_domain_adv_base["T2m"] - T_domain_avg
+    #         assign_halo["T2m"]   = ds_halo_adv_base["T2m"] - T_domain_avg
+
+    #     ds_domain_adv = ds_domain_adv_base.assign(**assign_domain) # type: ignore
+    #     ds_halo_adv   = ds_halo_adv_base.assign(**assign_halo) # type: ignore
+
+
+    # else:
+    #     # ds_domain_adv      = ds_domain.copy(deep=True)
+    #     # ds_domain_adv['T'] = xr.full_like(ds_domain['T'], np.nanmean(T_domain_avg)) # set T to constant value equal to domain average
+        
+    #     # ds_halo_adv        = ds_halo.copy(deep=True)
+    #     # ds_halo_adv['T']   = xr.full_like(ds_halo['T'], np.nanmean(T_domain_avg)) # set T to constant value equal to domain average
+
+    #     ds_domain_adv      = ds_domain[domain_vars]
+    #     ds_halo_adv        = ds_halo[halo_vars]
+
+    #     if SurfaceSpecs.use_surface_variables:
+    #         ds_domain_adv = ds_domain_adv.assign(
+    #             T2m = xr.full_like(ds_domain["T2m"], np.nanmean(T_domain_avg)),
+    #         )
+
+    #         ds_halo_adv = ds_halo_adv.assign(
+    #             T2m = xr.full_like(ds_halo["T2m"], np.nanmean(T_domain_avg)),
+    #         )
+
+    # advection_terms = terms.compute_advective_term(ds_domain_adv, ds_halo_adv, ds_cell_areas, ds_weights_areas, DomainSpecs, SurfaceSpecs, integral_diagnostics_flag)
+    # #time crop advection
+    # advection_terms = advection_terms.sel(time=d_dt_T['time']).compute()  #dependency on this .sel.compute further down!!!
+
+
     # advection domain vars
     domain_vars = ["T"]
     halo_vars   = ["T", "u", "v", "w", "sp"]
+
+    if SurfaceSpecs.use_surface_variables:
+        domain_vars += ["T2m"]
+        halo_vars   += ["T2m", "u10", "v10"]
+
     if not test_constant_T:
-        
-
-        if SurfaceSpecs.use_surface_variables:
-            domain_vars += ["T2m"]
-            halo_vars   += ["T2m", "u10", "v10"]
-
-        ds_domain_adv_base = ds_domain[domain_vars] # reduced dataset for advection term calculation (only includes variables needed for advection, and only at levels needed for advection)
+        ds_domain_adv_base = ds_domain[domain_vars]
         ds_halo_adv_base   = ds_halo[halo_vars]
 
         assign_domain = {"T": ds_domain_adv_base["T"] - T_domain_avg}
@@ -94,32 +141,43 @@ def calculate_budget(
             assign_domain["T2m"] = ds_domain_adv_base["T2m"] - T_domain_avg
             assign_halo["T2m"]   = ds_halo_adv_base["T2m"] - T_domain_avg
 
-        ds_domain_adv = ds_domain_adv_base.assign(**assign_domain) # type: ignore
-        ds_halo_adv   = ds_halo_adv_base.assign(**assign_halo) # type: ignore
-
+        ds_domain_adv = ds_domain_adv_base.assign(**assign_domain)  #type: ignore
+        ds_halo_adv   = ds_halo_adv_base.assign(**assign_halo) #type: ignore
 
     else:
-        # ds_domain_adv      = ds_domain.copy(deep=True)
-        # ds_domain_adv['T'] = xr.full_like(ds_domain['T'], np.nanmean(T_domain_avg)) # set T to constant value equal to domain average
-        
-        # ds_halo_adv        = ds_halo.copy(deep=True)
-        # ds_halo_adv['T']   = xr.full_like(ds_halo['T'], np.nanmean(T_domain_avg)) # set T to constant value equal to domain average
-
-        ds_domain_adv      = ds_domain[domain_vars]
-        ds_halo_adv        = ds_halo[halo_vars]
+        ds_domain_adv = ds_domain[domain_vars]
+        ds_halo_adv   = ds_halo[halo_vars]
 
         if SurfaceSpecs.use_surface_variables:
             ds_domain_adv = ds_domain_adv.assign(
-                T2m = xr.full_like(ds_domain["T2m"], np.nanmean(T_domain_avg)),
+                T2m=xr.full_like(ds_domain["T2m"], np.nanmean(T_domain_avg)),
             )
-
             ds_halo_adv = ds_halo_adv.assign(
-                T2m = xr.full_like(ds_halo["T2m"], np.nanmean(T_domain_avg)),
+                T2m=xr.full_like(ds_halo["T2m"], np.nanmean(T_domain_avg)),
             )
 
-    advection_terms = terms.compute_advective_term(ds_domain_adv, ds_halo_adv, ds_cell_areas, ds_weights_areas, DomainSpecs, SurfaceSpecs, integral_diagnostics_flag)
-    #time crop advection
-    advection_terms = advection_terms.sel(time=d_dt_T['time']).compute()  #dependency on this .sel.compute further down!!!
+    ds_domain_adv_trim, ds_faces = terms.prepare_advective_faces(
+        ds_domain_adv,
+        ds_halo_adv,
+        DomainSpecs,
+        SurfaceSpecs,
+        integral_diagnostics_flag=integral_diagnostics_flag,
+    )
+
+    advection_terms = terms.compute_advective_term(
+        ds_domain_adv_trim,
+        ds_faces,
+        ds_cell_areas,
+        ds_weights_areas,
+        DomainSpecs,
+        integral_diagnostics_flag,
+    )
+
+    advection_terms = advection_terms.sel(time=d_dt_T["time"]).compute()
+
+
+
+
 
     #needed to estimate heat advection uncertainty from mass continuity
     if not test_constant_T:

@@ -141,6 +141,214 @@ def _adjust_surface_field(
     return var_effective
     
 
+def _trim_advective_state(
+    ds_domain: xr.Dataset,
+    ds_halo: xr.Dataset,
+    SurfaceSpecs: SurfaceBehaviour,
+) -> tuple[xr.Dataset, xr.Dataset]:
+    """
+    Return reduced domain/halo datasets containing only variables needed by advection.
+    """
+    domain_vars = ["T"]
+    halo_vars = ["T", "u", "v", "w", "sp"]
+
+    if SurfaceSpecs.use_surface_variables:
+        domain_vars += ["T2m"]
+        halo_vars += ["T2m", "u10", "v10"]
+
+    return ds_domain[domain_vars], ds_halo[halo_vars]
+
+
+def _drop_face_coords(da: xr.DataArray, wall: str) -> xr.DataArray:
+    """
+    Drop scalar/bound coords that no longer make sense after face extraction.
+    """
+    if wall in {"west", "east"}:
+        return weights._drop_if_present(da, ["lon", "lon_start", "lon_end", "lon_cell_id"])
+    if wall in {"south", "north"}:
+        return weights._drop_if_present(da, ["lat", "lat_start", "lat_end", "lat_cell_id"])
+    if wall in {"top", "bottom"}:
+        return weights._drop_if_present(da, ["p_mid", "p_start", "p_end", "p_cell_id"])
+    return da
+
+
+def prepare_advective_faces(
+    ds_domain_adv: xr.Dataset,
+    ds_halo_adv: xr.Dataset,
+    DomainSpecs: DomainSpec,
+    SurfaceSpecs: SurfaceBehaviour,
+    *,
+    integral_diagnostics_flag: bool,
+) -> tuple[xr.Dataset, xr.Dataset]:
+    """
+    Prepare reduced advection inputs and precomputed face-centered arrays.
+
+    Returns
+    -------
+    ds_domain_trim : xr.Dataset
+        Minimal domain dataset used only for output time/lat/lon coordinates.
+    ds_faces : xr.Dataset
+        Face-centered arrays already cropped to the integration domain.
+    """
+    ds_domain_trim, ds_halo_trim = _trim_advective_state(ds_domain_adv, ds_halo_adv, SurfaceSpecs)
+
+    if SurfaceSpecs.use_surface_variables:
+        u_for_flux = _adjust_surface_field(
+            ds_halo_trim["u"], ds_halo_trim["u10"], ds_halo_trim["sp"], DomainSpecs, SurfaceSpecs
+        )
+        v_for_flux = _adjust_surface_field(
+            ds_halo_trim["v"], ds_halo_trim["v10"], ds_halo_trim["sp"], DomainSpecs, SurfaceSpecs
+        )
+        T_for_flux = _adjust_surface_field(
+            ds_halo_trim["T"], ds_halo_trim["T2m"], ds_halo_trim["sp"], DomainSpecs, SurfaceSpecs
+        )
+    else:
+        u_for_flux = ds_halo_trim["u"]
+        v_for_flux = ds_halo_trim["v"]
+        T_for_flux = ds_halo_trim["T"]
+
+    # horizontal faces
+    u_west = 0.5 * (u_for_flux.isel(lon=0) + u_for_flux.isel(lon=1))
+    u_east = 0.5 * (u_for_flux.isel(lon=-1) + u_for_flux.isel(lon=-2))
+    v_south = 0.5 * (v_for_flux.isel(lat=0) + v_for_flux.isel(lat=1))
+    v_north = 0.5 * (v_for_flux.isel(lat=-1) + v_for_flux.isel(lat=-2))
+
+    T_west = 0.5 * (T_for_flux.isel(lon=0) + T_for_flux.isel(lon=1))
+    T_east = 0.5 * (T_for_flux.isel(lon=-1) + T_for_flux.isel(lon=-2))
+    T_south = 0.5 * (T_for_flux.isel(lat=0) + T_for_flux.isel(lat=1))
+    T_north = 0.5 * (T_for_flux.isel(lat=-1) + T_for_flux.isel(lat=-2))
+
+    # top / bottom
+    w_top = ds_halo_trim["w"].sel(level=DomainSpecs.zg_top_pressure, method=None)
+    T_top = ds_halo_trim["T"].sel(level=DomainSpecs.zg_top_pressure, method=None)
+
+    if DomainSpecs.zg_bottom == "surface_pressure":
+        w_bottom = None
+        T_bottom = None
+    elif DomainSpecs.zg_bottom == "pressure_level":
+        w_bottom = ds_halo_trim["w"].sel(level=DomainSpecs.zg_bottom_pressure, method=None)
+        T_bottom = ds_halo_trim["T"].sel(level=DomainSpecs.zg_bottom_pressure, method=None)
+    else:
+        raise ValueError(f"Invalid zg_bottom mode: {DomainSpecs.zg_bottom}")
+
+    # crop to true domain coordinates
+    u_west = u_west.sel(lat=ds_domain_trim.lat)
+    u_east = u_east.sel(lat=ds_domain_trim.lat)
+    T_west = T_west.sel(lat=ds_domain_trim.lat)
+    T_east = T_east.sel(lat=ds_domain_trim.lat)
+
+    v_south = v_south.sel(lon=ds_domain_trim.lon)
+    v_north = v_north.sel(lon=ds_domain_trim.lon)
+    T_south = T_south.sel(lon=ds_domain_trim.lon)
+    T_north = T_north.sel(lon=ds_domain_trim.lon)
+
+    w_top = w_top.sel(lat=ds_domain_trim.lat, lon=ds_domain_trim.lon)
+    T_top = T_top.sel(lat=ds_domain_trim.lat, lon=ds_domain_trim.lon)
+
+    if w_bottom is not None and T_bottom is not None:
+        w_bottom = w_bottom.sel(lat=ds_domain_trim.lat, lon=ds_domain_trim.lon)
+        T_bottom = T_bottom.sel(lat=ds_domain_trim.lat, lon=ds_domain_trim.lon) 
+
+    ds_faces = xr.Dataset(
+        {
+            "uT_west": _drop_face_coords(u_west * T_west, "west"),
+            "uT_east": _drop_face_coords(u_east * T_east, "east"),
+            "uT_south": _drop_face_coords(v_south * T_south, "south"),
+            "uT_north": _drop_face_coords(v_north * T_north, "north"),
+            "uT_top": _drop_face_coords(w_top * T_top, "top"),
+        }
+    )
+
+    if integral_diagnostics_flag:
+        ds_faces["u_west"] = _drop_face_coords(u_west, "west")
+        ds_faces["u_east"] = _drop_face_coords(u_east, "east")
+        ds_faces["u_south"] = _drop_face_coords(v_south, "south")
+        ds_faces["u_north"] = _drop_face_coords(v_north, "north")
+        ds_faces["u_top"] = _drop_face_coords(w_top, "top")
+
+    if w_bottom is not None and T_bottom is not None:
+        ds_faces["uT_bottom"] = _drop_face_coords(w_bottom * T_bottom, "bottom")
+        if integral_diagnostics_flag:
+            ds_faces["u_bottom"] = _drop_face_coords(w_bottom, "bottom")
+
+    return ds_domain_trim, ds_faces
+
+
+def compute_advective_term(
+    ds_domain_adv: xr.Dataset,
+    ds_faces: xr.Dataset,
+    ds_cell_areas: xr.Dataset,
+    ds_weights_areas: xr.Dataset,
+    DomainSpecs: DomainSpec,
+    integral_diagnostics_flag: bool,
+) -> xr.Dataset:
+    r'''
+    math term: -\int T U \cdot dA
+    '''
+
+    wall_list = ["west", "east", "south", "north", "top"]
+    if "uT_bottom" in ds_faces:
+        wall_list.append("bottom")
+
+    out = xr.Dataset(
+        data_vars={
+            "net_heat_advection": xr.zeros_like(ds_domain_adv["time"], dtype="float64")
+        }
+    )
+    out["net_heat_advection"].attrs.update(
+        {"long_name": "Net advected heat", "units": "K m2 Pa s-1"}
+    )
+
+    if integral_diagnostics_flag:
+        out["net_mass_advection"] = xr.zeros_like(ds_domain_adv["time"], dtype="float64")
+        out["net_mass_advection"].attrs.update(
+            {"long_name": "Net advected mass", "units": "m2 Pa s-1"}
+        )
+
+    wall_sign = {
+        "west": -1.0,
+        "east": +1.0,
+        "south": -1.0,
+        "north": +1.0,
+        "top": -1.0,
+        "bottom": +1.0,
+    }
+
+    residual_denom = xr.zeros_like(ds_domain_adv["time"], dtype="float64")
+
+    for wall in wall_list:
+        cell_wall_name = "A_horizontal" if wall in {"top", "bottom"} else f"A_{wall}"
+
+        adv_wall = integrals.area_integral(
+            ds_faces[f"uT_{wall}"],
+            ds_cell_areas[cell_wall_name],
+            ds_weights_areas[f"W_{wall}"],
+        )
+        adv_wall = adv_wall.astype("float64").reset_coords(drop=True)
+
+        out["net_heat_advection"] = out["net_heat_advection"] + wall_sign[wall] * adv_wall
+        out[f"flux_contribution_{wall}"] = wall_sign[wall] * adv_wall
+
+        if integral_diagnostics_flag:
+            mass_adv_wall = integrals.area_integral(
+                ds_faces[f"u_{wall}"],
+                ds_cell_areas[cell_wall_name],
+                ds_weights_areas[f"W_{wall}"],
+            )
+            mass_adv_wall = mass_adv_wall.astype("float64").reset_coords(drop=True)
+
+            out["net_mass_advection"] = out["net_mass_advection"] + wall_sign[wall] * mass_adv_wall
+            out[f"mass_flux_contribution_{wall}"] = wall_sign[wall] * mass_adv_wall
+            residual_denom = residual_denom + np.abs(mass_adv_wall)
+
+    if integral_diagnostics_flag:
+        eps = np.abs(out["net_mass_advection"]) / residual_denom
+        out["abs_mass_advection_residual_fraction"] = eps
+
+    return out
+
+
+r"""
 def compute_advective_term(ds_domain: xr.Dataset,
                            ds_halo: xr.Dataset,
                            ds_cell_areas: xr.Dataset,
@@ -149,7 +357,7 @@ def compute_advective_term(ds_domain: xr.Dataset,
                            SurfaceSpecs: SurfaceBehaviour,
                            integral_diagnostics_flag: bool) -> xr.Dataset:
     r'''
-    math term: -\int T U \cdot dA
+    math term: $-\int T U \cdot dA$
     '''
     
     if SurfaceSpecs.use_surface_variables:
@@ -345,7 +553,8 @@ def compute_advective_term(ds_domain: xr.Dataset,
         # print(f"Residual from mass advection into domain through the surfaces: \n MEAN={eps.mean().values}, MAX={eps.max().values} of time series.")
     
     return out
-
+"""
+    
 def compute_adiabatic_term(ds_domain: xr.Dataset, 
                            ds_cell_volumes: xr.DataArray,
                            ds_weights_volumes: xr.DataArray,
