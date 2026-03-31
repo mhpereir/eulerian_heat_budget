@@ -22,8 +22,8 @@ DEFAULT_LOCAL_PATH = "/home/mhpereir/downloads-mhpereir/ERA5_zg_PNW"
 DEFAULT_ARCO_PATH  = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3"
 DEFAULT_ARCO_TOKEN = "anon"
 
-DEFAULT_TIME_START = "1961-06-01T00:00:00" # start time for budget period
-DEFAULT_TIME_END   = "1961-09-01T00:00:00" # end time for budget period 
+DEFAULT_TIME_START = "1941-06-01T00:00:00" # start time for budget period
+DEFAULT_TIME_END   = "1941-06-07T00:00:00" # end time for budget period 
 
 
 
@@ -51,7 +51,7 @@ DEFAULT_SURFACE_VARIABLE_MODE = 'none' # 'none', 'combined', or 'diagnostic_only
 # pressure levels for geopotential height domain boundaries (in Pa)
 # zg_bottom_pressure only used if zg_bottom == "pressure_level"; else surface pressure determines bottom boundary
 DEFAULT_ZG_BOT_PA: float = 600 * 100 # lower boundary pressure for geopotential height budget in Pa
-DEFAULT_ZG_TOP_PA: float = 700 * 100 # upper boundary pressure for geopotential height budget in Pa
+DEFAULT_ZG_TOP_PA: float = 1 * 100 # upper boundary pressure for geopotential height budget in Pa
 
 DEFAULT_PLOTS_OUTPUT:str = str(PROJECT_ROOT / "results" / "plots")
 
