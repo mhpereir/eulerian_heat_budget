@@ -11,7 +11,8 @@ import xarray as xr
 from src import config, cli, specs, io, validate, grid, budget, run_outputs
 from src import plot_results
 
-from dask.distributed import Client, LocalCluster
+import logging
+from dask.distributed import Client
     
 
 def build_request_from_cli(args) -> specs.DomainRequest:
@@ -82,7 +83,7 @@ def main() -> None:
     validate.validate_schema(ds_merged)
 
     # Determine domain extent based on grid and config margin
-    ds_domain, ds_halo, DomainSpecs = grid.determine_domain(ds_merged, request)
+    ds_domain, ds_halo, DomainSpecs = grid.determine_domain(ds_merged, request, eager_loading=True)
     
     # Persist domain and halo datasets in memory to avoid redundant computations during budget calculations and plotting
     ds_domain = ds_domain
@@ -150,6 +151,9 @@ def main() -> None:
 
 if __name__ == "__main__":
     
+    logging.getLogger("distributed.shuffle._scheduler_plugin").setLevel(logging.ERROR)
+    logging.getLogger("distributed.shuffle._core").setLevel(logging.ERROR)  
+
     client = Client(
         n_workers=8,
         threads_per_worker=1,

@@ -16,6 +16,31 @@ from . import plot_diagnostics
 
 from .specs import DomainSpec, SurfaceBehaviour
 
+import time
+
+def timed_compute(name, obj):
+    t0 = time.time()
+    out = obj.compute()
+    print(f"{name}: {time.time() - t0:.2f} s")
+    return out
+
+def describe_xarray(name, obj):
+    if hasattr(obj, "data_vars"):  # Dataset
+        print(f"\n{name}: DATASET")
+        for v in obj.data_vars:
+            arr = obj[v].data
+            print(f"  {v}: shape={obj[v].shape}")
+            if hasattr(arr, "chunks"):
+                print(f"     chunks={arr.chunks}")
+            if hasattr(arr, "__dask_graph__"):
+                print(f"     ntasks={len(arr.__dask_graph__())}")
+    else:  # DataArray
+        arr = obj.data
+        print(f"\n{name}: shape={obj.shape}")
+        if hasattr(arr, "chunks"):
+            print(f"  chunks={arr.chunks}")
+        if hasattr(arr, "__dask_graph__"):
+            print(f"  ntasks={len(arr.__dask_graph__())}")
 
 
 def calculate_budget(
@@ -33,6 +58,7 @@ def calculate_budget(
     plot_diag_path = os.path.join(plot_dir, "diagnostics")
     os.makedirs(plot_diag_path, exist_ok=True)
 
+    print("Calculating cell areas")
     # Construct integand cell areas and weights for integration
     ds_horizontal_cell_areas = grid.get_horizontal_cell_areas(ds_domain).astype("float64")
     ds_vertical_cell_areas   = grid.get_vertical_cell_areas(ds_halo).astype("float64")
@@ -43,21 +69,44 @@ def calculate_budget(
 
     ds_cell_volumes = grid.get_cell_volumes(ds_domain).astype("float64")
 
+
+
+    print("Calculating integration weights")
     ds_weights_horizontal = weights.area_weights_horizontal(ds_domain, DomainSpecs)
     ds_weights_vertical   = weights.area_weights_vertical(ds_halo, DomainSpecs, SurfaceSpecs)
     ds_weights_volumes    = weights.volume_weights(ds_domain, DomainSpecs, SurfaceSpecs)
 
     ds_weights_areas = xr.merge([ds_weights_horizontal, ds_weights_vertical], compat="override", join='outer')
 
-    
+
+    # describe_xarray("ds_horizontal_cell_areas", ds_horizontal_cell_areas)
+    # describe_xarray("ds_vertical_cell_areas", ds_vertical_cell_areas)
+    # describe_xarray("ds_cell_volumes", ds_cell_volumes)
+    # describe_xarray("ds_weights_horizontal", ds_weights_horizontal)
+    # describe_xarray("ds_weights_vertical", ds_weights_vertical)
+    # describe_xarray("ds_weights_volumes", ds_weights_volumes)
+
+    # timed_compute("horizontal areas", ds_horizontal_cell_areas)
+    # timed_compute("vertical areas", ds_vertical_cell_areas)
+    # timed_compute("cell volumes", ds_cell_volumes)
+    # timed_compute("horizontal weights", ds_weights_horizontal)
+    # timed_compute("vertical weights", ds_weights_vertical)
+    # timed_compute("volume weights", ds_weights_volumes)
+
+    # exit(0)
+
+    print('Calculating budget terms...')
+    print('\t Calculating storage term')
     d_dt_T = terms.compute_storage(ds_domain['T'],
                                   ds_cell_volumes,
                                   ds_weights_volumes,
                                   DomainSpecs)
 
+    print('\t Calculating domain volume and its time derivative')
     domain_volume = terms.compute_domain_volume(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     dV_dt         = terms.compute_time_derivative(domain_volume)
 
+    print('\t Calculating domain average temperature and its time derivative')
     #extra terms:
     #average T over the domain for each time step
     T_domain_avg = terms.compute_T_domain_average(ds_domain['T'], domain_volume, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
@@ -66,7 +115,7 @@ def calculate_budget(
 
     dT_dt_2 = d_dt_T - T_domain_avg.sel(time=d_dt_T['time']) * dV_dt
 
-
+    print('\t Preparing advective term')
     #logic to distinguish between normal calculation and test with constant T field 
     # (to see if advection error matches estimate from mass continuity) 
     # within test, set T to domain average (constant), 
@@ -156,6 +205,7 @@ def calculate_budget(
                 T2m=xr.full_like(ds_halo["T2m"], np.nanmean(T_domain_avg)),
             )
 
+    print('\t\t Preparing advective faces')
     ds_domain_adv_trim, ds_faces = terms.prepare_advective_faces(
         ds_domain_adv,
         ds_halo_adv,
@@ -164,6 +214,7 @@ def calculate_budget(
         integral_diagnostics_flag=integral_diagnostics_flag,
     )
 
+    print('\t\t Computing advective term')
     advection_terms = terms.compute_advective_term(
         ds_domain_adv_trim,
         ds_faces,
@@ -174,9 +225,6 @@ def calculate_budget(
     )
 
     advection_terms = advection_terms.sel(time=d_dt_T["time"]).compute()
-
-
-
 
 
     #needed to estimate heat advection uncertainty from mass continuity
@@ -193,6 +241,7 @@ def calculate_budget(
 
     advection_error = (dV_dt + advection_terms['net_mass_advection']) * T_scale # mass * K
 
+    print('\t Calculating adiabatic term')
     ds_domain_adiab   = ds_domain[["T", "w"]] #reduced dataset for adiabatic term calculation (only needs T and w)
     adiabatic_term = terms.compute_adiabatic_term(ds_domain_adiab, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     #time crop adiabatic
@@ -205,6 +254,7 @@ def calculate_budget(
         adiabatic_term,
     )
 
+    print('Combining terms into output dataset')
     #combine all terms into a single output dataset
     out = xr.Dataset({
         'd_dt_T': d_dt_T.sel(time=d_dt_T['time']),
@@ -223,6 +273,7 @@ def calculate_budget(
     out["advection_term"] = advection_terms["net_heat_advection"]  #already sel time and computed
 
 
+    print('Plotting diagnostics...')
     if plot_flag:
         #plot diagnostics for advective integrals
         plot_diagnostics.fig1_mass_continuity(out['dV_dt'], advection_terms, plot_diag_path)

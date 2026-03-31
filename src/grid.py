@@ -79,6 +79,7 @@ def determine_domain(
     level_name: str = "level",
     lat_name: str = "lat",
     lon_name: str = "lon",
+    eager_loading: bool = False,
 ) -> Tuple[xr.Dataset, xr.Dataset, DomainSpec]:
     """
     Return a domain-cropped dataset with coordinate metadata for cell bounds.
@@ -229,7 +230,17 @@ def determine_domain(
     ds_halo = _build_domain_for_margin(margin - 1)
     ds_domain = _build_domain_for_margin(margin)
 
-
+    if eager_loading:
+        ds_domain = ds_domain.assign(
+            T=ds_domain["T"].persist(),
+            w=ds_domain["w"].persist(),
+            sp=ds_domain["sp"].persist(),
+        )
+        ds_halo = ds_halo.assign(
+            sp=ds_halo["sp"].persist(),
+        )
+    
+    
     spec = DomainSpec(
         lat_min=float(ds_domain.lat_start[0]),
         lat_max=float(ds_domain.lat_end[-1]),
