@@ -155,10 +155,10 @@ if __name__ == "__main__":
     logging.getLogger("distributed.shuffle._core").setLevel(logging.ERROR)  
 
     client = Client(
-        n_workers=8,
+        n_workers=4,
         threads_per_worker=1,
         processes=True,
-        memory_limit="4GB",
+        memory_limit="8GB",
     )
 
     print(client)

@@ -199,10 +199,10 @@ def calculate_budget(
 
         if SurfaceSpecs.use_surface_variables:
             ds_domain_adv = ds_domain_adv.assign(
-                T2m=xr.full_like(ds_domain["T2m"], np.nanmean(T_domain_avg)),
+                T2m=xr.full_like(ds_domain["T2m"], T_domain_avg.mean(dim="time", skipna=True).compute().item()),
             )
             ds_halo_adv = ds_halo_adv.assign(
-                T2m=xr.full_like(ds_halo["T2m"], np.nanmean(T_domain_avg)),
+                T2m=xr.full_like(ds_halo["T2m"], T_domain_avg.mean(dim="time", skipna=True).compute().item()),
             )
 
     print('\t\t Preparing advective faces')
@@ -226,18 +226,22 @@ def calculate_budget(
 
     advection_terms = advection_terms.sel(time=d_dt_T["time"]).compute()
 
-
-    #needed to estimate heat advection uncertainty from mass continuity
+    # needed to estimate heat advection uncertainty from mass continuity
     if not test_constant_T:
-        T_scale:float  = np.sqrt(
-            np.nanmean( (ds_domain['T']-T_domain_avg)**2. ) 
+        t_var = ((ds_domain["T"] - T_domain_avg) ** 2).mean(
+            dim=("time", "level", "lat", "lon"),
+            skipna=True,
         )
+        T_scale: float = float(np.sqrt(t_var.compute().item()))
     else:
-        T_scale:float = np.nanmean(T_domain_avg) #type:ignore
+        t_var = (T_domain_avg).mean(
+            dim=("time"), 
+            skipna=True,
+        )
+        T_scale: float = float(t_var.compute().item())
 
-    # T_scale = np.mean(T_domain_avg.values)
-    print('Is T_constant:', test_constant_T)
-    print('T_scale:', T_scale)
+    print("Is T_constant:", test_constant_T)
+    print("T_scale:", T_scale)
 
     advection_error = (dV_dt + advection_terms['net_mass_advection']) * T_scale # mass * K
 
