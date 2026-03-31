@@ -74,6 +74,7 @@ def main() -> None:
     SurfaceSpecs = build_surface_behaviour_from_cli(args)
     SourceCfg    = build_data_source_from_cli(args)
     run_paths    = run_outputs.prepare_run_paths(config.DEFAULT_PLOTS_OUTPUT)
+    git_provenance = run_outputs.resolve_git_provenance(PROJECT_ROOT)
 
     print(f"Saving plots to {run_paths.plot_dir}")
 
@@ -97,6 +98,7 @@ def main() -> None:
         source_spec=SourceCfg,
         domain_spec=DomainSpecs,
         surface_behaviour=SurfaceSpecs,
+        git_provenance=git_provenance,
         cli_args=vars(args),
     )
     print(f"Saved run metadata to {metadata_path}")

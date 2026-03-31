@@ -6,6 +6,7 @@ import json
 import os
 import re
 from pathlib import Path
+import subprocess
 from typing import Any, Mapping
 
 from .specs import DomainRequest, DomainSpec, SurfaceBehaviour, DataSourceConfig
@@ -17,6 +18,13 @@ class RunPaths:
     run_root: str
     plot_dir: str
     metadata_path: str
+
+
+@dataclass(frozen=True)
+class GitProvenance:
+    branch: str
+    commit: str
+    dirty: bool
 
 
 def _sanitize_run_id(value: str) -> str:
@@ -70,6 +78,7 @@ def write_run_info(
     source_spec: DataSourceConfig,
     domain_spec: DomainSpec,
     surface_behaviour: SurfaceBehaviour,
+    git_provenance: GitProvenance,
     cli_args: Mapping[str, Any],
     env: Mapping[str, str] | None = None,
     now: datetime | None = None,
@@ -87,6 +96,7 @@ def write_run_info(
         "source_spec": source_spec,
         "domain_spec": domain_spec,
         "surface_behaviour": surface_behaviour,
+        "git": git_provenance,
         "cli_args": dict(cli_args),
     }
 
@@ -101,3 +111,44 @@ def _json_default(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def resolve_git_provenance(repo_dir: str | Path) -> GitProvenance:
+    repo_root = Path(
+        _run_git_command(["git", "rev-parse", "--show-toplevel"], cwd=repo_dir)
+    )
+    branch = _run_git_command(["git", "branch", "--show-current"], cwd=repo_root)
+    if not branch:
+        raise ValueError("Git provenance requires a named branch; detached HEAD is not supported.")
+
+    commit = _run_git_command(["git", "rev-parse", "HEAD"], cwd=repo_root)
+    dirty_paths = _run_git_command(
+        ["git", "diff", "--name-only", "HEAD", "--", "src", "scripts", "schedulers"],
+        cwd=repo_root,
+    ).splitlines()
+    dirty = any(_is_runtime_source_change(path) for path in dirty_paths)
+    return GitProvenance(branch=branch, commit=commit, dirty=dirty)
+
+
+def _run_git_command(command: list[str], *, cwd: str | Path) -> str:
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.strip()
+        raise ValueError(stderr or f"Git command failed: {' '.join(command)}") from exc
+    return completed.stdout.strip()
+
+
+def _is_runtime_source_change(path: str) -> bool:
+    candidate = Path(path)
+    if any(part == "__pycache__" for part in candidate.parts):
+        return False
+    if candidate.suffix == ".pyc":
+        return False
+    return True
