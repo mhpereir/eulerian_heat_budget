@@ -12,8 +12,26 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Literal, Optional, Dict, Any, Tuple
 
-BotMode = Literal["surface_pressure", "pressure_level"]
+from . import config
 
+BotMode    = Literal["surface_pressure", "pressure_level"]
+SourceKind = Literal["local_era5", "arco_era5"]
+
+@dataclass(frozen=True)
+class DataSourceConfig:
+    kind: SourceKind
+
+    # local
+    path_data: Optional[str] = None
+
+    # ARCO
+    arco_path: Optional[str] = None
+    arco_storage_token: str = config.DEFAULT_ARCO_TOKEN
+    chunks_time: int = config.n_time # number of time steps per chunk in ARCO dataset; used to optimize chunking for loading time slices
+
+    # common selection
+    time_start: Optional[str] = None
+    time_end: Optional[str] = None
 
 @dataclass(frozen=True)
 class DomainRequest:
@@ -25,8 +43,13 @@ class DomainRequest:
     zg_top_pressure: float  
     zg_bottom: BotMode       
     zg_bottom_pressure: Optional[float]
-    allow_bottom_overflow: bool
-     
+
+@dataclass(frozen=True)
+class SurfaceBehaviour:
+    # How to handle surface variables in the budget calculations
+    allow_bottom_overflow: bool  # when surface pressure > lowest pressure level, allow weights >1 (True) or cap weights at 1 (False)
+    use_surface_variables: bool  # whether to include surface variables (T2m, u10, v10) in budget calculations; else use lowest model level variables
+    surface_variable_mode: Optional[Literal['none', 'combined', 'diagnostic_only']] 
 
 @dataclass(frozen=True)
 class DomainSpec:
@@ -39,7 +62,7 @@ class DomainSpec:
     zg_top_pressure: float
     zg_bottom: BotMode
     zg_bottom_pressure: Optional[float]
-    allow_bottom_overflow: bool
+
 
     def validate(self) -> None:
         if self.lat_min > self.lat_max:
@@ -50,3 +73,4 @@ class DomainSpec:
             raise ValueError("zg_bottom_pressure must be set when zg_bottom='pressure_level'")
         if self.zg_bottom == "surface_pressure" and self.zg_bottom_pressure is not None:
             raise ValueError("zg_bottom_pressure must be None when zg_bottom='surface_pressure'")
+    

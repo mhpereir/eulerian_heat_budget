@@ -1,9 +1,10 @@
 import sys
+from pathlib import Path
 
-PROJECT_ROOT = "/home/mhpereir/eulerian_heat_budget"
+PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-
+    
 import numpy as np
 import pytest
 import xarray as xr
@@ -47,7 +48,6 @@ def _make_request(*,
         zg_top_pressure=500*100,
         zg_bottom="pressure_level",
         zg_bottom_pressure=1000*100,
-        allow_bottom_overflow=True,
     )
 
 
@@ -100,7 +100,6 @@ def test_determine_domain_crops_to_cells_and_sets_bounds():
     assert spec.zg_top_pressure == 500*100
     assert spec.zg_bottom == "pressure_level"
     assert spec.zg_bottom_pressure == 1000*100
-    assert spec.allow_bottom_overflow is True
 
     # traceability ids exist on the same dims
     np.testing.assert_array_equal(dom["lat_cell_id"].values, np.array([1, 2, 3, 4]))

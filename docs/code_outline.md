@@ -1,524 +1,577 @@
-# Eulerian Heat Budget — Software Design Document
+# Eulerian Heat Budget - Current Code Outline
+
+March 31st, 2026
 
 ## 1. Purpose
 
-This project implements a physically consistent, volume-integrated Eulerian heat budget in pressure coordinates, with the intention of calculating the integrated diabatic heating term as the residual:
+This document describes the code as it exists today in this repository. It is a code-faithful reference for the current Eulerian heat-budget workflow in pressure coordinates, including the runtime pipeline, module boundaries, data contracts, outputs, and the present state of the test suite.
 
-$$
-\frac{d}{dt}\int_{V(t)} T dV =
--\iint_{\partial V_{\text{sides+top}}} T(\mathbf{U}\cdot \hat{n}) dA
-+
-\int_{V(t)} \left(
-\omega\frac{RT}{c_p p}
-+
-\frac{J}{c_p}
-\right) dV
-$$
+The implementation currently computes volume-integrated temperature storage, advective fluxes, and adiabatic heating over a regional control volume, then diagnoses a residual diabatic term from those pieces.
 
-The implementation is designed to:
+## 2. Runtime Pipeline
 
-- Operate on reanalysis or climate model data (e.g., ERA5, CanESM).
-- Support regional control volumes (e.g., PNW mask).
-- Maintain strict dimensional and unit consistency.
-- Be testable using synthetic and reduced datasets.
+The current end-to-end flow is:
 
-------
+1. `src/cli.py` parses command-line inputs.
+2. `scripts/run_budget.py` combines CLI values with defaults from `src/config.py` and constructs:
+   - `specs.DomainRequest`
+   - `specs.SurfaceBehaviour`
+   - `specs.DataSourceConfig`
+3. `src/run_outputs.py` creates a run directory and resolves git provenance for the run metadata.
+4. `src/io.py` loads ERA5 data from either local files or ARCO Zarr and standardizes it to the internal schema.
+5. `src/validate.py` enforces the canonical dataset schema.
+6. `src/grid.py::determine_domain()` crops the domain and returns:
+   - `ds_domain`
+   - `ds_halo`
+   - `DomainSpec`
+7. `src/grid.py` builds geometric areas and cell volumes.
+8. `src/weights.py` builds face and volume occupancy weights using the resolved control-volume boundaries and surface-pressure logic.
+9. `src/terms.py` prepares face-centered advection inputs and computes storage, advection, adiabatic, and residual diabatic terms.
+10. `src/budget.py::calculate_budget()` assembles the final budget dataset and optional diagnostics.
+11. `src/plot_diagnostics.py` and `src/plot_results.py` write diagnostic and summary figures.
+12. `src/run_outputs.py::write_run_info()` stores a `run_info.json` record alongside the plots.
 
-## 2. Mathematical Framework (Pressure Coordinates)
+## 3. Repository Structure
 
-### 2.1 Volume Element
-
-In pressure coordinates:
-
-$$
-dV = \frac{1}{g} dp dA
-$$
-
-Thus any volume integral becomes:
-
-$$
-\int_V (\cdot) dV =
-\iint_A
-\int_{p_{\text{top}}}^{p_s(x,y,t)}
-\frac{(\cdot)}{g} dp dA
-$$
-where:
-
-- ( $p_s(x,y,t)$ ) = surface pressure
-- ( $p_{\text{top}}$ ) = fixed upper boundary
-- ( $g$ ) = gravitational acceleration
-
-------
-
-### 2.2 Budget Terms
-
-We compute:
-
-1. **Storage**
-   $$
-   S(t) = \int_{V(t)} T dV
-   \quad \Rightarrow \quad
-   \frac{dS}{dt}
-   $$
-
-2. **Advection (via surface flux form)**
-   $$
-   A(t) = \int_{A(t)} T(\mathbf{U}\cdot \hat n) dA
-   $$
-
-3. **Adiabatic compression**
-   $$
-   C(t) = \int_{V(t)} \omega \frac{RT}{c_p p} dV
-   $$
-
-4. **Diabatic heating (Residual)**
-   $$
-   D(t) = S(t) - [A(t)+C(t)]
-   $$
-
-------
-
-## 3. Core Design Layers
-
-The implementation is structured in three conceptual layers.
-
-------
-
-### Layer A — Geometry & Weights
-
-Responsible for:
-
-- Standardising volume domain for the calculation with `determine_domain()`
-- Computing grid-cell areas and volumes (grid.py)
-- Constructing 2D (horizontal and vertical) weights for grid-cell-areas and 3D masks for grid-cell-volumes for masking cell elements below the surface; fractional value of volume above the surface.
-
-Outputs:
-
-- geometric `cell_area_horizontal(y,x)`
-- geometric `cell_area_vertical(p,'x' or 'y')`
-- geometric `cell_volume(p,y,x)`
-- `volume_weights(time,p,y,x)`
-- `horizontal_area_weights(time,y,x)`
-- `vertical_area_weights(time,p,'x' or 'y')`
-
-This layer contains **no physics**, only geometry and domain logic.
-
-------
-
-### Layer B — Integrals (Pure Mathematical Operators)
-
-Reusable operators:
-
-- `area_integral_vertical(field_2d_vertical)`
-- `area_integral_horizontal(field_2d_horizontal)`
-- `volume_integral_pcoords(field_3d)`
-
-These functions:
-
-- Contain no I/O
-- Contain no dataset-specific assumptions
-- Accept arrays + coordinate metadata
-- Return deterministic outputs
-
-This layer must be independently unit-tested.
-
-------
-
-### Layer C — Budget Assembly
-
-Responsible for:
-
-- Computing all physical budget terms
-- Combining integrals
-- Producing diagnostic outputs
-- Reporting closure residual
-
-This layer depends on Layers A and B.
-
-------
-
-## 4. Repository Structure
-
-``` #type: ignore
+```text
 eulerian_heat_budget/
-│
-├── pyproject.toml
-│
 ├── docs/
 │   └── code_outline.md
-│
+├── logs/
+├── results/
+├── schedulers/
+│   └── schedule_run_budget.sh
+├── scripts/
+│   └── run_budget.py
 ├── src/
 │   ├── __init__.py
-|   ├── cli.py
-│   ├── config.py
-│   ├── io.py
-│   ├── specs.py
-│   ├── validate.py
-│   ├── grid.py
-│   ├── weights.py
-│   ├── integrals.py
-│   ├── terms.py
 │   ├── budget.py
+│   ├── cli.py
+│   ├── config.py
+│   ├── grid.py
+│   ├── integrals.py
+│   ├── io.py
 │   ├── plot_diagnostics.py
-│   └── plot_results.py
-│
-├── tests/
-│   ├── test_integrals.py
-│   ├── test_grid.py
-│   ├── test_weights.py
-│   └── test_budget_closure.py
-│
-└── scripts/
-    └── run_budget.py
+│   ├── plot_results.py
+│   ├── run_outputs.py
+│   ├── specs.py
+│   ├── terms.py
+│   ├── validate.py
+│   └── weights.py
+└── tests/
+    ├── test_budget_closure.py
+    ├── test_grid.py
+    ├── test_integrals.py
+    ├── test_run_outputs.py
+    └── test_weights.py
 ```
 
-------
+## 4. Module Reference
 
-## 5. File-by-File Description
+### `src/config.py`
 
-### `config.py`
+Defines project constants and runtime defaults:
 
-Defines:
+- Physical constants: `g`, `R_value`, `R_earth`, `cp`
+- Default data-source settings:
+  - `DEFAULT_DATA_SOURCE`
+  - `DEFAULT_LOCAL_PATH`
+  - `DEFAULT_ARCO_PATH`
+  - `DEFAULT_ARCO_TOKEN`
+  - `DEFAULT_TIME_START`
+  - `DEFAULT_TIME_END`
+- Default domain settings:
+  - `DEFAULT_BBOX`
+  - `DEFAULT_MARGIN_N`
+  - `DEFAULT_ZG_TOP_PA`
+  - `DEFAULT_ZG_BOT_MODE`
+  - `DEFAULT_ZG_BOT_PA`
+- Surface-behaviour defaults:
+  - `DEFAULT_ALLOW_BOTTOM_OVERFLOW`
+  - `DEFAULT_USE_SURFACE_VARIABLES`
+  - `DEFAULT_SURFACE_VARIABLE_MODE`
+- Output and Dask defaults:
+  - `DEFAULT_PLOTS_OUTPUT`
+  - `DEFAULT_CHUNKS_3D1`
+  - chunk-size helpers `n_time`, `n_lat`, `n_lon`
 
-- Physical constants (currently: g, R, cp)
-- Standard pressure levels (e.g., LEVELS_HPA)
-- Default dataset paths / region aliases (project-specific)
-- Runtime defaults used by CLI (when flags are not provided)
+`config.py` does not perform calculations; it is the central source of default values used by the entrypoint.
 
-Contains minimal/no runtime logic.
+### `src/specs.py`
 
-------
+Defines the dataclass-based contracts used throughout the run:
 
-### `specs.py`
+- `DataSourceConfig`
+  - selects `local_era5` or `arco_era5`
+  - stores source paths, ARCO token, chunking, and time window
+- `DomainRequest`
+  - stores requested bounding box, margin, top pressure, and bottom-boundary mode
+- `SurfaceBehaviour`
+  - stores bottom-overflow behavior
+  - toggles optional surface-variable use
+  - stores `surface_variable_mode`
+- `DomainSpec`
+  - stores resolved lat/lon bounds actually used after cropping
+  - stores resolved top and bottom control-volume pressures
+  - includes validation for bottom-boundary consistency
 
-Dataclasses that define the project's contracts:
+This module is the canonical definition of what the domain request, resolved domain, data source, and surface treatment mean in the current codebase.
 
-- `DomainRequest`: user intent (bounds, margin, etc.)
-- `DomainSpec`: resolved/validated domain (explicit bounds and metadata)
+### `src/cli.py`
 
-This is the home for “what the domain means” and should stay free of I/O and heavy computation.
+Builds the command-line parser. It currently parses:
 
-------
+- Horizontal bounds: `--lat-min`, `--lat-max`, `--lon-min`, `--lon-max`
+- Horizontal margin: `--margin-n`
+- Vertical control-volume settings:
+  - `--zg-top-pa`
+  - `--zg-bottom`
+  - `--zg-bottom-pa`
+- Surface behavior:
+  - `--allow-bottom-overflow` / `--no-allow-bottom-overflow`
+  - `--use-surface-variables` / `--no-use-surface-variables`
+  - `--surface-variable-mode`
+- Data source and time window:
+  - `--data-source`
+  - `--time-start`
+  - `--time-end`
 
-### `io.py`
+The parser mostly returns `None` defaults. `scripts/run_budget.py` is responsible for filling unspecified values from `config.py`.
 
-Responsibilities:
+### `src/io.py`
 
-- Load datasets (ERA5, model data, etc.)
-- Harmonize variable names into the canonical internal schema
-- Enforce pressure units (Pa) and consistent coordinate names
-- Return standardized xarray.Dataset objects
-- Should not perform analysis calculations (no integrals, no budgets).
+Loads and standardizes input data. Current responsibilities are:
 
-Contract requirement: `io.py` is where any renaming between external conventions (ERA5 variable names) and internal names must happen (e.g., surface pressure → `sp`).
+- `load_dataset()`
+  - dispatches to `_load_local_era5()` or `_load_arco_era5()`
+- Local ERA5 load path:
+  - loads `T`, `u`, `v`, `w`, and `sp`
+  - optionally loads `T2m`, `u10`, and `v10`
+  - merges component datasets
+- ARCO ERA5 load path:
+  - opens the ARCO Zarr store
+  - renames ERA5 variable names to the internal schema
+  - optionally includes surface variables
+- `standardize_era5_dataset()`
+  - renames common external coordinate names to `time`, `level`, `lat`, `lon`
+  - drops auxiliary coordinates such as `number`, `expver`, `step`, and `surface`
+  - enforces canonical dimension ordering
+  - converts pressure levels to Pa when needed
+  - converts temperature units to Kelvin when needed
+  - normalizes longitudes into `[-180, 180]`
+  - applies the requested time slice
+  - chunks the dataset for Dask workflows
 
-------
+The current internal variable names expected downstream are:
 
-### `validate.py`
+- Required 4D fields: `T`, `u`, `v`, `w`
+- Required 3D field: `sp`
+- Optional surface fields: `T2m`, `u10`, `v10`
 
-Strict schema validation:
+### `src/validate.py`
 
-- Required variables present
-- Required dimensions present and in canonical order
-- Pressure monotonic decreasing
-- Lat/lon monotonic ascending
-- Units consistent
-- Time coordinate regular
+Performs strict validation of the standardized dataset:
 
-Raises errors if violated.
+- required dims exist: `time`, `level`, `lat`, `lon`
+- required 4D variables use dims `("time", "level", "lat", "lon")`
+- required 3D variable `sp` uses dims `("time", "lat", "lon")`
+- each coordinate is 1D over itself
+- levels are strictly decreasing
+- lat/lon are strictly increasing
+- temperature units are Kelvin
+- time spacing is regular when multiple time steps are present
 
-------
+This module raises errors instead of coercing bad inputs, to prevent silent scientific mistakes.
 
-### `grid.py`
+### `src/grid.py`
 
-Geometry + domain resolution.
+Provides domain resolution and geometric operators.
 
-Key responsibilities:
+Current domain logic:
 
-- determine_domain(ds, req):
-  - crops the dataset to whole grid cells consistent with the requested bounds
-  - returns (ds_domain, DomainSpec)
-  - constructs and attaches cell-boundary coordinates:
-    - lat_start, lat_end, lon_start, lon_end
-    - p_start, p_end
-  - constructs and attaches cell IDs for bookkeeping (e.g., lat_cell_id, lon_cell_id, p_cell_id)
-  - rewrites lat/lon to cell centers after cropping (internal convention)
+- `determine_domain(ds, request, eager_loading=False)` interprets input `lat` and `lon` as cell-start coordinates, not cell centers.
+- The requested bbox is snapped to whole cells.
+- `margin_n` is applied in cell space and must currently be at least `1`, because `ds_halo` is built from `margin_n - 1`.
+- The function returns:
+  - `ds_domain`: the interior control-volume grid
+  - `ds_halo`: the same domain with a one-cell horizontal pad, used for wall-flux and wall-weight calculations
+  - `DomainSpec`: resolved bounds and vertical boundary settings
+- The returned datasets carry cell-center coordinates plus bound metadata:
+  - `lat_start`, `lat_end`
+  - `lon_start`, `lon_end`
+  - `p_start`, `p_end`, `p_mid`
+  - `lat_cell_id`, `lon_cell_id`, `p_cell_id`
 
-This module should remain deterministic and independently testable.
+Current geometry helpers:
 
-------
+- `get_horizontal_cell_areas(ds)`
+  - returns top-face horizontal area `A_horizontal(lat, lon)` in `m2`
+- `get_vertical_cell_areas(ds)`
+  - returns wall areas:
+    - `A_east(level, lat)`
+    - `A_west(level, lat)`
+    - `A_south(level, lon)`
+    - `A_north(level, lon)`
+  - units are `m*Pa`
+- `get_cell_volumes(ds)`
+  - returns `V_cell(level, lat, lon)` in `m2*Pa`
 
-### `weights.py`
+The grid module currently handles only geometry and domain bookkeeping. It does not compute physics.
 
-Builds fractional occupancy weights that account for surfaces intersecting the volume.
+### `src/weights.py`
 
-Current responsibilities (implemented / in-progress):
+Builds occupancy weights for the control volume.
 
-- Volume occupancy weights on `(time, level, lat, lon)` that represent “fraction of the cell within the control volume”
-- Area weights for control-volume faces (horizontal and vertical walls), with fractional masking where the surface intersects the face
+Current horizontal-face weights:
 
-These weights are the bridge between “geometry” and later “integrals/budget terms”.
+- `area_weights_horizontal(ds_domain, domain_spec)`
+  - always returns `W_top(time, lat, lon)`
+  - returns `W_bottom(time, lat, lon)` only when the bottom boundary is a fixed pressure level
+  - top and bottom weights are binary in the current implementation
 
-Note: the detailed set of returned arrays and their naming should be documented in the schema section (Section 6) and treated as an API.
+Current vertical-wall weights:
 
-------
+- `area_weights_vertical(ds_halo, domain_spec, surface_spec)`
+  - returns:
+    - `W_east(time, level, lat)`
+    - `W_west(time, level, lat)`
+    - `W_south(time, level, lon)`
+    - `W_north(time, level, lon)`
+  - computes wall occupancy from halo-adjacent surface-pressure slices
+  - supports both bottom-boundary modes:
+    - `surface_pressure`
+    - `pressure_level`
+  - when `allow_bottom_overflow=True` and the bottom boundary follows surface pressure, bottom-layer wall weights may exceed `1`
 
-### `integrals.py`
+Current volume weights:
 
-Pure integration operators (no I/O):
+- `volume_weights(ds_domain, domain_spec, surface_spec)`
+  - returns `W_volume(time, level, lat, lon)`
+  - computes overlap of each pressure layer with the active control-volume column
+  - supports the same bottom-boundary logic as the wall weights
+  - when `allow_bottom_overflow=True` and the bottom boundary follows surface pressure, the bottom-layer weight may exceed `1`
 
-- horizontal/vertical surface integrals
-- volume integrals in pressure coordinates
-- time differencing helpers for storage terms
+### `src/integrals.py`
 
-Should depend only on numpy/xarray objects and weight arrays, not on CLI/config.
+Contains the current pure integration operators only:
 
-------
+- `area_integral(field_2d, area_2d, weights_2d)`
+- `volume_integral_pcoords(field_3d, volume_3d, weights_3d)`
 
-### `budget.py`
+These functions operate on xarray arrays and sum over all non-time dimensions after multiplying the field by geometric factors and weights.
 
-High-level orchestration (no I/O):
+Time differencing does not live here in the current code. It is implemented in `src/terms.py`.
 
-- assembles terms into a single output dataset
-- computes residual / closure diagnostics
-- plots diagnostics
-- exposes a stable programmatic API for scripts
+### `src/terms.py`
 
-Outputs the four main integral components:
+Computes the physical terms and associated helpers.
 
-- `dT_dt` (storage)
-- `net_advected_heat` (advection)
-- `adiabatic_heating` (work/adiabatic)
-- `diabatic_heating` (local heat sources, residual)
+Current public helpers:
 
-------
+- `compute_domain_volume()`
+- `compute_time_derivative()`
+- `compute_storage()`
+- `prepare_advective_faces()`
+- `compute_advective_term()`
+- `compute_adiabatic_term()`
+- `compute_diabatic_term()`
+- `compute_T_domain_average()`
 
-### `terms.py`
+Important internal helper:
 
-Computes individual budget components (calls `integrals.py`):
+- `_adjust_surface_field()`
+  - blends model-level and surface variables in the surface-adjacent layer when `use_surface_variables=True`
 
-- storage tendency
-- advective flux divergence via control-volume faces
-- adiabatic/compressional term(s)
-- diabatic as residual (or explicitly if available)
+Current advection workflow:
 
-------
+1. `prepare_advective_faces()` reduces the datasets to the variables needed for advection.
+2. In the standard budget path, `budget.calculate_budget()` first converts advection temperature inputs into anomalies relative to `T_domain_avg`.
+3. If surface variables are enabled, `prepare_advective_faces()` adjusts `u`, `v`, and `T` near the surface using `u10`, `v10`, and `T2m`.
+4. It constructs face-centered quantities on west, east, south, north, and top faces, and bottom when the bottom boundary is fixed pressure.
+5. `compute_advective_term()` integrates the signed face fluxes using geometric areas and area weights.
 
-### `cli.py`
+Current outputs from `compute_advective_term()`:
 
-Command-line interface:
+- always:
+  - `net_heat_advection`
+  - per-face `flux_contribution_*`
+- when `integral_diagnostics_flag=True`:
+  - `net_mass_advection`
+  - per-face `mass_flux_contribution_*`
+  - `abs_mass_advection_residual_fraction`
 
-- Parses arguments
+Current thermodynamic terms:
 
-------
+- `compute_storage()` computes the centered time derivative of volume-integrated temperature
+- `compute_adiabatic_term()` integrates `w * R * T / (cp * p)`
+- `compute_diabatic_term()` currently uses the code sign convention:
+  `D = S + A - C`
+
+### `src/budget.py`
+
+Orchestrates the full budget calculation.
+
+Current `calculate_budget()` workflow:
+
+1. Builds geometric areas and cell volumes.
+2. Builds horizontal, vertical, and volume weights.
+3. Computes:
+   - storage term `d_dt_T`
+   - domain volume `domain_volume`
+   - volume tendency `dV_dt`
+   - domain-mean temperature `T_domain_avg`
+   - normalized temperature tendency diagnostics `dT_dt` and `dT_dt_2`
+4. Prepares advection inputs.
+5. Runs `prepare_advective_faces()` and `compute_advective_term()`.
+6. Estimates advection uncertainty as:
+   `advection_error = (dV_dt + net_mass_advection) * T_scale`
+7. Computes:
+   - `adiabatic_term`
+   - `diabatic_term`
+8. Assembles the output dataset.
+9. Optionally writes diagnostic figures through `plot_diagnostics.py`.
+
+Current output dataset fields are:
+
+- `d_dt_T`
+- `dT_dt`
+- `dT_dt_2`
+- `dV_dt`
+- `advection_term`
+- `advection_error`
+- `adiabatic_term`
+- `diabatic_term`
+- `T_domain_avg`
+- `domain_volume`
+- `T_scale`
+
+The current implementation also supports a constant-`T` diagnostic rerun through the `test_constant_T` argument.
+
+### `src/run_outputs.py`
+
+Handles run metadata and output-path setup.
+
+Current responsibilities:
+
+- `resolve_run_id()`
+  - uses `PBS_JOBID` when available
+  - otherwise generates a manual timestamp-and-pid run id
+- `prepare_run_paths()`
+  - creates the run root and plot directory
+  - returns `RunPaths`
+- `resolve_git_provenance()`
+  - captures current branch, commit, and dirty state
+  - dirty-state checks are limited to tracked runtime sources under `src`, `scripts`, and `schedulers`
+  - ignores generated noise such as `__pycache__` and `.pyc`
+- `write_run_info()`
+  - serializes run metadata into `run_info.json`
+
+Current run metadata includes:
+
+- run id and path information
+- resolved request and domain specs
+- source config
+- surface behavior
+- git provenance
+- raw CLI args
+- `PBS_JOBID` when available
+
+### `src/plot_diagnostics.py`
+
+Produces diagnostic figures written by `budget.calculate_budget()` when plotting is enabled.
+
+Current figure functions:
+
+- `fig1_mass_continuity()`
+- `fig2_mass_advection_residual_timeseries()`
+- `fig3_advection_components_timeseries()`
+- `fig4_temperature_derivative_timeseries()`
+
+These focus on mass continuity, flux decomposition, accumulated residuals, and the relationship between different temperature-tendency diagnostics.
+
+### `src/plot_results.py`
+
+Produces summary budget figures after a run completes.
+
+Current figure functions:
+
+- `plot_budget_terms_hourly()`
+  - hourly view with configurable rolling smoothing
+- `plot_budget_terms_day_bin()`
+  - daily-binned and daily-accumulated view
+- `plot_constant_T_results()`
+  - compares the advection-error estimate against the constant-`T` diagnostic rerun
+
+The current plotting code uses normalized quantities based on `domain_volume`, and it shades advection-related uncertainty using `advection_error` when available.
 
 ### `scripts/run_budget.py`
 
-Main script, used on HPC or locally.
+This is the current executable entrypoint.
 
-------
+Current responsibilities:
 
-### `scripts/plot_diagnostics.py`
+- inserts the project root into `sys.path`
+- parses CLI arguments
+- builds `DomainRequest`, `SurfaceBehaviour`, and `DataSourceConfig`
+- prepares run directories and git provenance
+- loads and validates the source dataset
+- resolves `ds_domain`, `ds_halo`, and `DomainSpec`
+- writes `run_info.json`
+- calls `budget.calculate_budget()`
+- writes summary plots
+- runs a second constant-`T` diagnostic budget calculation and plots that comparison
 
-Plots intermediate diagnostic figures to ensure integrals are working correctly. Called from budget.py
+Current runtime behavior under `__main__`:
 
-- fig 1: mass continuity test of `net_advected_mass` vs time rate of change of volume `dV_dt`
+- starts a Dask distributed `Client`
+- uses hard-coded worker settings:
+  - `n_workers=4`
+  - `threads_per_worker=1`
+  - `processes=True`
+  - `memory_limit="8GB"`
 
-$$
-\frac{d​}{dt}\iiint_{V(t)} ​dV_p +  ​\iint \vec U \cdot n dA_p​​​=0
-$$
+### `schedulers/schedule_run_budget.sh`
 
-- fig 2: advection terms
-  - top panel: volume of domain;
-  - middle panel: advection terms (east, west, south, north, top, and bottom if present)
-  - bottom panel: sum of advection terms (`net_heat_advection`)
-- fig 3: time series of absolute flux residual
+This repository also includes a scheduler wrapper for launching the budget workflow in batch environments.
 
-------
+## 5. Data Contracts
 
-### `scripts/plot_results.py`
+### 5.1 Canonical Loaded Dataset
 
-Plot results of integral calculation. Called from run_budget.py
+After `io.standardize_era5_dataset()`, downstream code expects:
 
-- fig1:
-  - top panel `dT_dt`
-  - bottom panel `net_head_advection`, `adiabatic_heating`, `D (diabatic heating, residual term)`
+- coordinates:
+  - `time`
+  - `level`
+  - `lat`
+  - `lon`
+- required variables:
+  - `T(time, level, lat, lon)`
+  - `u(time, level, lat, lon)`
+  - `v(time, level, lat, lon)`
+  - `w(time, level, lat, lon)`
+  - `sp(time, lat, lon)`
+- optional variables:
+  - `T2m(time, lat, lon)`
+  - `u10(time, lat, lon)`
+  - `v10(time, lat, lon)`
 
-------
+Required coordinate conventions at this stage:
 
-## 6. Rigid Data Structure (Required Schema)
+- `level` in Pa
+- `level` strictly decreasing
+- `lat` strictly increasing
+- `lon` strictly increasing
+- longitudes normalized to `[-180, 180]`
 
-### Required Dimensions
+### 5.2 Domain And Halo Datasets
 
-- `time`: hourly frequency
-- `level`: variable spacing
-- `lat`: 2 degree spacing
-- `lon`: 2 degree spacing
+After `grid.determine_domain()`:
 
-------
+- input horizontal coordinates have been reinterpreted from cell starts to cell centers
+- `ds_domain` is the interior control-volume grid used for volume integrals and top-face quantities
+- `ds_halo` carries a one-cell horizontal pad used for wall-face quantities
+- both datasets carry bound metadata:
+  - `lat_start`, `lat_end`
+  - `lon_start`, `lon_end`
+  - `p_start`, `p_end`, `p_mid`
+  - `lat_cell_id`, `lon_cell_id`, `p_cell_id`
 
-### Required Coordinates
+`DomainSpec` stores the resolved control-volume bounds actually used after snapping and margin application.
 
-- `time`: same as dimension, 1hr average
-- `level`: same as dimension, cell center
-- `lat`: same as dimension, cell center
-- `lon`: same as dimension, cell center
-- `level_start`: cell start
-- `level_end`: cell end
-- `lat_start`: cell start
-- `lat_end`: cell end
-- `lon_start`: cell start
-- `lon_end`: cell end
+### 5.3 Geometry And Weight Outputs
 
-Note: in the INPUT data (io.py) horizontal variables follow the full-cell description of data, meaning that the lat/lon grid represents the average over the full grid-cell [x, x+1]. Pressure coordinates represent the variable at each pressure level (horizontally averaged), and `dp` is inferred from level-centered edge extrapolation during integration/geometry calculations. This is standardized in `determine_domain()`.
+Current geometry outputs:
 
-------
+- `A_horizontal(lat, lon)`
+- `A_east(level, lat)`
+- `A_west(level, lat)`
+- `A_south(level, lon)`
+- `A_north(level, lon)`
+- `V_cell(level, lat, lon)`
 
-### Required Variables
+Current weight outputs:
 
-| Variable | Dimensions           | Units  |
-| -------- | -------------------- | ------ |
-| `T`      | (time,level,lat,lon) | K      |
-| `u`      | (time,level,lat,lon) | m s⁻¹  |
-| `v`      | (time,level,lat,lon) | m s⁻¹  |
-| `w`      | (time,level,lat,lon) | Pa s⁻¹ |
-| `sp`     | (time,lat,lon)       | Pa     |
+- `W_top(time, lat, lon)`
+- optional `W_bottom(time, lat, lon)`
+- `W_east(time, level, lat)`
+- `W_west(time, level, lat)`
+- `W_south(time, level, lon)`
+- `W_north(time, level, lon)`
+- `W_volume(time, level, lat, lon)`
 
-Future variables: (surface variables)
+### 5.4 Budget Output Dataset
 
-| Variable | Dimensions        | Units  |
-| -------- | ----------------- | ------ |
-| `T10m`   | (time,lat,lon)    | K      |
-| `u10m`   | (time,lat,lon)    | m s⁻¹  |
-| `v10m`   | (time,lat,lon)    | m s⁻¹  |
-| `w10m`   | (time,lat,lon)    | Pa s⁻¹ |
+`budget.calculate_budget()` currently returns an `xarray.Dataset` containing:
 
-### Domain dimensions
+- `d_dt_T`
+- `dT_dt`
+- `dT_dt_2`
+- `dV_dt`
+- `advection_term`
+- `advection_error`
+- `adiabatic_term`
+- `diabatic_term`
+- `T_domain_avg`
+- `domain_volume`
+- `T_scale`
 
-| Variable    | Dimensions   | Units  |
-| ----------- | ------------ | ------ |
-| `lat_min`   | float        | deg    |
-| `lat_max`   | float        | deg    |
-| `lon_min`   | float        | deg    |
-| `lon_max`   | float        | deg    |
-| `margin`    | int          | int    |
+This output is the main input to the result-plotting functions.
 
-Note: the domain extent is defined by the input domain extent (from io) minus some margin (measured in array index) to ensure there's a few points outside so extrapolation is never necessary.
+### 5.5 Run Metadata
 
-------
+Each run writes `run_info.json` with the current structure:
 
-### Required Physical Assumptions
+```json
+{
+  "run_id": "...",
+  "pbs_job_id": "...",
+  "generated_at": "...",
+  "run_root": "...",
+  "plot_dir": "...",
+  "request": { "...": "..." },
+  "source_spec": { "...": "..." },
+  "domain_spec": { "...": "..." },
+  "surface_behaviour": { "...": "..." },
+  "git": {
+    "branch": "...",
+    "commit": "...",
+    "dirty": false
+  },
+  "cli_args": { "...": "..." }
+}
+```
 
-- Hydrostatic balance implied.
-- Pressure coordinate vertical axis.
-- Surface is a material boundary.
-- No mass flux across lower boundary.
+## 6. Testing
 
-------
+The current test suite is mixed: parts of it reflect the present implementation closely, and parts of it still carry path assumptions from the earlier `eulerian_heat_budget_surface` repository layout.
 
-## 7. Testing Strategy
+Current test files:
 
-### Unit Tests
+- `tests/test_grid.py`
+  - covers domain cropping, bounds metadata, horizontal areas, vertical areas, and cell volumes
+- `tests/test_weights.py`
+  - covers horizontal-face weights, vertical-wall weights, and volume weights
+- `tests/test_budget_closure.py`
+  - covers mass and heat-advection closure behavior for idealized flows
+- `tests/test_run_outputs.py`
+  - covers run-path creation and git provenance / metadata serialization
+- `tests/test_integrals.py`
+  - currently empty
 
-- Constant field integral
-- Analytic pressure integral
-- Surface truncation behavior
+Observed status in this working tree:
 
-#### Implemented Grid Unit Tests (`tests/test_grid.py`)
+- `tests/test_grid.py` and `tests/test_weights.py` pass under:
+  `mamba run -n dev_env pytest -q tests/test_grid.py tests/test_weights.py`
+- `tests/test_budget_closure.py` also passes when run on its own
+- some test files still hard-code the old `eulerian_heat_budget_surface` path
+- because the suite mixes old and current import-root assumptions, not every test file cleanly validates this repository when collected together
 
-1. `test_determine_latlon_domain_interval_start_semantics`
-   - Verifies that `determine_latlon_domain` interprets horizontal coordinates as **full-cell interval starts**, not center points.
-   - For `margin = 1`, expects returned bounds to be the first and last valid **cell-start** values after trimming one cell from each side.
-   - For an over-large margin, expects a `ValueError`, confirming the function rejects cases where no interior cells remain.
+This means the testing section should be read as a description of current coverage, not as a claim that the whole suite is fully harmonized.
 
-2. `test_horizontal_cell_areas_shape_and_metadata`
-   - Verifies output dimensional contract of `get_horizontal_cell_areas`:
-     - dims must be exactly `("lat_cell", "lon_cell")`
-     - shape must be `(nlat-1, nlon-1)`.
-   - Verifies interval metadata coordinates are correct:
-     - `lat_start`, `lat_end`, `lon_start`, `lon_end`
-     - midpoint helper coordinates `lat_mid`, `lon_mid`.
-   - Verifies units are `m2` and all computed values are finite and strictly positive.
+## 7. Current Implementation Notes
 
-3. `test_horizontal_cell_areas_analytic_regular_grid`
-   - Validates spherical horizontal area computation against a closed-form analytic reference on a regular grid:
-     $$
-     A = R^2 |\sin(\phi_n)-\sin(\phi_s)|\,|\lambda_e-\lambda_w|
-     $$
-   - Expects numerical agreement at tight tolerance (`rtol=1e-12`, `atol=0.0`), confirming correct trigonometric and interval handling.
-
-4. `test_vertical_cell_areas_shape_and_units`
-   - Verifies output contract of `get_vertical_cell_areas` for all four side walls:
-     - `east(level, lat_cell)`, `west(level, lat_cell)`,
-       `south(level, lon_cell)`, `north(level, lon_cell)`.
-   - Verifies bbox selection is applied using **interval-start semantics** by checking selected `lat_cell`/`lon_cell` indices and associated start/end metadata.
-   - Verifies units are `m*Pa`, values are finite and positive, and `east == west` for identical meridional geometry.
-
-5. `test_vertical_cell_areas_analytic_regular_grid`
-   - Validates wall-area magnitudes against analytic formulas on a regular grid:
-     - `east/west = dp * (R * dphi)`
-     - `south/north = dp * (R * cos(phi_boundary) * dlon)`.
-   - Confirms pressure-thickness handling (`dp`) and boundary-latitude dependence are correct.
-   - Explicitly checks `south != north` where boundary latitudes differ, ensuring north/south wall geometry is not incorrectly forced symmetric.
-
-6. `test_vertical_cell_areas_irregular_grid_positive`
-   - Uses nonuniform pressure and horizontal spacing to verify robustness away from regular grids.
-   - Expects all four wall outputs to remain finite and strictly positive under irregular interval widths.
-
-7. `test_vertical_cell_areas_error_paths`
-   - Verifies explicit failure behavior for invalid inputs:
-     - bbox selects zero cells,
-     - non-monotonic latitude coordinate,
-     - horizontal coordinate with fewer than two points.
-   - Expects `ValueError` for each case, preventing silent geometry misuse.
-
-------
-
-### Integration Tests
-
-- Small spatial subset
-- Few pressure levels
-- Single time slice
-
-------
-
-### Closure Diagnostics
-
-For real datasets:
-
-- Expect non-zero residual
-- Monitor:
-  - Relative residual magnitude
-  - Sensitivity to resolution
-  - Sensitivity to time differencing scheme
-
-------
-
-## 8. Known Numerical Sensitivities
-
-1. Integral will be sensitive to resolution
-2. Pressure spacing non-uniformity
-3. Mask truncation near topography
-4. Vertical differencing of time tendency
-5. ERA5 analysis increments (budget non-closure)
-
-All must be explicitly documented in future versions.
-
-------
-
-## 9. Extension Pathways
-
-- Add surface variables (T10m, ux10m, uv10m, uz10m) for improved residual calculation.
-- Multi-model ensemble automation
-
-------
-
-## 10. Versioning Plan
-
-Use semantic versioning:
-
-- `0.x`: development
-- `1.0`: validated heat budget implementation
-- `2.0`: extended moist/static energy version
-
-------
+- The document describes current behavior, even where the implementation is transitional.
+- Commented-out legacy code in `terms.py` and `plot_results.py` is not part of the active API and is not treated as the current design.
+- The plotting modules live under `src/`, not under `scripts/`.
+- The main runtime entrypoint is `scripts/run_budget.py`, with `src/budget.py` acting as the orchestration layer used by that script.

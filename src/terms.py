@@ -16,7 +16,7 @@ import numpy as np
 
 from . import integrals, weights, config
 
-from .specs import DomainSpec
+from .specs import DomainSpec, SurfaceBehaviour
 
 
 def compute_domain_volume(ds_domain: xr.Dataset,
@@ -66,15 +66,324 @@ def compute_storage(T: xr.DataArray,
 
     return dT_dt
 
-def compute_advective_term(ds_domain: xr.Dataset, #A
+
+def _adjust_surface_field(
+    da_var: xr.DataArray,
+    da_var_surface: xr.DataArray,
+    da_sp: xr.DataArray,
+    DomainSpecs: DomainSpec,
+    SurfaceSpecs: SurfaceBehaviour,
+) -> xr.DataArray:
+    '''
+    Calculation to change the effective velocity (u, v) of
+    the layer that intersects the surface.
+    V_effective = 
+        dP1 * V(level) + dP2 * 0.5* (V(level)+V(surface)) / (dP1 + dP2)
+    where dP1+dP2= surface_pressure - pressure_level_top 
+    '''
+
+    sp       = da_sp
+    p_top    = da_var['p_end']
+    p_mid    = da_var['p_mid']   # pressure level mid point
+    p_bottom = da_var['p_start'] #
+
+    is_cut = (sp > p_top) & (sp < p_bottom)
+    is_lowest_layer = da_var["level"] == da_var["level"].isel(level=0) #
+    if SurfaceSpecs.allow_bottom_overflow: #sometime the surface will be below the lowest pressure level, 
+                                           #in that case we allow the bottom layer to be surface adjacent
+        is_overflow = is_lowest_layer & (sp >= p_bottom)
+        is_surface_adjacent = is_cut | is_overflow
+    else:
+        is_surface_adjacent = is_cut
+
+    #ensure that surface_adjacent mask is only true once per time/lat/lon column
+    assert np.all(is_surface_adjacent.sum(dim='level') <= 1), "Surface adjacent mask is true for multiple levels in the same column, check pressure levels and surface pressure values."
+
+    pct_columns = is_surface_adjacent.any(dim="level").mean().compute().item() * 100
+    active_columns = da_sp > DomainSpecs.zg_top_pressure
+    pct_active = (
+        is_surface_adjacent.any(dim="level").where(active_columns).mean().compute().item() * 100
+    )
+    print(f"Percent of columns that have surface adjacency: {pct_columns:.2f}%")
+    print(f"Percent of active columns (surface pressure above top boundary) that have surface adjacency: {pct_active:.2f}%")
+
+    var_surface = da_var_surface  # velocity at surface pressure level
+    var_level   = da_var          # velocity at all levels
+
+    #case A
+    # Surface pressure >= P_bottom: then the entire layer is above the surface, keep original value
+    var_effective = var_level.copy(deep=True)
+
+    #case B
+    # P_mid < Surface pressure < P_bottom: then the layer is cut by the surface, compute weighted average
+    is_B = is_surface_adjacent & (sp > p_mid)      # includes overflow D naturally
+
+    dp_upper_B = np.clip(p_mid - p_top, 0.0, None)
+    dp_lower_B = np.clip(sp - p_mid, 0.0, None)
+    dp_total_B = dp_upper_B + dp_lower_B
+
+    v_eff_B = (
+        dp_upper_B * var_level
+        + dp_lower_B * 0.5 * (var_level + var_surface)
+    ) / dp_total_B
+
+    var_effective = xr.where(is_B, v_eff_B, var_effective)
+    #case C
+    # Surface pressure <= P_mid: then the entire layer is below the surface, use blend is surface and next layer above the surface
+    is_C = is_surface_adjacent & (sp <= p_mid)
+    var_above = var_level.shift(level=-1)
+    var_above = var_above.fillna(var_surface)
+
+    v_eff_C = 0.5 * (var_above + var_surface)
+
+    var_effective = xr.where(is_C, v_eff_C, var_effective)
+
+    return var_effective
+    
+
+def _trim_advective_state(
+    ds_domain: xr.Dataset,
+    ds_halo: xr.Dataset,
+    SurfaceSpecs: SurfaceBehaviour,
+) -> tuple[xr.Dataset, xr.Dataset]:
+    """
+    Return reduced domain/halo datasets containing only variables needed by advection.
+    """
+    domain_vars = ["T"]
+    halo_vars = ["T", "u", "v", "w", "sp"]
+
+    if SurfaceSpecs.use_surface_variables:
+        domain_vars += ["T2m"]
+        halo_vars += ["T2m", "u10", "v10"]
+
+    return ds_domain[domain_vars], ds_halo[halo_vars]
+
+
+def _drop_face_coords(da: xr.DataArray, wall: str) -> xr.DataArray:
+    """
+    Drop scalar/bound coords that no longer make sense after face extraction.
+    """
+    if wall in {"west", "east"}:
+        return weights._drop_if_present(da, ["lon", "lon_start", "lon_end", "lon_cell_id"])
+    if wall in {"south", "north"}:
+        return weights._drop_if_present(da, ["lat", "lat_start", "lat_end", "lat_cell_id"])
+    if wall in {"top", "bottom"}:
+        return weights._drop_if_present(da, ["p_mid", "p_start", "p_end", "p_cell_id"])
+    return da
+
+
+def prepare_advective_faces(
+    ds_domain_adv: xr.Dataset,
+    ds_halo_adv: xr.Dataset,
+    DomainSpecs: DomainSpec,
+    SurfaceSpecs: SurfaceBehaviour,
+    *,
+    integral_diagnostics_flag: bool,
+) -> tuple[xr.Dataset, xr.Dataset]:
+    """
+    Prepare reduced advection inputs and precomputed face-centered arrays.
+
+    Returns
+    -------
+    ds_domain_trim : xr.Dataset
+        Minimal domain dataset used only for output time/lat/lon coordinates.
+    ds_faces : xr.Dataset
+        Face-centered arrays already cropped to the integration domain.
+    """
+    ds_domain_trim, ds_halo_trim = _trim_advective_state(ds_domain_adv, ds_halo_adv, SurfaceSpecs)
+
+    if SurfaceSpecs.use_surface_variables:
+        u_for_flux = _adjust_surface_field(
+            ds_halo_trim["u"], ds_halo_trim["u10"], ds_halo_trim["sp"], DomainSpecs, SurfaceSpecs
+        )
+        v_for_flux = _adjust_surface_field(
+            ds_halo_trim["v"], ds_halo_trim["v10"], ds_halo_trim["sp"], DomainSpecs, SurfaceSpecs
+        )
+        T_for_flux = _adjust_surface_field(
+            ds_halo_trim["T"], ds_halo_trim["T2m"], ds_halo_trim["sp"], DomainSpecs, SurfaceSpecs
+        )
+    else:
+        u_for_flux = ds_halo_trim["u"]
+        v_for_flux = ds_halo_trim["v"]
+        T_for_flux = ds_halo_trim["T"]
+
+    # horizontal faces
+    u_west = 0.5 * (u_for_flux.isel(lon=0) + u_for_flux.isel(lon=1))
+    u_east = 0.5 * (u_for_flux.isel(lon=-1) + u_for_flux.isel(lon=-2))
+    v_south = 0.5 * (v_for_flux.isel(lat=0) + v_for_flux.isel(lat=1))
+    v_north = 0.5 * (v_for_flux.isel(lat=-1) + v_for_flux.isel(lat=-2))
+
+    T_west = 0.5 * (T_for_flux.isel(lon=0) + T_for_flux.isel(lon=1))
+    T_east = 0.5 * (T_for_flux.isel(lon=-1) + T_for_flux.isel(lon=-2))
+    T_south = 0.5 * (T_for_flux.isel(lat=0) + T_for_flux.isel(lat=1))
+    T_north = 0.5 * (T_for_flux.isel(lat=-1) + T_for_flux.isel(lat=-2))
+
+    # top / bottom
+    w_top = ds_halo_trim["w"].sel(level=DomainSpecs.zg_top_pressure, method=None)
+    T_top = ds_halo_trim["T"].sel(level=DomainSpecs.zg_top_pressure, method=None)
+
+    if DomainSpecs.zg_bottom == "surface_pressure":
+        w_bottom = None
+        T_bottom = None
+    elif DomainSpecs.zg_bottom == "pressure_level":
+        w_bottom = ds_halo_trim["w"].sel(level=DomainSpecs.zg_bottom_pressure, method=None)
+        T_bottom = ds_halo_trim["T"].sel(level=DomainSpecs.zg_bottom_pressure, method=None)
+    else:
+        raise ValueError(f"Invalid zg_bottom mode: {DomainSpecs.zg_bottom}")
+
+    # crop to true domain coordinates
+    u_west = u_west.sel(lat=ds_domain_trim.lat)
+    u_east = u_east.sel(lat=ds_domain_trim.lat)
+    T_west = T_west.sel(lat=ds_domain_trim.lat)
+    T_east = T_east.sel(lat=ds_domain_trim.lat)
+
+    v_south = v_south.sel(lon=ds_domain_trim.lon)
+    v_north = v_north.sel(lon=ds_domain_trim.lon)
+    T_south = T_south.sel(lon=ds_domain_trim.lon)
+    T_north = T_north.sel(lon=ds_domain_trim.lon)
+
+    w_top = w_top.sel(lat=ds_domain_trim.lat, lon=ds_domain_trim.lon)
+    T_top = T_top.sel(lat=ds_domain_trim.lat, lon=ds_domain_trim.lon)
+
+    if w_bottom is not None and T_bottom is not None:
+        w_bottom = w_bottom.sel(lat=ds_domain_trim.lat, lon=ds_domain_trim.lon)
+        T_bottom = T_bottom.sel(lat=ds_domain_trim.lat, lon=ds_domain_trim.lon) 
+
+    ds_faces = xr.Dataset(
+        {
+            "uT_west": _drop_face_coords(u_west * T_west, "west"),
+            "uT_east": _drop_face_coords(u_east * T_east, "east"),
+            "uT_south": _drop_face_coords(v_south * T_south, "south"),
+            "uT_north": _drop_face_coords(v_north * T_north, "north"),
+            "uT_top": _drop_face_coords(w_top * T_top, "top"),
+        }
+    )
+
+    if integral_diagnostics_flag:
+        ds_faces["u_west"] = _drop_face_coords(u_west, "west")
+        ds_faces["u_east"] = _drop_face_coords(u_east, "east")
+        ds_faces["u_south"] = _drop_face_coords(v_south, "south")
+        ds_faces["u_north"] = _drop_face_coords(v_north, "north")
+        ds_faces["u_top"] = _drop_face_coords(w_top, "top")
+
+    if w_bottom is not None and T_bottom is not None:
+        ds_faces["uT_bottom"] = _drop_face_coords(w_bottom * T_bottom, "bottom")
+        if integral_diagnostics_flag:
+            ds_faces["u_bottom"] = _drop_face_coords(w_bottom, "bottom")
+
+    return ds_domain_trim, ds_faces
+
+
+def compute_advective_term(
+    ds_domain_adv: xr.Dataset,
+    ds_faces: xr.Dataset,
+    ds_cell_areas: xr.Dataset,
+    ds_weights_areas: xr.Dataset,
+    DomainSpecs: DomainSpec,
+    integral_diagnostics_flag: bool,
+) -> xr.Dataset:
+    r'''
+    math term: -\int T U \cdot dA
+    '''
+
+    wall_list = ["west", "east", "south", "north", "top"]
+    if "uT_bottom" in ds_faces:
+        wall_list.append("bottom")
+
+    out = xr.Dataset(
+        data_vars={
+            "net_heat_advection": xr.zeros_like(ds_domain_adv["time"], dtype="float64")
+        }
+    )
+    out["net_heat_advection"].attrs.update(
+        {"long_name": "Net advected heat", "units": "K m2 Pa s-1"}
+    )
+
+    if integral_diagnostics_flag:
+        out["net_mass_advection"] = xr.zeros_like(ds_domain_adv["time"], dtype="float64")
+        out["net_mass_advection"].attrs.update(
+            {"long_name": "Net advected mass", "units": "m2 Pa s-1"}
+        )
+
+    wall_sign = {
+        "west":   -1.0,
+        "east":   +1.0,
+        "south":  -1.0,
+        "north":  +1.0,
+        "top":    -1.0,
+        "bottom": +1.0,
+    }
+
+    residual_denom = xr.zeros_like(ds_domain_adv["time"], dtype="float64")
+
+    for wall in wall_list:
+        cell_wall_name = "A_horizontal" if wall in {"top", "bottom"} else f"A_{wall}"
+
+        adv_wall = integrals.area_integral(
+            ds_faces[f"uT_{wall}"],
+            ds_cell_areas[cell_wall_name],
+            ds_weights_areas[f"W_{wall}"],
+        )
+        adv_wall = adv_wall.astype("float64").reset_coords(drop=True)
+
+        out["net_heat_advection"] = out["net_heat_advection"] + wall_sign[wall] * adv_wall
+        out[f"flux_contribution_{wall}"] = wall_sign[wall] * adv_wall
+
+        if integral_diagnostics_flag:
+            mass_adv_wall = integrals.area_integral(
+                ds_faces[f"u_{wall}"],
+                ds_cell_areas[cell_wall_name],
+                ds_weights_areas[f"W_{wall}"],
+            )
+            mass_adv_wall = mass_adv_wall.astype("float64").reset_coords(drop=True)
+
+            out["net_mass_advection"] = out["net_mass_advection"] + wall_sign[wall] * mass_adv_wall
+            out[f"mass_flux_contribution_{wall}"] = wall_sign[wall] * mass_adv_wall
+            residual_denom = residual_denom + np.abs(mass_adv_wall)
+
+    if integral_diagnostics_flag:
+        eps = np.abs(out["net_mass_advection"]) / residual_denom
+        out["abs_mass_advection_residual_fraction"] = eps
+
+    return out
+
+
+r"""
+def compute_advective_term(ds_domain: xr.Dataset,
                            ds_halo: xr.Dataset,
                            ds_cell_areas: xr.Dataset,
                            ds_weights_areas: xr.Dataset,
                            DomainSpecs: DomainSpec,
+                           SurfaceSpecs: SurfaceBehaviour,
                            integral_diagnostics_flag: bool) -> xr.Dataset:
     r'''
-    math term: -\int T U \cdot dA
+    math term: $-\int T U \cdot dA$
     '''
+    
+    if SurfaceSpecs.use_surface_variables:
+        
+        u_for_flux = _adjust_surface_field(ds_halo['u'], ds_halo['u10'], ds_halo['sp'], DomainSpecs, SurfaceSpecs)
+        v_for_flux = _adjust_surface_field(ds_halo['v'], ds_halo['v10'], ds_halo['sp'], DomainSpecs, SurfaceSpecs)
+        T_for_flux = _adjust_surface_field(ds_halo['T'], ds_halo['T2m'], ds_halo['sp'], DomainSpecs, SurfaceSpecs)
+
+        du = (u_for_flux - ds_halo["u"]).where(np.isfinite(u_for_flux))
+        dv = (v_for_flux - ds_halo["v"]).where(np.isfinite(v_for_flux))
+        dT = (T_for_flux - ds_halo["T"]).where(np.isfinite(T_for_flux))
+
+        print("max |du|:", np.abs(du).max().compute().item())
+        print("mean |du| on changed cells:", np.abs(du).where(du != 0).mean().compute().item()) #type: ignore
+        print("max |dv|:", np.abs(dv).max().compute().item())
+        print("mean |dv| on changed cells:", np.abs(dv).where(dv != 0).mean().compute().item()) #type: ignore
+        print("max |dT|:", np.abs(dT).max().compute().item())
+        print("mean |dT| on changed cells:", np.abs(dT).where(dT != 0).mean().compute().item()) #type: ignore
+
+    else:
+
+        u_for_flux = ds_halo['u']
+        v_for_flux = ds_halo['v']
+        T_for_flux = ds_halo['T']
+
+
     # Compute velocity at cell faces for advection term
     # top/bottom - vertical velocity at top/bottom walls needed for advective fluxes
     w_top = ds_halo['w'].sel(level=DomainSpecs.zg_top_pressure, method=None)  # vertical velocity at top wall
@@ -91,24 +400,26 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
     else:
         raise ValueError(f"Invalid zg_bottom mode: {DomainSpecs.zg_bottom}")
     
+
+
     # Compute normal velocity components at east/west/north/south walls for advective fluxes
     # also compute cell face T for advective fluxes
     # halo cells are needed to compute these at the domain boundaries
     # note lat/lon monotonic ascending;
-    u_west = 0.5 * (ds_halo['u'].isel(lon=0) + ds_halo['u'].isel(lon=1))
-    T_west = 0.5 * (ds_halo['T'].isel(lon=0) + ds_halo['T'].isel(lon=1))
+    u_west = 0.5 * (u_for_flux.isel(lon=0)   + u_for_flux.isel(lon=1))
+    T_west = 0.5 * (T_for_flux.isel(lon=0) + T_for_flux.isel(lon=1))
     uT_west = u_west * T_west
 
-    u_east = 0.5 * (ds_halo['u'].isel(lon=-1) + ds_halo['u'].isel(lon=-2))
-    T_east = 0.5 * (ds_halo['T'].isel(lon=-1) + ds_halo['T'].isel(lon=-2))
+    u_east = 0.5 * (u_for_flux.isel(lon=-1)   + u_for_flux.isel(lon=-2))
+    T_east = 0.5 * (T_for_flux.isel(lon=-1) + T_for_flux.isel(lon=-2))
     uT_east = u_east * T_east
 
-    v_south = 0.5 * (ds_halo['v'].isel(lat=0) + ds_halo['v'].isel(lat=1))
-    T_south = 0.5 * (ds_halo['T'].isel(lat=0) + ds_halo['T'].isel(lat=1))
+    v_south = 0.5 * (v_for_flux.isel(lat=0)   + v_for_flux.isel(lat=1))
+    T_south = 0.5 * (T_for_flux.isel(lat=0) + T_for_flux.isel(lat=1))
     vT_south = v_south * T_south
 
-    v_north = 0.5 * (ds_halo['v'].isel(lat=-1) + ds_halo['v'].isel(lat=-2))
-    T_north = 0.5 * (ds_halo['T'].isel(lat=-1) + ds_halo['T'].isel(lat=-2))
+    v_north = 0.5 * (v_for_flux.isel(lat=-1)   + v_for_flux.isel(lat=-2))
+    T_north = 0.5 * (T_for_flux.isel(lat=-1) + T_for_flux.isel(lat=-2))
     vT_north = v_north * T_north
 
     # Ensure ds_halo derived variables are cropped to ds_domain
@@ -239,10 +550,11 @@ def compute_advective_term(ds_domain: xr.Dataset, #A
 
         out["abs_mass_advection_residual_fraction"] = eps
 
-        print(f"Residual from mass advection into domain through the surfaces: \n MEAN={eps.mean().values}, MAX={eps.max().values} of time series.")
+        # print(f"Residual from mass advection into domain through the surfaces: \n MEAN={eps.mean().values}, MAX={eps.max().values} of time series.")
     
     return out
-
+"""
+    
 def compute_adiabatic_term(ds_domain: xr.Dataset, 
                            ds_cell_volumes: xr.DataArray,
                            ds_weights_volumes: xr.DataArray,

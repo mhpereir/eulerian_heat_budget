@@ -15,7 +15,7 @@ Note: the detailed set of returned arrays and their naming should be documented 
 import xarray as xr
 import numpy as np
 
-from .specs import DomainSpec
+from .specs import DomainSpec, SurfaceBehaviour
 
 def area_weights_horizontal(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
     """
@@ -72,7 +72,7 @@ def area_weights_horizontal(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Datas
     # If zg_bottom == "surface_pressure": intentionally do not return W_bottom
     return xr.Dataset(out_vars)
 
-def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset:
+def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec, surface_spec: SurfaceBehaviour) -> xr.Dataset:
     """
     Fractional area weights for the 4 vertical boundary walls (east/west/north/south),
     truncated by surface pressure.
@@ -156,7 +156,7 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
     # w_s = raw_s.clip(min=0.0, max=1.0)
     # w_n = raw_n.clip(min=0.0, max=1.0)
 
-    if domain_spec.allow_bottom_overflow and str(domain_spec.zg_bottom) == "surface_pressure":
+    if surface_spec.allow_bottom_overflow and str(domain_spec.zg_bottom) == "surface_pressure":
         # Bottom layer is assumed to be index 0 for descending pressure coordinates
 
         raw_e = (p_bot_eff_e - p_end) / dp  # (time, level, lat)
@@ -215,7 +215,7 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
 
     desc = (
         "Fractional wall occupancy above surface pressure; 0=underground, 1=in atmosphere, "
-        + ("bottom layer may exceed 1 if sp > p_start" if domain_spec.allow_bottom_overflow else "clipped to [0,1]")
+        + ("bottom layer may exceed 1 if sp > p_start" if surface_spec.allow_bottom_overflow else "clipped to [0,1]")
     )
 
     for da, ln in [
@@ -238,7 +238,7 @@ def area_weights_vertical(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.Dataset
 
 
 
-def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.DataArray:
+def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec, surface_spec: SurfaceBehaviour) -> xr.DataArray:
     """
     Fractional volume weights for pressure layers truncated by surface pressure.
 
@@ -286,7 +286,7 @@ def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.DataArray:
 
     # w = raw_w.clip(min=0.0, max=1.0)
     
-    if domain_spec.allow_bottom_overflow and str(domain_spec.zg_bottom) == "surface_pressure": 
+    if surface_spec.allow_bottom_overflow and str(domain_spec.zg_bottom) == "surface_pressure": 
         raw_w = ( (sp - p_end) / dp ).astype("float64") # (time, level, lat, lon)
         # allows for w > 1 if surface pressure is below (higher p) than the edge of the 
         # bottom layer
@@ -305,7 +305,7 @@ def volume_weights(ds: xr.Dataset, domain_spec: DomainSpec) -> xr.DataArray:
         description=(
             "0=layer fully below ground; 1=layer fully in atmosphere; "
             "fractional if surface intersects layer; "
-            + ("bottom layer may exceed 1 to account for sp > p_start" if domain_spec.allow_bottom_overflow else "")
+            + ("bottom layer may exceed 1 to account for sp > p_start" if surface_spec.allow_bottom_overflow else "")
         ),
         units="1",
         zg_top_pressure_pa=float(domain_spec.zg_top_pressure),

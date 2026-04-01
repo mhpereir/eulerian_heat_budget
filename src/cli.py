@@ -90,9 +90,56 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Clip bottom-layer contribution instead of allowing overflow.",
     )
 
+
+    surface_var_group = parser.add_mutually_exclusive_group()
+    surface_var_group.add_argument(
+        "--use-surface-variables",
+        dest="use_surface_variables",
+        action="store_true",
+        default=None,
+        help="Include surface variables (T2m, u10, v10) in budget calculations instead of lowest model level variables.",
+    )
+    surface_var_group.add_argument(
+        "--no-use-surface-variables",
+        dest="use_surface_variables",
+        action="store_false",
+        help="Use lowest model level variables in budget calculations instead of surface variables.",
+    )
+
+    parser.add_argument(
+        "--surface-variable-mode",
+        dest="surface_variable_mode",
+        choices=("none", "combined", "diagnostic_only"),
+        default=None,
+        help="How surface variables should be handled when they are enabled.",
+    )
+
+    parser.add_argument(
+        "--data-source",
+        dest="data_source",
+        choices=("local_era5", "arco_era5"),
+        default=None,
+        help="Data source to load input dataset from.",
+    )
+
+    parser.add_argument(
+        "--time-start",
+        dest="time_start",
+        type=str,
+        default=None,
+        help="Start time for data selection (ISO format, e.g. 1941-06-01T00:00:00).",
+    )
+    parser.add_argument(
+        "--time-end",
+        dest="time_end",        
+        type=str,
+        default=None,
+        help="End time for data selection (ISO format, e.g. 1941-06-07T23:00:00).",
+    )
+
+
     return parser
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """Parse CLI args and return a Namespace for build_request_from_cli."""
     return build_arg_parser().parse_args(argv)
-
