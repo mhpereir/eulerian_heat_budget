@@ -17,7 +17,7 @@ import numpy as np
 from . import integrals, weights, config
 
 from .specs import DomainSpec, SurfaceBehaviour
-
+from .grid import get_boundary_line_elements
 
 def compute_domain_volume(ds_domain: xr.Dataset,
                             ds_cell_volumes: xr.DataArray,
@@ -607,18 +607,26 @@ def compute_T_domain_average(T: xr.DataArray,
 
 ## benchmark terms for testing
 
-def compute_advective_benchmark_fluxes(benchmark_ds: xr.Dataset, 
-                                       DomainSpecs: DomainSpec, 
-                                       SurfaceSpecs: SurfaceBehaviour) -> tuple[xr.Dataset, xr.Dataset]:
+def compute_advective_benchmark_fluxes(benchmark_ds: xr.Dataset,
+                                       ds_domain: xr.Dataset,
+                                       DomainSpecs: DomainSpec) -> tuple[xr.Dataset, xr.Dataset]:
     '''
     arco provide vertical integral of mass fluxes for the two horizontal directions in kg/s
     we can convert to our code units by multiplying by g
     '''
-    north_face_mass_flux = benchmark_ds['Fy_mass'].sel(lat=DomainSpecs.lat_max, method='nearest').sum(dim='lon') * config.g
-    south_face_mass_flux = benchmark_ds['Fy_mass'].sel(lat=DomainSpecs.lat_min, method='nearest').sum(dim='lon') * config.g
 
-    east_face_mass_flux = benchmark_ds['Fx_mass'].sel(lon=DomainSpecs.lon_max, method='nearest').sum(dim='lat') * config.g
-    west_face_mass_flux = benchmark_ds['Fx_mass'].sel(lon=DomainSpecs.lon_min, method='nearest').sum(dim='lat') * config.g
+    dl = get_boundary_line_elements(ds_domain)
+
+    north_face_mass_flux = (dl['dl_north'] * benchmark_ds['Fy_mass'].sel(lat=DomainSpecs.lat_max, method='nearest') ).sum(dim='lon') * config.g
+    south_face_mass_flux = (dl['dl_south'] * benchmark_ds['Fy_mass'].sel(lat=DomainSpecs.lat_min, method='nearest') ).sum(dim='lon') * config.g
+
+    east_face_mass_flux = (dl['dl_east'] * benchmark_ds['Fx_mass'].sel(lon=DomainSpecs.lon_max, method='nearest') ).sum(dim='lat') * config.g
+    west_face_mass_flux = (dl['dl_west'] * benchmark_ds['Fx_mass'].sel(lon=DomainSpecs.lon_min, method='nearest') ).sum(dim='lat') * config.g
+
+    north_face_mass_flux = weights._drop_if_present(north_face_mass_flux, ["lat", "lat_start", "lat_end", "lat_cell_id"])
+    south_face_mass_flux = weights._drop_if_present(south_face_mass_flux, ["lat", "lat_start", "lat_end", "lat_cell_id"])
+    east_face_mass_flux = weights._drop_if_present(east_face_mass_flux, ["lon", "lon_start", "lon_end", "lon_cell_id"])
+    west_face_mass_flux = weights._drop_if_present(west_face_mass_flux, ["lon", "lon_start", "lon_end", "lon_cell_id"])
 
     sign_convention = {"north": +1.0, "south": -1.0, "east": +1.0, "west": -1.0}
 

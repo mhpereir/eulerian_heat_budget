@@ -254,19 +254,75 @@ def determine_domain(
     return ds_domain, ds_halo, spec
 
 
-def crop_to_halo_grid(ds: xr.Dataset, 
-                      ds_halo: xr.Dataset, 
-                      DomainSpecs: DomainSpec,
-                      SurfaceSpecs: SurfaceBehaviour) -> xr.Dataset:
+def crop_to_target_grid(ds: xr.Dataset, target: xr.Dataset) -> xr.Dataset:
     """
-    ds is the benchmark dataset which is not cropped to ds_halo's grid or time steps
-    it shares the same grid, but doesn't have vertical levels
+    Align a dataset to the coordinates shared with a target dataset
+    using nearest-neighbour selection.
     """
+    indexers = {k: v for k, v in target.coords.items() if k in ds.dims}
+    return ds.sel(indexers, method="nearest")
 
-    indexers = {k: v for k, v in ds_halo.coords.items() if k in ds.dims}
-    ds_out = ds.sel(indexers, method="nearest")
 
-    return ds_out
+def get_boundary_line_elements(ds: xr.Dataset) -> xr.Dataset:
+    """
+    Return horizontal line elements for the four lateral walls.
+
+    Returns
+    -------
+    xr.Dataset with:
+      - dl_east(lat)   : meridional line element at lon = lon_max
+      - dl_west(lat)   : meridional line element at lon = lon_min
+      - dl_south(lon)  : zonal line element at lat = lat_min
+      - dl_north(lon)  : zonal line element at lat = lat_max
+
+    Units: m
+    """
+    for k in ("lat_start", "lat_end", "lon_start", "lon_end"):
+        if k not in ds.coords:
+            raise ValueError(f"Dataset must contain coordinate '{k}' from determine_domain().")
+
+    lat_min = ds.attrs.get("lat_min")
+    lat_max = ds.attrs.get("lat_max")
+    lon_min = ds.attrs.get("lon_min")
+    lon_max = ds.attrs.get("lon_max")
+    if lat_min is None or lat_max is None or lon_min is None or lon_max is None:
+        raise ValueError("Dataset must contain 'lat_min', 'lat_max', 'lon_min', 'lon_max' attributes.")
+
+    dphi = np.abs(np.deg2rad(ds["lat_end"]) - np.deg2rad(ds["lat_start"]))   # (lat,)
+    dy = (config.R_earth * dphi).rename("dl_east") # type: ignore
+    dl_west = dy.rename("dl_west")
+
+    dlon = np.abs(np.deg2rad(ds["lon_end"]) - np.deg2rad(ds["lon_start"]))   # (lon,)
+    phi_south = np.deg2rad(float(lat_min))
+    phi_north = np.deg2rad(float(lat_max))
+
+    dl_south = (config.R_earth * np.cos(phi_south) * dlon).rename("dl_south")
+    dl_north = (config.R_earth * np.cos(phi_north) * dlon).rename("dl_north")
+
+    dl_east = dy.rename("dl_east")
+
+    out = xr.Dataset({
+        "dl_east": dl_east,
+        "dl_west": dl_west,
+        "dl_south": dl_south,
+        "dl_north": dl_north,
+    })
+
+    for name, fixed_coord, fixed_value in [
+        ("dl_east", "lon", float(lon_max)),
+        ("dl_west", "lon", float(lon_min)),
+        ("dl_south", "lat", float(lat_min)),
+        ("dl_north", "lat", float(lat_max)),
+    ]:
+        out[name].attrs.update({
+            "units": "m",
+            "fixed_coord": fixed_coord,
+            "fixed_value": fixed_value,
+            "horizontal_coord_type": ds.attrs.get("horizontal_coord_type"),
+            "horizontal_input_interpretation": ds.attrs.get("horizontal_input_interpretation"),
+        })
+
+    return out
 
 
 def get_horizontal_cell_areas(ds: xr.Dataset) -> xr.DataArray:
@@ -371,23 +427,24 @@ def get_vertical_cell_areas(ds: xr.Dataset) -> xr.Dataset:
     dp = np.abs(ds["p_end"] - ds["p_start"])
 
     # Horizontal cell widths
-    # dy(lat) = R * dphi
-    dphi = np.abs(np.deg2rad(ds["lat_end"]) - np.deg2rad(ds["lat_start"]))  # (lat,)
-    dy = config.R_earth * dphi  # (lat,)
+    # # dy(lat) = R * dphi
+    # dphi = np.abs(np.deg2rad(ds["lat_end"]) - np.deg2rad(ds["lat_start"]))  # (lat,)
+    # dy = config.R_earth * dphi  # (lat,)
 
-    # dx(lon) along constant-lat boundary, using each lon cell's dlon
-    dlon = np.abs(np.deg2rad(ds["lon_end"]) - np.deg2rad(ds["lon_start"]))  # (lon,)
+    # # dx(lon) along constant-lat boundary, using each lon cell's dlon
+    # dlon = np.abs(np.deg2rad(ds["lon_end"]) - np.deg2rad(ds["lon_start"]))  # (lon,)
 
-    phi_south = np.deg2rad(float(lat_min))
-    phi_north = np.deg2rad(float(lat_max))
-    dx_south = config.R_earth * np.cos(phi_south) * dlon  # (lon,)
-    dx_north = config.R_earth * np.cos(phi_north) * dlon  # (lon,)
+    # phi_south = np.deg2rad(float(lat_min))
+    # phi_north = np.deg2rad(float(lat_max))
+    # dx_south = config.R_earth * np.cos(phi_south) * dlon  # (lon,)
+    # dx_north = config.R_earth * np.cos(phi_north) * dlon  # (lon,)
 
-    # Broadcast to 2D walls (level, lat) and (level, lon)
-    east  = (dp * dy).rename("east") #type: ignore
-    west  = (dp * dy).rename("west") #type: ignore
-    south = (dp * dx_south).rename("south")
-    north = (dp * dx_north).rename("north")
+    dl = get_boundary_line_elements(ds)
+
+    east  = (dp * dl["dl_east"]).rename("east") # type: ignore
+    west  = (dp * dl["dl_west"]).rename("west") # type: ignore
+    south = (dp * dl["dl_south"]).rename("south") # type: ignore
+    north = (dp * dl["dl_north"]).rename("north") # type: ignore
 
     east.attrs.update({
         "fixed_coord": "lon",

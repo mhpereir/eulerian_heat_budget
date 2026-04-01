@@ -287,8 +287,8 @@ def calculate_budget(
         # need to align benchmark dataset with our ds_halo grid and time steps;
         # then we need to compute horizontal integrals of the benchmark fluxes to get them in the same form as our advection terms for comparison
 
-        benchmark_ds = grid.crop_to_halo_grid(benchmark_ds, ds_halo, DomainSpecs, SurfaceSpecs)
-        benchmark_mass_fluxes, benchmark_heat_fluxes = terms.compute_advective_benchmark_fluxes(benchmark_ds, DomainSpecs, SurfaceSpecs)
+        benchmark_ds = grid.crop_to_target_grid(benchmark_ds, ds_halo)
+        benchmark_mass_fluxes, benchmark_heat_fluxes = terms.compute_advective_benchmark_fluxes(benchmark_ds, ds_domain, DomainSpecs)
 
 
     print('Plotting diagnostics...')
@@ -300,6 +300,6 @@ def calculate_budget(
         plot_diagnostics.fig4_temperature_derivative_timeseries(out['d_dt_T'], out['dT_dt'], out['dT_dt_2'], out['domain_volume'], plot_diag_path)
 
         if benchmark_ds is not None:
-            plot_diagnostics.fig5_benchmark_comparison(benchmark_mass_fluxes, benchmark_heat_fluxes, advection_terms_out, plot_diag_path) # type: ignore
+            plot_diagnostics.fig5_benchmark_comparison(benchmark_mass_fluxes, benchmark_heat_fluxes,  advection_terms_out, plot_diag_path) # type: ignore
 
     return out
