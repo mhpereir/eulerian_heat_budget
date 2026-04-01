@@ -645,11 +645,16 @@ def compute_advective_benchmark_fluxes(benchmark_ds: xr.Dataset,
     }) 
 
 
-    north_face_heat_flux = benchmark_ds['Fy_heat'].sel(lat=DomainSpecs.lat_max, method='nearest').sum(dim='lon') * config.g / config.cp
-    south_face_heat_flux = benchmark_ds['Fy_heat'].sel(lat=DomainSpecs.lat_min, method='nearest').sum(dim='lon') * config.g / config.cp
+    north_face_heat_flux = (dl['dl_north'] * benchmark_ds['Fy_heat'].sel(lat=DomainSpecs.lat_max, method='nearest') ).sum(dim='lon') * config.g / config.cp
+    south_face_heat_flux = (dl['dl_south'] * benchmark_ds['Fy_heat'].sel(lat=DomainSpecs.lat_min, method='nearest') ).sum(dim='lon') * config.g / config.cp
 
-    east_face_heat_flux = benchmark_ds['Fx_heat'].sel(lon=DomainSpecs.lon_max, method='nearest').sum(dim='lat') * config.g / config.cp
-    west_face_heat_flux = benchmark_ds['Fx_heat'].sel(lon=DomainSpecs.lon_min, method='nearest').sum(dim='lat') * config.g / config.cp
+    east_face_heat_flux = (dl['dl_east'] * benchmark_ds['Fx_heat'].sel(lon=DomainSpecs.lon_max, method='nearest') ).sum(dim='lat') * config.g / config.cp
+    west_face_heat_flux = (dl['dl_west'] * benchmark_ds['Fx_heat'].sel(lon=DomainSpecs.lon_min, method='nearest') ).sum(dim='lat') * config.g / config.cp
+
+    north_face_heat_flux = weights._drop_if_present(north_face_heat_flux, ["lat", "lat_start", "lat_end", "lat_cell_id"])
+    south_face_heat_flux = weights._drop_if_present(south_face_heat_flux, ["lat", "lat_start", "lat_end", "lat_cell_id"])
+    east_face_heat_flux = weights._drop_if_present(east_face_heat_flux, ["lon", "lon_start", "lon_end", "lon_cell_id"])
+    west_face_heat_flux = weights._drop_if_present(west_face_heat_flux, ["lon", "lon_start", "lon_end", "lon_cell_id"])
 
     net_heat_flux = (sign_convention["north"] * north_face_heat_flux +
                      sign_convention["south"] * south_face_heat_flux +
