@@ -18,5 +18,5 @@ set -euo pipefail
 cd /home/mhpereir/eulerian_heat_budget/scripts
 
 echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hostname)"
-/usr/bin/time -v python run_budget.py --data-source arco_era5
+/usr/bin/time -v python run_budget.py --data-source local_era5
 echo "[info] $(date -Is) done"
