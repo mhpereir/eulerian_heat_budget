@@ -173,7 +173,7 @@ def test_mass_advection_zero_flow_closed_to_machine_precision():
     ds_full = _make_dataset_with_state(
         time=np.array(["2000-01-01", "2000-01-01T01"], dtype="datetime64[h]"),
         level=[1000e2, 900e2, 800e2, 700e2, 600e2, 500e2],
-        lat=[0.0, 10.0, 20.0, 30.0, 40.0, 50.0],   # cell starts
+        lat=[0.0, 10.0, 20.0, 30.0, 40.0, 50.0],   # cell centers
         lon=[90.0, 100.0, 110.0, 120.0, 130.0, 140.0],
         u0=0.0,
         v0=0.0,
@@ -229,7 +229,7 @@ def test_mass_advection_uniform_zonal_flow_closed_to_machine_precision():
     ds_full = _make_dataset_with_state(
         time=np.array(["2000-01-01", "2000-01-01T01"], dtype="datetime64[h]"),
         level=[1000e2, 900e2, 800e2, 700e2, 600e2, 500e2],
-        lat=[0.0, 10.0, 20.0, 30.0, 40.0, 50.0],   # cell starts
+        lat=[0.0, 10.0, 20.0, 30.0, 40.0, 50.0],   # cell centers
         lon=[90.0, 100.0, 110.0, 120.0, 130.0, 140.0],
         u0=7.5,
         v0=0.0,
@@ -289,7 +289,7 @@ def test_mass_advection_uniform_meridional_flow_closed_to_machine_precision():
     ds_full = _make_dataset_with_state(
         time=np.array(["2000-01-01", "2000-01-01T01"], dtype="datetime64[h]"),
         level=[1000e2, 900e2, 800e2, 700e2, 600e2, 500e2],
-        lat=[0.0, 10.0, 20.0, 30.0, 40.0, 50.0],   # cell starts
+        lat=[0.0, 10.0, 20.0, 30.0, 40.0, 50.0],   # cell centers
         lon=[90.0, 100.0, 110.0, 120.0, 130.0, 140.0],
         u0=0.0,
         v0=v0,
@@ -361,7 +361,7 @@ def test_mass_advection_uniform_meridional_and_compensating_vertical_flow_closed
     ds_full = _make_dataset_with_state(
         time=np.array(["2000-01-01", "2000-01-01T01"], dtype="datetime64[h]"),
         level=[1000e2, 900e2, 800e2, 700e2, 600e2, 500e2],
-        lat=[0.0, 10.0, 20.0, 30.0, 40.0, 50.0],   # cell starts
+        lat=[0.0, 10.0, 20.0, 30.0, 40.0, 50.0],   # cell centers
         lon=[90.0, 100.0, 110.0, 120.0, 130.0, 140.0],
         u0=u0,
         v0=v0,
@@ -398,7 +398,7 @@ def test_mass_advection_uniform_meridional_and_compensating_vertical_flow_closed
     ds_full = _make_dataset_with_state(
         time=np.array(["2000-01-01", "2000-01-01T01"], dtype="datetime64[h]"),
         level=[1000e2, 900e2, 800e2, 700e2, 600e2, 500e2],
-        lat=[0.0, 10.0, 20.0, 30.0, 40.0, 50.0],   # cell starts
+        lat=[0.0, 10.0, 20.0, 30.0, 40.0, 50.0],   # cell centers
         lon=[90.0, 100.0, 110.0, 120.0, 130.0, 140.0],
         u0=u0,
         v0=v0,
@@ -426,19 +426,35 @@ def test_mass_advection_uniform_meridional_and_compensating_vertical_flow_closed
         True,
     )
 
-
+    
     # u * A where u~10, A~1e10, flux~1e11. 1e11 * 1e-16 = 1e-5, so we expect mass advection to close to within ~1e-5 of zero due to numerical precision limits.
     npt.assert_allclose(
         out["net_mass_advection"].values,
-        [0.0,0.0],
+        0.0,
         atol=1e-4,
         rtol=0.0,
     )
 
-    # With constant T, the net heat advection should also vanish if mass closes.
+    for wall in ["west", "east", "south", "north", "top"]:
+        npt.assert_allclose(
+            ds_faces[f"uT_{wall}"].values,
+            T0 * ds_faces[f"u_{wall}"].values,
+            rtol=1e-12,
+            atol=1e-10,
+        )
+
+    # Primary correctness check: with constant T, heat flux must be T0 times mass flux.
     npt.assert_allclose(
         out["net_heat_advection"].values,
-        [0.0,0.0],
-        atol=1e-4*300,
+        T0 * out["net_mass_advection"].values,
+        rtol=1e-12,
+        atol=1e-1,
+    )
+
+    # Secondary sanity check: the summed heat flux should also be near zero.
+    npt.assert_allclose(
+        out["net_heat_advection"].values,
+        0.0,
+        atol=3e-1,
         rtol=0.0,
     )

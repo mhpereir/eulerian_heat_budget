@@ -25,8 +25,7 @@ def _make_dataset(*, level, lat, lon) -> xr.Dataset:
 
     Conventions used in tests:
       - level is provided as pressure-level *centers* (can be decreasing)
-      - lat/lon are provided as *cell start* coordinates (length N_start)
-        so implied cell count is N_start-1
+      - lat/lon are provided as horizontal cell-center coordinates
     """
     return xr.Dataset(
         coords={
@@ -65,48 +64,48 @@ def test_determine_domain_crops_to_cells_and_sets_bounds():
 
     dom, halo, spec = determine_domain(ds, _make_request(bbox=bbox, margin_n=1))
 
-    # After cropping: N_cells_keep = (N_start-1) - 2*margin = 4 - 2 = 2
-    assert dom.sizes["lat"] == (7-1) - 2
-    assert dom.sizes["lon"] == (6-1) - 2
+    # bbox includes all input centers; margin trims one center from each side
+    assert dom.sizes["lat"] == 7 - 2
+    assert dom.sizes["lon"] == 6 - 2
     assert dom.sizes["level"] == 6
 
-    assert halo.sizes["lat"] == (7-1) 
-    assert halo.sizes["lon"] == (6-1)
+    assert halo.sizes["lat"] == 7
+    assert halo.sizes["lon"] == 6
     assert halo.sizes["level"] == 6
 
     
     # bounds live on the same dims
-    np.testing.assert_allclose(dom["lat_start"].values, np.array([1.0, 2.0, 3.0, 4.0]))
-    np.testing.assert_allclose(dom["lat_end"].values,   np.array([2.0, 3.0, 4.0, 5.0]))
-    np.testing.assert_allclose(dom["lon_start"].values, np.array([11.0, 12.0, 13.0]))
-    np.testing.assert_allclose(dom["lon_end"].values,   np.array([12.0, 13.0, 14.0]))
+    np.testing.assert_allclose(dom["lat_start"].values, np.array([0.5, 1.5, 2.5, 3.5, 4.5]))
+    np.testing.assert_allclose(dom["lat_end"].values,   np.array([1.5, 2.5, 3.5, 4.5, 5.5]))
+    np.testing.assert_allclose(dom["lon_start"].values, np.array([10.5, 11.5, 12.5, 13.5]))
+    np.testing.assert_allclose(dom["lon_end"].values,   np.array([11.5, 12.5, 13.5, 14.5]))
 
 
-    # lat/lon become cell centers
-    np.testing.assert_allclose(dom["lat"].values, np.array([1.5, 2.5, 3.5, 4.5]))
-    np.testing.assert_allclose(dom["lon"].values, np.array([11.5, 12.5, 13.5]))
+    # lat/lon remain the selected cell centers
+    np.testing.assert_allclose(dom["lat"].values, np.array([1.0, 2.0, 3.0, 4.0, 5.0]))
+    np.testing.assert_allclose(dom["lon"].values, np.array([11.0, 12.0, 13.0, 14.0]))
 
     
     # attrs store true domain edges
-    assert dom.attrs["lat_min"] == 1.0
-    assert dom.attrs["lat_max"] == 5.0
-    assert dom.attrs["lon_min"] == 11.0
-    assert dom.attrs["lon_max"] == 14.0
+    assert dom.attrs["lat_min"] == 0.5
+    assert dom.attrs["lat_max"] == 5.5
+    assert dom.attrs["lon_min"] == 10.5
+    assert dom.attrs["lon_max"] == 14.5
 
-    assert spec.lat_min == 1.0
-    assert spec.lat_max == 5.0
-    assert spec.lon_min == 11.0
-    assert spec.lon_max == 14.0
+    assert spec.lat_min == 0.5
+    assert spec.lat_max == 5.5
+    assert spec.lon_min == 10.5
+    assert spec.lon_max == 14.5
     assert spec.zg_top_pressure == 500*100
     assert spec.zg_bottom == "pressure_level"
     assert spec.zg_bottom_pressure == 1000*100
 
     # traceability ids exist on the same dims
-    np.testing.assert_array_equal(dom["lat_cell_id"].values, np.array([1, 2, 3, 4]))
-    np.testing.assert_array_equal(dom["lon_cell_id"].values, np.array([1, 2, 3]))
+    np.testing.assert_array_equal(dom["lat_cell_id"].values, np.array([1, 2, 3, 4, 5]))
+    np.testing.assert_array_equal(dom["lon_cell_id"].values, np.array([1, 2, 3, 4]))
 
     # margin too large should error
-    with pytest.raises(ValueError, match="too large"):
+    with pytest.raises(ValueError, match="too small"):
         determine_domain(ds, _make_request(bbox=bbox, margin_n=3))
 
 
@@ -121,7 +120,7 @@ def test_horizontal_cell_areas_shape_and_positive():
 
     A = get_horizontal_cell_areas(dom)
     assert A.dims == ("lat", "lon")
-    assert A.shape == (2, 1)
+    assert A.shape == (3, 2)
     assert A.name == "A_horizontal"
     assert A.attrs["units"] == "m2"
     assert np.isfinite(A.values).all()
@@ -140,13 +139,13 @@ def test_horizontal_cell_areas_analytic_regular_grid():
     A = get_horizontal_cell_areas(dom)
 
     # expected from spherical area formula using bounds
-    lat_s = np.deg2rad(np.array([10.0, 20.0]))
-    lat_e = np.deg2rad(np.array([20.0, 30.0]))
-    d_sin_lat = np.abs(np.sin(lat_e) - np.sin(lat_s))  # (2,)
+    lat_s = np.deg2rad(np.array([5.0, 15.0, 25.0]))
+    lat_e = np.deg2rad(np.array([15.0, 25.0, 35.0]))
+    d_sin_lat = np.abs(np.sin(lat_e) - np.sin(lat_s))  # (3,)
 
-    lon_s = np.deg2rad(np.array([110.0]))
-    lon_e = np.deg2rad(np.array([120.0]))
-    d_lon = np.abs(lon_e - lon_s)  # (1,)
+    lon_s = np.deg2rad(np.array([105.0, 115.0]))
+    lon_e = np.deg2rad(np.array([115.0, 125.0]))
+    d_lon = np.abs(lon_e - lon_s)  # (2,)
 
     expected = (config.R_earth ** 2) * d_sin_lat[:, None] * d_lon[None, :]
     np.testing.assert_allclose(A.values, expected, rtol=1e-12, atol=0.0)
@@ -156,8 +155,8 @@ def test_vertical_cell_areas_shapes_and_symmetries():
     bbox=(0,40,100,130)
     ds = _make_dataset(
         level=[1000*100, 900*100, 800*100, 700*100, 600*100, 500*100],
-        lat=[0.0, 10.0, 20.0, 30.0, 40.0],      # N_start=5 => N_cells=4
-        lon=[100.0, 110.0, 120.0, 130.0],        # N_start=4 => N_cells=3
+        lat=[0.0, 10.0, 20.0, 30.0, 40.0],
+        lon=[100.0, 110.0, 120.0, 130.0],
     )
     dom, halo, _ = determine_domain(ds, _make_request(bbox=bbox, margin_n=1))
 
@@ -168,10 +167,10 @@ def test_vertical_cell_areas_shapes_and_symmetries():
     assert walls["A_south"].dims == ("level", "lon")
     assert walls["A_north"].dims == ("level", "lon")
 
-    assert walls["A_east"].shape == (6, 4)
-    assert walls["A_west"].shape == (6, 4)
-    assert walls["A_south"].shape == (6, 3)
-    assert walls["A_north"].shape == (6, 3)
+    assert walls["A_east"].shape == (6, 5)
+    assert walls["A_west"].shape == (6, 5)
+    assert walls["A_south"].shape == (6, 4)
+    assert walls["A_north"].shape == (6, 4)
 
     for wall in ("A_east", "A_west", "A_south", "A_north"):
         arr = walls[wall]
@@ -198,17 +197,17 @@ def test_vertical_cell_areas_analytic_regular_grid():
     # dp from centers: edges [105k, 95k, 85k, 75k] => dp=[10k,10k,10k]
     expected_dp = np.array([10000.0, 10000.0, 10000.0, 10000.0, 10000.0, 10000.0])
 
-    # dy for each lat cell: dphi = 10 deg for each of 4 cells
-    expected_dphi = np.deg2rad(np.array([10.0, 10.0, 10.0, 10.0]))
+    # halo spans the full center set, so there are 5 meridional wall segments
+    expected_dphi = np.deg2rad(np.array([10.0, 10.0, 10.0, 10.0, 10.0]))
     expected_dy = config.R_earth * expected_dphi
     expected_east = expected_dp[:, None] * expected_dy[None, :]
 
-    # dlon for lon cells: 10 deg for each of 3 cells
-    expected_dlon = np.deg2rad(np.array([10.0, 10.0, 10.0]))
+    # and 4 zonal wall segments
+    expected_dlon = np.deg2rad(np.array([10.0, 10.0, 10.0, 10.0]))
 
-    # south/north edges are true domain edges from attrs (0 and 30 here)
-    south_edge_lat = np.deg2rad(0.0)
-    north_edge_lat = np.deg2rad(40.0)
+    # halo edges are reconstructed from the retained center coordinates
+    south_edge_lat = np.deg2rad(-5.0)
+    north_edge_lat = np.deg2rad(45.0)
     expected_dx_south = config.R_earth * np.cos(south_edge_lat) * expected_dlon
     expected_dx_north = config.R_earth * np.cos(north_edge_lat) * expected_dlon
 

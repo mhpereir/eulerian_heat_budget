@@ -82,6 +82,180 @@ def determine_domain(
     eager_loading: bool = False,
 ) -> Tuple[xr.Dataset, xr.Dataset, DomainSpec]:
     """
+    Determine ds_domain and ds_halo assuming input lat/lon are already cell centers.
+
+    Returns
+    -------
+    ds_domain : cropped interior domain
+    ds_halo   : same domain with a 1-cell horizontal halo
+    spec      : DomainSpec describing the resolved domain bounds
+    """
+    margin = int(request.margin_n)
+    if margin < 1:
+        raise ValueError("margin_n must be >= 1 (required to build ds_halo).")
+
+    for name in (level_name, lat_name, lon_name):
+        if name not in ds.coords:
+            raise ValueError(f"Dataset must contain '{name}' coordinate.")
+
+    lat = ds[lat_name]
+    lon = ds[lon_name]
+    level = ds[level_name]
+
+    lat_vals = np.asarray(lat.values, dtype=float)
+    lon_vals = np.asarray(lon.values, dtype=float)
+
+    if not np.all(np.diff(lat_vals) > 0.0):
+        raise ValueError("Latitude coordinate must be strictly increasing.")
+    if not np.all(np.diff(lon_vals) > 0.0):
+        raise ValueError("Longitude coordinate must be strictly increasing.")
+
+    lat_edges = _cell_edges_from_centers(lat, lat_name)
+    lon_edges = _cell_edges_from_centers(lon, lon_name)
+
+    lat0, lat1, lon0, lon1 = map(float, request.bbox)
+
+    # Require bbox to lie inside the coordinate coverage
+    if lat0 < lat_edges[0] or lat1 > lat_edges[-1]:
+        raise ValueError("Requested lat bbox is outside dataset coverage.")
+    if lon0 < lon_edges[0] or lon1 > lon_edges[-1]:
+        raise ValueError("Requested lon bbox is outside dataset coverage.")
+
+    # Pressure bounds sanity checks
+    if request.zg_bottom == "pressure_level":
+        if request.zg_bottom_pressure is None:
+            raise ValueError("zg_bottom_pressure must be specified when zg_bottom='pressure_level'.")
+
+        p_min = float(level.min().values)
+        p_max = float(level.max().values)
+
+        if request.zg_top_pressure < p_min or request.zg_top_pressure > p_max:
+            raise ValueError("Requested zg_top_pressure is outside dataset level range.")
+        if request.zg_bottom_pressure < p_min or request.zg_bottom_pressure > p_max:
+            raise ValueError("Requested zg_bottom_pressure is outside dataset level range.")
+        if request.zg_top_pressure >= request.zg_bottom_pressure:
+            raise ValueError("Requested zg_top_pressure must be less than zg_bottom_pressure.")
+
+    # Find cells whose centers lie inside the requested bbox
+    lat_mask = (lat_vals >= lat0) & (lat_vals <= lat1)
+    lon_mask = (lon_vals >= lon0) & (lon_vals <= lon1)
+
+    if not np.any(lat_mask) or not np.any(lon_mask):
+        raise ValueError("No grid-cell centers fall inside requested bbox.")
+
+    i0 = int(np.flatnonzero(lat_mask)[0])
+    i1 = int(np.flatnonzero(lat_mask)[-1]) + 1  # exclusive
+    j0 = int(np.flatnonzero(lon_mask)[0])
+    j1 = int(np.flatnonzero(lon_mask)[-1]) + 1  # exclusive
+
+    def _build_domain_for_margin(m: int) -> xr.Dataset:
+        if m < 0:
+            raise ValueError("Internal error: margin must be non-negative.")
+
+        i0m = i0 + m
+        i1m = i1 - m
+        j0m = j0 + m
+        j1m = j1 - m
+
+        if i1m <= i0m or j1m <= j0m:
+            raise ValueError("Domain too small after applying bbox + margin.")
+
+        out = ds.isel(
+            {
+                lat_name: slice(i0m, i1m),
+                lon_name: slice(j0m, j1m),
+            }
+        ).copy()
+
+        lat_mid = lat_vals[i0m:i1m]
+        lon_mid = lon_vals[j0m:j1m]
+
+        lat_edges_sub = _cell_edges_from_centers(
+            xr.DataArray(lat_mid, dims=(lat_name,)),
+            lat_name,
+        )
+        lon_edges_sub = _cell_edges_from_centers(
+            xr.DataArray(lon_mid, dims=(lon_name,)),
+            lon_name,
+        )
+
+        # Vertical bounds from level centers
+        p_edges = _cell_edges_from_centers(level, level_name)
+        p_mid = np.asarray(level.values, dtype=float)
+
+        lat_cell_id = np.arange(i0m, i1m, dtype=int)
+        lon_cell_id = np.arange(j0m, j1m, dtype=int)
+        p_cell_id = np.arange(p_mid.size, dtype=int)
+
+        out = out.assign_coords(
+            {
+                lat_name: (lat_name, lat_mid.astype(np.float64)),
+                lon_name: (lon_name, lon_mid.astype(np.float64)),
+                "lat_cell_id": (lat_name, lat_cell_id),
+                "lon_cell_id": (lon_name, lon_cell_id),
+                "lat_start": (lat_name, lat_edges_sub[:-1].astype(np.float64)),
+                "lat_end": (lat_name, lat_edges_sub[1:].astype(np.float64)),
+                "lon_start": (lon_name, lon_edges_sub[:-1].astype(np.float64)),
+                "lon_end": (lon_name, lon_edges_sub[1:].astype(np.float64)),
+                "p_cell_id": (level_name, p_cell_id),
+                "p_start": (level_name, p_edges[:-1].astype(np.float64)),
+                "p_end": (level_name, p_edges[1:].astype(np.float64)),
+                "p_mid": (level_name, p_mid.astype(np.float64)),
+            }
+        )
+
+        out.attrs.update(
+            {
+                "lat_min": float(lat_edges_sub[0]),
+                "lat_max": float(lat_edges_sub[-1]),
+                "lon_min": float(lon_edges_sub[0]),
+                "lon_max": float(lon_edges_sub[-1]),
+                "margin": int(m),
+                "horizontal_coord_type": "cell_center_with_bounds",
+                "horizontal_input_interpretation": "cell_centers",
+            }
+        )
+
+        return out
+
+    ds_halo = _build_domain_for_margin(margin - 1)
+    ds_domain = _build_domain_for_margin(margin)
+
+    if eager_loading:
+        ds_domain = ds_domain.assign(
+            T=ds_domain["T"].persist(),
+            w=ds_domain["w"].persist(),
+            sp=ds_domain["sp"].persist(),
+        )
+        ds_halo = ds_halo.assign(
+            sp=ds_halo["sp"].persist(),
+        )
+
+    spec = DomainSpec(
+        lat_min=float(ds_domain.attrs["lat_min"]),
+        lat_max=float(ds_domain.attrs["lat_max"]),
+        lon_min=float(ds_domain.attrs["lon_min"]),
+        lon_max=float(ds_domain.attrs["lon_max"]),
+        zg_top_pressure=request.zg_top_pressure,
+        zg_bottom=request.zg_bottom,
+        zg_bottom_pressure=request.zg_bottom_pressure if request.zg_bottom == "pressure_level" else None,
+    )
+
+    return ds_domain, ds_halo, spec
+
+
+
+'''
+def determine_domain(
+    ds: xr.Dataset,
+    request: DomainRequest,
+    *,
+    level_name: str = "level",
+    lat_name: str = "lat",
+    lon_name: str = "lon",
+    eager_loading: bool = False,
+) -> Tuple[xr.Dataset, xr.Dataset, DomainSpec]:
+    """
     Return a domain-cropped dataset with coordinate metadata for cell bounds.
 
     Horizontal coordinates are interpreted as cell-start coordinates (length N_start).
@@ -252,7 +426,7 @@ def determine_domain(
     )
 
     return ds_domain, ds_halo, spec
-
+'''
 
 def crop_to_target_grid(ds: xr.Dataset, target: xr.Dataset) -> xr.Dataset:
     """
