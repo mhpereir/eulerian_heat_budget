@@ -21,7 +21,7 @@ from src.grid import (
     get_vertical_cell_areas,
 )
 from src.weights import area_weights_horizontal, area_weights_vertical
-from src.terms import compute_advective_term
+from src.terms import compute_advective_term, prepare_advective_faces
 
 
 def _make_dataset_with_state(*, time, level, lat, lon, u0=0.0, v0=0.0, w0=0.0, T0=300.0, sp0=1000e2):
@@ -184,14 +184,21 @@ def test_mass_advection_zero_flow_closed_to_machine_precision():
 
     ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec, surface_spec = _build_geometry_and_weights(ds_full)
 
-    out = compute_advective_term(
-        ds_domain=ds_domain,
-        ds_halo=ds_halo,
-        ds_cell_areas=ds_cell_areas,
-        ds_weights_areas=ds_weights_areas,
-        DomainSpecs=spec,
-        SurfaceSpecs=surface_spec,
+    ds_domain_adv_trim, ds_faces = prepare_advective_faces(
+        ds_domain,
+        ds_halo,
+        spec,
+        surface_spec,
         integral_diagnostics_flag=True,
+    )
+
+    out = compute_advective_term(
+        ds_domain_adv_trim,
+        ds_faces,
+        ds_cell_areas,
+        ds_weights_areas,
+        spec,
+        True,
     )
 
     npt.assert_allclose(
@@ -233,14 +240,21 @@ def test_mass_advection_uniform_zonal_flow_closed_to_machine_precision():
 
     ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec, surface_spec = _build_geometry_and_weights(ds_full)
 
-    out = compute_advective_term(
-        ds_domain=ds_domain,
-        ds_halo=ds_halo,
-        ds_cell_areas=ds_cell_areas,
-        ds_weights_areas=ds_weights_areas,
-        DomainSpecs=spec,
-        SurfaceSpecs=surface_spec,
+    ds_domain_adv_trim, ds_faces = prepare_advective_faces(
+        ds_domain,
+        ds_halo,
+        spec,
+        surface_spec,
         integral_diagnostics_flag=True,
+    )
+
+    out = compute_advective_term(
+        ds_domain_adv_trim,
+        ds_faces,
+        ds_cell_areas,
+        ds_weights_areas,
+        spec,
+        True,
     )
 
     npt.assert_allclose(
@@ -286,14 +300,21 @@ def test_mass_advection_uniform_meridional_flow_closed_to_machine_precision():
 
     ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec, surface_spec = _build_geometry_and_weights(ds_full)
 
-    out = compute_advective_term(
-        ds_domain=ds_domain,
-        ds_halo=ds_halo,
-        ds_cell_areas=ds_cell_areas,
-        ds_weights_areas=ds_weights_areas,
-        DomainSpecs=spec,
-        SurfaceSpecs=surface_spec,
+    ds_domain_adv_trim, ds_faces = prepare_advective_faces(
+        ds_domain,
+        ds_halo,
+        spec,
+        surface_spec,
         integral_diagnostics_flag=True,
+    )
+
+    out = compute_advective_term(
+        ds_domain_adv_trim,
+        ds_faces,
+        ds_cell_areas,
+        ds_weights_areas,
+        spec,
+        True,
     )
 
     expected = (
@@ -388,14 +409,21 @@ def test_mass_advection_uniform_meridional_and_compensating_vertical_flow_closed
 
     ds_domain, ds_halo, ds_cell_areas, ds_weights_areas, spec, surface_spec = _build_geometry_and_weights_surface(ds_full)
 
-    out = compute_advective_term(
-        ds_domain=ds_domain,
-        ds_halo=ds_halo,
-        ds_cell_areas=ds_cell_areas,
-        ds_weights_areas=ds_weights_areas,
-        DomainSpecs=spec,
-        SurfaceSpecs=surface_spec,
+    ds_domain_adv_trim, ds_faces = prepare_advective_faces(
+        ds_domain,
+        ds_halo,
+        spec,
+        surface_spec,
         integral_diagnostics_flag=True,
+    )
+
+    out = compute_advective_term(
+        ds_domain_adv_trim,
+        ds_faces,
+        ds_cell_areas,
+        ds_weights_areas,
+        spec,
+        True,
     )
 
 
