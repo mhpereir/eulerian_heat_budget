@@ -52,6 +52,7 @@ def calculate_budget(
     plot_dir: str,
     plot_flag: bool,
     *,
+    benchmark_ds: xr.Dataset | None = None,
     test_constant_T: bool = False
     ) -> xr.Dataset:
     
@@ -224,7 +225,10 @@ def calculate_budget(
         integral_diagnostics_flag,
     )
 
-    advection_terms = advection_terms.sel(time=d_dt_T["time"]).compute()
+    if plot_flag:
+        advection_terms = advection_terms.sel(time=d_dt_T["time"]).compute()
+    else:
+        advection_terms = advection_terms.sel(time=d_dt_T["time"])
 
     # needed to estimate heat advection uncertainty from mass continuity
     if not test_constant_T:
@@ -232,13 +236,13 @@ def calculate_budget(
             dim=("time", "level", "lat", "lon"),
             skipna=True,
         )
-        T_scale: float = float(np.sqrt(t_var.compute().item()))
+        T_scale: float = float(np.sqrt(t_var))
     else:
         t_var = (T_domain_avg).mean(
             dim=("time"), 
             skipna=True,
         )
-        T_scale: float = float(t_var.compute().item())
+        T_scale: float = float(t_var)
 
     print("Is T_constant:", test_constant_T)
     print("T_scale:", T_scale)
@@ -260,30 +264,42 @@ def calculate_budget(
 
     print('Combining terms into output dataset')
     #combine all terms into a single output dataset
-    out = xr.Dataset({
-        'd_dt_T': d_dt_T.sel(time=d_dt_T['time']),
-        'dT_dt': dT_dt.sel(time=d_dt_T['time']),
-        'dT_dt_2': dT_dt_2.sel(time=d_dt_T['time']),
-        'dV_dt': dV_dt.sel(time=d_dt_T['time']),
-        # 'advection_term': advection_terms['net_heat_advection'].sel(time=d_dt_T['time']), # use actual variable name in advection_terms dataset
-        'advection_error': advection_error.sel(time=d_dt_T['time']),
-        'adiabatic_term': adiabatic_term.sel(time=d_dt_T['time']),
-        'diabatic_term': diabatic_term.sel(time=d_dt_T['time']),
-        'T_domain_avg': T_domain_avg.sel(time=d_dt_T['time']),
-        'domain_volume': domain_volume.sel(time=d_dt_T['time']),
-        'T_scale': T_scale,
-    }).compute()
+    advection_terms_out = advection_terms.rename({"net_heat_advection": "advection_term"})
 
-    out["advection_term"] = advection_terms["net_heat_advection"]  #already sel time and computed
+    out = xr.merge([
+        xr.Dataset({
+            'd_dt_T': d_dt_T.sel(time=d_dt_T['time']),
+            'dT_dt': dT_dt.sel(time=d_dt_T['time']),
+            'dT_dt_2': dT_dt_2.sel(time=d_dt_T['time']),
+            'dV_dt': dV_dt.sel(time=d_dt_T['time']),
+            'advection_error': advection_error.sel(time=d_dt_T['time']),
+            'adiabatic_term': adiabatic_term.sel(time=d_dt_T['time']),
+            'diabatic_term': diabatic_term.sel(time=d_dt_T['time']),
+            'T_domain_avg': T_domain_avg.sel(time=d_dt_T['time']),
+            'domain_volume': domain_volume.sel(time=d_dt_T['time']),
+            'T_scale': T_scale,
+        }),
+        advection_terms_out,
+    ], compat="equals", join="exact").compute()
+
+
+    if benchmark_ds is not None:
+        # need to align benchmark dataset with our ds_halo grid and time steps;
+        # then we need to compute horizontal integrals of the benchmark fluxes to get them in the same form as our advection terms for comparison
+
+        benchmark_ds = grid.crop_to_halo_grid(benchmark_ds, ds_halo, DomainSpecs, SurfaceSpecs)
+        benchmark_mass_fluxes, benchmark_heat_fluxes = terms.compute_advective_benchmark_fluxes(benchmark_ds, DomainSpecs, SurfaceSpecs)
 
 
     print('Plotting diagnostics...')
     if plot_flag:
         #plot diagnostics for advective integrals
-        plot_diagnostics.fig1_mass_continuity(out['dV_dt'], advection_terms, plot_diag_path)
-        plot_diagnostics.fig2_mass_advection_residual_timeseries(advection_terms, out['dV_dt'], out['domain_volume'], plot_diag_path)
-        plot_diagnostics.fig3_advection_components_timeseries(advection_terms, out['dV_dt'], out['advection_error'], out['domain_volume'], plot_diag_path)
+        plot_diagnostics.fig1_mass_continuity(out['dV_dt'], advection_terms_out, plot_diag_path)
+        plot_diagnostics.fig2_mass_advection_residual_timeseries(advection_terms_out, out['dV_dt'], out['domain_volume'], plot_diag_path)
+        plot_diagnostics.fig3_advection_components_timeseries(advection_terms_out, out['dV_dt'], out['advection_error'], out['domain_volume'], plot_diag_path)
         plot_diagnostics.fig4_temperature_derivative_timeseries(out['d_dt_T'], out['dT_dt'], out['dT_dt_2'], out['domain_volume'], plot_diag_path)
 
+        if benchmark_ds is not None:
+            plot_diagnostics.fig5_benchmark_comparison(benchmark_mass_fluxes, benchmark_heat_fluxes, advection_terms_out, plot_diag_path) # type: ignore
 
     return out

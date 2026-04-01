@@ -240,12 +240,12 @@ def fig3_advection_components_timeseries(advection_terms: xr.Dataset, dV_dt: xr.
             heat_vars.append(str(component))
             ax[0].plot(advection_terms['time'], advection_terms[component] * norm_factor * time_rate_conversion, label=component)
 
-    ax[0].plot(advection_terms['time'], advection_terms['net_heat_advection'] * norm_factor * time_rate_conversion, label='Net Heat Advection', linewidth=2, color='k')
+    ax[0].plot(advection_terms['time'], advection_terms['advection_term'] * norm_factor * time_rate_conversion, label='Net Heat Advection', linewidth=2, color='k')
 
     ax[0].set_ylabel("[K / hr]")
     ax[0].set_title("Advection Components Time Series")
 
-    ax[1].plot(advection_terms['time'], advection_terms['net_heat_advection'] * norm_factor * time_rate_conversion, label='Net Heat Advection', linewidth=2, color='k')
+    ax[1].plot(advection_terms['time'], advection_terms['advection_term'] * norm_factor * time_rate_conversion, label='Net Heat Advection', linewidth=2, color='k')
     ax[1].plot(advection_terms['time'], delta_heat * norm_factor * time_rate_conversion, label='Expected Residual', linewidth=1, color='red')
 
     ax[1].set_title(r"Net Heat Advection and $\delta M T_{scale}$ Time Series")
@@ -299,5 +299,34 @@ def fig4_temperature_derivative_timeseries(d_dt_T: xr.DataArray, dT_dt_1:xr.Data
     plt.close()
 
 
+def fig5_benchmark_comparison(benchmark_mass_fluxes: xr.Dataset, benchmark_heat_fluxes: xr.Dataset, advection_terms: xr.Dataset, plot_dir: str):
 
+    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True, ncols=2, sharex=True)
+
+    for var, data in benchmark_mass_fluxes.items():
+        ax[0].plot(data['time'], data, label=f'Benchmark {var}', linestyle='--')
+
+    for var, data in benchmark_heat_fluxes.items():
+        ax[1].plot(data['time'], data, label=f'Benchmark {var}', linestyle='--')
+
+    for var in advection_terms.data_vars:
+        if "mass" in str(var) and not "net" in str(var) and not "abs" in str(var):
+            ax[0].plot(advection_terms['time'], advection_terms[var], label=f'Calculated {var}')
+        elif "heat" in str(var) and not "net" in str(var) and not "abs" in str(var):
+            ax[1].plot(advection_terms['time'], advection_terms[var], label=f'Calculated {var}')
+
+    ax[0].plot(advection_terms['time'], advection_terms['net_mass_advection'], label='Calculated Net Mass Advection', linewidth=2, color='k')
+
+    ax[1].plot(advection_terms['time'], advection_terms['advection_term'], label='Calculated Net Heat Advection', linewidth=2, color='k')
+
+    ax[0].set_xlabel("Time")
+    ax[0].set_ylabel("Mass Flux [units]")
+    ax[0].set_title("Comparison of Calculated Mass Fluxes with Benchmark")
+    ax[0].legend(fontsize=10)
+    ax[1].set_xlabel("Time")
+    ax[1].set_ylabel("Heat Flux [units]")
+    ax[1].set_title("Comparison of Calculated Heat Fluxes with Benchmark")
+    ax[1].legend(fontsize=10)
+    plt.savefig(plot_dir + '/fig5_benchmark_comparison.png', dpi=300)
+    plt.close()
 

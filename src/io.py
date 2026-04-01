@@ -367,6 +367,60 @@ def load_era5_merge_dataset(
     datasets.extend(ds for ds in optional if ds is not None)
     return xr.merge(datasets, compat="identical")
 
+
+def load_arco_benchmark_fluxes(
+    cfg: specs.DataSourceConfig,
+    variables: dict[str, str],
+) -> xr.Dataset:
+    ds = xr.open_zarr(
+        cfg.arco_path,
+        storage_options={"token": cfg.arco_storage_token},
+        decode_timedelta=False,
+    )
+
+    ds = ds[list(variables.keys())]
+
+    if cfg.time_start is not None or cfg.time_end is not None:
+        ds = ds.sel(time=slice(cfg.time_start, cfg.time_end))
+
+    ds = ds.rename(variables)
+
+    # reuse only the parts of standardization that make sense for 3D single-level fields
+    rename_map = {}
+    if "valid_time" in ds.dims or "valid_time" in ds.coords:
+        rename_map["valid_time"] = "time"
+    if "latitude" in ds.dims or "latitude" in ds.coords:
+        rename_map["latitude"] = "lat"
+    if "longitude" in ds.dims or "longitude" in ds.coords:
+        rename_map["longitude"] = "lon"
+    if rename_map:
+        ds = ds.rename(rename_map)
+
+    drop_names = [
+        name for name in ["number", "expver", "step", "surface"]
+        if name in ds.coords or name in ds.variables
+    ]
+    if drop_names:
+        ds = ds.drop_vars(drop_names, errors="ignore")
+
+    if ds["lat"].size > 1 and not bool((ds["lat"].diff("lat") > 0).all()):
+        ds = ds.sortby("lat")
+    if ds["lon"].size > 1 and not bool((ds["lon"].diff("lon") > 0).all()):
+        ds = ds.sortby("lon")
+
+    if ds["lon"].max() > 180:
+        ds = ds.assign_coords(lon=((ds["lon"] + 180) % 360 - 180)).sortby("lon")
+
+    chunk_map = {
+        "time": cfg.chunks_time,
+        "lat": config.n_lat,
+        "lon": config.n_lon,
+    }
+    ds = ds.chunk(chunk_map)
+
+    return ds
+
+
 '''
 def load_era5_merge_dataset(
     ds_T: xr.Dataset,

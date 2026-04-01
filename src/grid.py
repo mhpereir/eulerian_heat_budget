@@ -254,6 +254,21 @@ def determine_domain(
     return ds_domain, ds_halo, spec
 
 
+def crop_to_halo_grid(ds: xr.Dataset, 
+                      ds_halo: xr.Dataset, 
+                      DomainSpecs: DomainSpec,
+                      SurfaceSpecs: SurfaceBehaviour) -> xr.Dataset:
+    """
+    ds is the benchmark dataset which is not cropped to ds_halo's grid or time steps
+    it shares the same grid, but doesn't have vertical levels
+    """
+
+    indexers = {k: v for k, v in ds_halo.coords.items() if k in ds.dims}
+    ds_out = ds.sel(indexers, method="nearest")
+
+    return ds_out
+
+
 def get_horizontal_cell_areas(ds: xr.Dataset) -> xr.DataArray:
     """
     Compute geometric horizontal cell areas for the (lat, lon) cell grid.

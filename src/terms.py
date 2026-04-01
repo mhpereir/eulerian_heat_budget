@@ -601,3 +601,59 @@ def compute_T_domain_average(T: xr.DataArray,
     T_domain_avg.name = "T_domain_avg"
 
     return T_domain_avg
+
+
+
+
+## benchmark terms for testing
+
+def compute_advective_benchmark_fluxes(benchmark_ds: xr.Dataset, 
+                                       DomainSpecs: DomainSpec, 
+                                       SurfaceSpecs: SurfaceBehaviour) -> tuple[xr.Dataset, xr.Dataset]:
+    '''
+    arco provide vertical integral of mass fluxes for the two horizontal directions in kg/s
+    we can convert to our code units by multiplying by g
+    '''
+    north_face_mass_flux = benchmark_ds['Fy_mass'].sel(lat=DomainSpecs.lat_max, method='nearest').sum(dim='lon') * config.g
+    south_face_mass_flux = benchmark_ds['Fy_mass'].sel(lat=DomainSpecs.lat_min, method='nearest').sum(dim='lon') * config.g
+
+    east_face_mass_flux = benchmark_ds['Fx_mass'].sel(lon=DomainSpecs.lon_max, method='nearest').sum(dim='lat') * config.g
+    west_face_mass_flux = benchmark_ds['Fx_mass'].sel(lon=DomainSpecs.lon_min, method='nearest').sum(dim='lat') * config.g
+
+    sign_convention = {"north": +1.0, "south": -1.0, "east": +1.0, "west": -1.0}
+
+    net_mass_flux = (sign_convention["north"] * north_face_mass_flux +
+                     sign_convention["south"] * south_face_mass_flux +
+                     sign_convention["east"]  * east_face_mass_flux +
+                     sign_convention["west"]  * west_face_mass_flux)
+    
+    
+    advective_mass_fluxes = xr.Dataset({
+        'north_face_mass_flux': sign_convention["north"] * north_face_mass_flux,
+        'south_face_mass_flux': sign_convention["south"] * south_face_mass_flux,
+        'east_face_mass_flux': sign_convention["east"] * east_face_mass_flux,
+        'west_face_mass_flux': sign_convention["west"] * west_face_mass_flux,
+        'net_mass_flux': net_mass_flux,
+    }) 
+
+
+    north_face_heat_flux = benchmark_ds['Fy_heat'].sel(lat=DomainSpecs.lat_max, method='nearest').sum(dim='lon') * config.g / config.cp
+    south_face_heat_flux = benchmark_ds['Fy_heat'].sel(lat=DomainSpecs.lat_min, method='nearest').sum(dim='lon') * config.g / config.cp
+
+    east_face_heat_flux = benchmark_ds['Fx_heat'].sel(lon=DomainSpecs.lon_max, method='nearest').sum(dim='lat') * config.g / config.cp
+    west_face_heat_flux = benchmark_ds['Fx_heat'].sel(lon=DomainSpecs.lon_min, method='nearest').sum(dim='lat') * config.g / config.cp
+
+    net_heat_flux = (sign_convention["north"] * north_face_heat_flux +
+                     sign_convention["south"] * south_face_heat_flux +
+                     sign_convention["east"]  * east_face_heat_flux +
+                     sign_convention["west"]  * west_face_heat_flux)
+    
+    advective_heat_fluxes = xr.Dataset({
+        'north_face_heat_flux': sign_convention["north"] * north_face_heat_flux,
+        'south_face_heat_flux': sign_convention["south"] * south_face_heat_flux,
+        'east_face_heat_flux': sign_convention["east"] * east_face_heat_flux,
+        'west_face_heat_flux': sign_convention["west"] * west_face_heat_flux,
+        'net_heat_flux': net_heat_flux,
+    })
+
+    return advective_mass_fluxes, advective_heat_fluxes

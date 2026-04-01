@@ -83,13 +83,19 @@ def main() -> None:
     # Validate merged dataset against strict schema
     validate.validate_schema(ds_merged)
 
+    ds_bench = None
+    if SourceCfg.kind == "arco_era5": #only available for arco era5 for now.
+        benchmark_var_map = {
+            "vertical_integral_of_eastward_heat_flux":  "Fx_heat",
+            "vertical_integral_of_northward_heat_flux": "Fy_heat",
+            "vertical_integral_of_eastward_mass_flux":  "Fx_mass",
+            "vertical_integral_of_northward_mass_flux": "Fy_mass",
+        }
+        ds_bench = io.load_arco_benchmark_fluxes(SourceCfg, benchmark_var_map)
+
     # Determine domain extent based on grid and config margin
     ds_domain, ds_halo, DomainSpecs = grid.determine_domain(ds_merged, request, eager_loading=True)
     
-    # Persist domain and halo datasets in memory to avoid redundant computations during budget calculations and plotting
-    ds_domain = ds_domain
-    ds_halo = ds_halo
-
     print('Proceeding with', DomainSpecs)
 
     metadata_path = run_outputs.write_run_info(
@@ -111,15 +117,15 @@ def main() -> None:
         integral_diagnostics_flag=True,
         plot_dir=run_paths.plot_dir,
         plot_flag=True,
+        benchmark_ds=ds_bench
     ) #already computed before returning
 
     plot_results.plot_budget_terms_hourly(result, smoothing_window=1, plot_dir=run_paths.plot_dir)
     plot_results.plot_budget_terms_hourly(result, smoothing_window=24, plot_dir=run_paths.plot_dir)
     plot_results.plot_budget_terms_day_bin(result, plot_dir=run_paths.plot_dir)
 
-  
+    
     # testing to see if a constant temperature field, yields a net heat advection error comparable to the estimated advection error from mass continuity (delta_mass * T_scale)
-
     os.makedirs(run_paths.plot_dir+'/constant_T', exist_ok=True)
 
     # ds_domain_test = ds_domain.copy(deep=True)
