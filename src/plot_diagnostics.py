@@ -312,7 +312,7 @@ def fig5_benchmark_comparison(benchmark_mass_fluxes: xr.Dataset, benchmark_heat_
     for var in advection_terms.data_vars:
         if "mass" in str(var) and not "net" in str(var) and not "abs" in str(var):
             ax[0].plot(advection_terms['time'], advection_terms[var], label=f'Calculated {var}')
-        elif "heat" in str(var) and not "net" in str(var) and not "abs" in str(var):
+        elif not "net" in str(var) and not "abs" in str(var):
             ax[1].plot(advection_terms['time'], advection_terms[var], label=f'Calculated {var}')
 
     ax[0].plot(advection_terms['time'], advection_terms['net_mass_advection'], label='Calculated Net Mass Advection', linewidth=2, color='k')

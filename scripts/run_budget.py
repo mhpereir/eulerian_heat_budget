@@ -15,6 +15,8 @@ import logging
 from dask.distributed import Client
     
 
+from src import terms
+
 def build_request_from_cli(args) -> specs.DomainRequest:
     zg_bottom = args.zg_bottom if args.zg_bottom is not None else config.DEFAULT_ZG_BOT_MODE
     zg_bottom_pressure = (
@@ -93,9 +95,37 @@ def main() -> None:
         }
         ds_bench = io.load_arco_benchmark_fluxes(SourceCfg, benchmark_var_map)
 
+
+
+    # print(ds_bench)
+    # print(ds_bench['Fx_mass'].sel(lon=360-130, lat=50, method='nearest').values) #type: ignore
+    # print(ds_bench['Fx_heat'].sel(lon=360-130, lat=50, method='nearest').values) #type: ignore
+
+
     # Determine domain extent based on grid and config margin
-    ds_domain, ds_halo, DomainSpecs = grid.determine_domain(ds_merged, request, eager_loading=True)
-    
+    ds_domain, ds_halo, DomainSpecs = grid.determine_domain(ds_merged, request, eager_loading=False)
+
+
+    # benchmark_ds = grid.crop_to_target_grid(ds_bench, ds_halo)
+
+    # print(benchmark_ds['Fx_mass'].values)
+    # print(benchmark_ds['Fx_heat'].values)
+
+    # benchmark_mass_fluxes, benchmark_heat_fluxes = terms.compute_advective_benchmark_fluxes(benchmark_ds, ds_domain, DomainSpecs)
+
+    # print("Benchmark mass fluxes at boundaries:", benchmark_mass_fluxes['north_face_mass_flux'].values)
+    # print("Benchmark heat fluxes at boundaries:", benchmark_heat_fluxes['north_face_heat_flux'].values)
+
+    # dl = grid.get_boundary_line_elements(ds_domain)
+
+    # print(dl)
+
+    # print(dl['dl_north'].values)
+    # print(dl['dl_west'].values)  
+
+
+    # exit(0)
+
     print('Proceeding with', DomainSpecs)
 
     metadata_path = run_outputs.write_run_info(
