@@ -103,7 +103,7 @@ def main() -> None:
 
 
     # Determine domain extent based on grid and config margin
-    ds_domain, ds_halo, DomainSpecs = grid.determine_domain(ds_merged, request, eager_loading=False)
+    ds_domain, ds_halo, DomainSpecs = grid.determine_domain(ds_merged, request, eager_loading=True)
 
 
     # benchmark_ds = grid.crop_to_target_grid(ds_bench, ds_halo)

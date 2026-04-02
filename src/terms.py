@@ -637,11 +637,11 @@ def compute_advective_benchmark_fluxes(benchmark_ds: xr.Dataset,
     
     
     advective_mass_fluxes = xr.Dataset({
-        'north_face_mass_flux': sign_convention["north"] * north_face_mass_flux,
-        'south_face_mass_flux': sign_convention["south"] * south_face_mass_flux,
-        'east_face_mass_flux': sign_convention["east"] * east_face_mass_flux,
-        'west_face_mass_flux': sign_convention["west"] * west_face_mass_flux,
-        'net_mass_flux': net_mass_flux,
+        'benchmark_mass_flux_north': sign_convention["north"] * north_face_mass_flux,
+        'benchmark_mass_flux_south': sign_convention["south"] * south_face_mass_flux,
+        'benchmark_mass_flux_east': sign_convention["east"] * east_face_mass_flux,
+        'benchmark_mass_flux_west': sign_convention["west"] * west_face_mass_flux,
+        'benchmark_mass_flux_net': net_mass_flux,
     }) 
 
 
@@ -662,11 +662,11 @@ def compute_advective_benchmark_fluxes(benchmark_ds: xr.Dataset,
                      sign_convention["west"]  * west_face_heat_flux)
     
     advective_heat_fluxes = xr.Dataset({
-        'north_face_heat_flux': sign_convention["north"] * north_face_heat_flux,
-        'south_face_heat_flux': sign_convention["south"] * south_face_heat_flux,
-        'east_face_heat_flux': sign_convention["east"] * east_face_heat_flux,
-        'west_face_heat_flux': sign_convention["west"] * west_face_heat_flux,
-        'net_heat_flux': net_heat_flux,
+        'benchmark_heat_flux_north': sign_convention["north"] * north_face_heat_flux,
+        'benchmark_heat_flux_south': sign_convention["south"] * south_face_heat_flux,
+        'benchmark_heat_flux_east': sign_convention["east"] * east_face_heat_flux,
+        'benchmark_heat_flux_west': sign_convention["west"] * west_face_heat_flux,
+        'benchmark_heat_flux_net': net_heat_flux,
     })
 
     return advective_mass_fluxes, advective_heat_fluxes

@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 
 import matplotlib.dates as mdates
 
+from matplotlib.lines import Line2D
+
 #set label sizes 16
 plt.rcParams.update({'font.size': 16})
 
@@ -299,34 +301,198 @@ def fig4_temperature_derivative_timeseries(d_dt_T: xr.DataArray, dT_dt_1:xr.Data
     plt.close()
 
 
-def fig5_benchmark_comparison(benchmark_mass_fluxes: xr.Dataset, benchmark_heat_fluxes: xr.Dataset, advection_terms: xr.Dataset, plot_dir: str):
 
-    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True, ncols=2, sharex=True)
+def fig5_benchmark_comparison(
+    benchmark_mass_fluxes: xr.Dataset,
+    benchmark_heat_fluxes: xr.Dataset,
+    results: xr.Dataset,
+    advection_terms: xr.Dataset,
+    plot_dir: str,
+):
+    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True, nrows=2, sharex=True)
 
-    for var, data in benchmark_mass_fluxes.items():
-        ax[0].plot(data['time'], data, label=f'Benchmark {var}', linestyle='--')
+    wall_faces = ["north", "south", "east", "west"]
+    colors = {
+        "north": "blue",
+        "south": "orange",
+        "east": "green",
+        "west": "red",
+    }
 
-    for var, data in benchmark_heat_fluxes.items():
-        ax[1].plot(data['time'], data, label=f'Benchmark {var}', linestyle='--')
+    T_average = results["T_domain_avg"]
 
-    for var in advection_terms.data_vars:
-        if "mass" in str(var) and not "net" in str(var) and not "abs" in str(var):
-            ax[0].plot(advection_terms['time'], advection_terms[var], label=f'Calculated {var}')
-        elif not "net" in str(var) and not "abs" in str(var):
-            ax[1].plot(advection_terms['time'], advection_terms[var], label=f'Calculated {var}')
+    name_mass_benchmark = "benchmark_mass_flux_"
+    name_heat_benchmark = "benchmark_heat_flux_"
+    name_calculated_mass = "mass_flux_contribution_"
+    name_calculated_heat = "flux_contribution_"
 
-    ax[0].plot(advection_terms['time'], advection_terms['net_mass_advection'], label='Calculated Net Mass Advection', linewidth=2, color='k')
+    # lateral-only net mass/heat from your calculation
+    mass_lateral = advection_terms["net_mass_advection"] - advection_terms["mass_flux_contribution_top"]
+    heat_lateral_anom = advection_terms["advection_term"] - advection_terms["flux_contribution_top"]
 
-    ax[1].plot(advection_terms['time'], advection_terms['advection_term'], label='Calculated Net Heat Advection', linewidth=2, color='k')
+    if "mass_flux_contribution_bottom" in advection_terms:
+        mass_lateral = mass_lateral - advection_terms["mass_flux_contribution_bottom"]
+    if "flux_contribution_bottom" in advection_terms:
+        heat_lateral_anom = heat_lateral_anom - advection_terms["flux_contribution_bottom"]
 
-    ax[0].set_xlabel("Time")
+    heat_lateral_full = heat_lateral_anom + T_average * mass_lateral
+
+    for face in wall_faces:
+        # mass panel
+        ax[0].plot(
+            benchmark_mass_fluxes["time"],
+            benchmark_mass_fluxes[name_mass_benchmark + face],
+            linestyle="--",
+            color=colors[face],
+        )
+        ax[0].plot(
+            advection_terms["time"],
+            advection_terms[name_calculated_mass + face],
+            linestyle="-",
+            color=colors[face],
+        )
+
+        # heat panel: reconstruct full-T lateral face flux from anomaly flux
+        ax[1].plot(
+            benchmark_heat_fluxes["time"],
+            benchmark_heat_fluxes[name_heat_benchmark + face],
+            linestyle="--",
+            color=colors[face],
+        )
+        ax[1].plot(
+            advection_terms["time"],
+            advection_terms[name_calculated_heat + face]
+            + advection_terms[name_calculated_mass + face] * T_average,
+            linestyle="-",
+            color=colors[face],
+        )
+
+    # net lines
+    ax[0].plot(
+        benchmark_mass_fluxes["time"],
+        benchmark_mass_fluxes["benchmark_mass_flux_net"],
+        linestyle="--",
+        color="k",
+    )
+    ax[0].plot(
+        advection_terms["time"],
+        mass_lateral,
+        linestyle="-",
+        linewidth=2,
+        color="k",
+    )
+
+    ax[1].plot(
+        benchmark_heat_fluxes["time"],
+        benchmark_heat_fluxes["benchmark_heat_flux_net"],
+        linestyle="--",
+        linewidth=2,
+        color="k",
+        label="Benchmark net",
+    )
+    ax[1].plot(
+        advection_terms["time"],
+        heat_lateral_full,
+        linestyle="-",
+        linewidth=2,
+        color="k",
+        label="Calculated net",
+    )
+
+    locator = mdates.AutoDateLocator()
+    formatter = mdates.ConciseDateFormatter(locator)
+    ax[1].xaxis.set_major_locator(locator)
+    ax[1].xaxis.set_major_formatter(formatter)
+
     ax[0].set_ylabel("Mass Flux [units]")
     ax[0].set_title("Comparison of Calculated Mass Fluxes with Benchmark")
-    ax[0].legend(fontsize=10)
+
+    face_handles = [
+        Line2D([0], [0], color=colors["north"], lw=2, label="North"),
+        Line2D([0], [0], color=colors["south"], lw=2, label="South"),
+        Line2D([0], [0], color=colors["east"],  lw=2, label="East"),
+        Line2D([0], [0], color=colors["west"],  lw=2, label="West"),
+        Line2D([0], [0], color="k", lw=2, label="Net"),
+    ]
+    style_handles = [
+        Line2D([0], [0], color="0.3", lw=2, linestyle="--", label="Benchmark"),
+        Line2D([0], [0], color="0.3", lw=2, linestyle="-",  label="Calculated"),
+    ]
+
+    leg1 = ax[0].legend(handles=face_handles, loc="upper left", fontsize=10)
+    ax[0].add_artist(leg1)
+    ax[0].legend(handles=style_handles, loc="lower left", fontsize=10)
+
     ax[1].set_xlabel("Time")
     ax[1].set_ylabel("Heat Flux [units]")
     ax[1].set_title("Comparison of Calculated Heat Fluxes with Benchmark")
     ax[1].legend(fontsize=10)
-    plt.savefig(plot_dir + '/fig5_benchmark_comparison.png', dpi=300)
+
+    plt.savefig(plot_dir + "/fig5_benchmark_comparison.png", dpi=300)
     plt.close()
 
+    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True, nrows=2, sharex=True)
+
+    # net lines
+    ax[0].plot(
+        benchmark_mass_fluxes["time"],
+        benchmark_mass_fluxes["benchmark_mass_flux_net"],
+        linestyle="--",
+        color="k",
+    )
+    ax[0].plot(
+        advection_terms["time"],
+        mass_lateral,
+        linestyle="-",
+        linewidth=2,
+        color="k",
+    )
+
+    ax[1].plot(
+        benchmark_heat_fluxes["time"],
+        benchmark_heat_fluxes["benchmark_heat_flux_net"],
+        linestyle="--",
+        linewidth=2,
+        color="k",
+        label="Benchmark net",
+    )
+    ax[1].plot(
+        advection_terms["time"],
+        heat_lateral_full,
+        linestyle="-",
+        linewidth=2,
+        color="k",
+        label="Calculated net",
+    )
+
+    locator = mdates.AutoDateLocator()
+    formatter = mdates.ConciseDateFormatter(locator)
+    ax[1].xaxis.set_major_locator(locator)
+    ax[1].xaxis.set_major_formatter(formatter)
+
+    ax[0].set_ylabel("Mass Flux [units]")
+    ax[0].set_title("Comparison of Calculated Mass Fluxes with Benchmark")
+
+    # face_handles = [
+    #     Line2D([0], [0], color=colors["north"], lw=2, label="North"),
+    #     Line2D([0], [0], color=colors["south"], lw=2, label="South"),
+    #     Line2D([0], [0], color=colors["east"],  lw=2, label="East"),
+    #     Line2D([0], [0], color=colors["west"],  lw=2, label="West"),
+    #     Line2D([0], [0], color="k", lw=2, label="Net"),
+    # ]
+    style_handles = [
+        Line2D([0], [0], color="0.3", lw=2, linestyle="--", label="Benchmark"),
+        Line2D([0], [0], color="0.3", lw=2, linestyle="-",  label="Calculated"),
+    ]
+
+    # leg1 = ax[0].legend(handles=face_handles, loc="upper left", fontsize=10)
+    # ax[0].add_artist(leg1)
+    ax[0].legend(handles=style_handles, loc="lower left", fontsize=10)
+
+    ax[1].set_xlabel("Time")
+    ax[1].set_ylabel("Heat Flux [units]")
+    ax[1].set_title("Comparison of Calculated Heat Fluxes with Benchmark")
+    ax[1].legend(fontsize=10)
+
+    plt.savefig(plot_dir + "/fig5.1_net_benchmark_comparison.png", dpi=300)
+    plt.close()

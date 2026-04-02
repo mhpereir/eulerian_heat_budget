@@ -300,6 +300,6 @@ def calculate_budget(
         plot_diagnostics.fig4_temperature_derivative_timeseries(out['d_dt_T'], out['dT_dt'], out['dT_dt_2'], out['domain_volume'], plot_diag_path)
 
         if benchmark_ds is not None:
-            plot_diagnostics.fig5_benchmark_comparison(benchmark_mass_fluxes, benchmark_heat_fluxes,  advection_terms_out, plot_diag_path) # type: ignore
+            plot_diagnostics.fig5_benchmark_comparison(benchmark_mass_fluxes, benchmark_heat_fluxes, out, advection_terms_out, plot_diag_path) # type: ignore
 
     return out
