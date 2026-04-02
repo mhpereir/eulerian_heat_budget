@@ -463,7 +463,7 @@ def fig5_benchmark_comparison(
         linestyle="-",
         linewidth=1,
         color="k",
-        label=r"$\mathcal{H}'_{calc} + \rangle T \langle M_{calc} $"
+        label=r"$\mathcal{H}'_{calc} + \langle T \rangle M_{calc} $"
     )
 
     ax[1].plot(
@@ -472,7 +472,7 @@ def fig5_benchmark_comparison(
         linestyle="-.",
         linewidth=1,
         color="gray",
-        label=r"$\mathcal{H}'_{calc} + \rangle T \langle M_{bench} $"
+        label=r"$\mathcal{H}'_{calc} + \langle T \rangle M_{bench} $"
     )
 
     ax[1].plot(
