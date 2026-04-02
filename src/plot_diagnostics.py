@@ -336,6 +336,7 @@ def fig5_benchmark_comparison(
         heat_lateral_anom = heat_lateral_anom - advection_terms["flux_contribution_bottom"]
 
     heat_lateral_full = heat_lateral_anom + T_average * mass_lateral
+    heat_lateral_full_2 = heat_lateral_anom + T_average * benchmark_mass_fluxes["benchmark_mass_flux_net"]
 
     for face in wall_faces:
         # mass panel
@@ -452,18 +453,37 @@ def fig5_benchmark_comparison(
         benchmark_heat_fluxes["time"],
         benchmark_heat_fluxes["benchmark_heat_flux_net"],
         linestyle="--",
-        linewidth=2,
+        linewidth=1,
         color="k",
-        label="Benchmark net",
+        label=r"$\mathcal{H}_{bench, full}$",
     )
     ax[1].plot(
         advection_terms["time"],
         heat_lateral_full,
         linestyle="-",
-        linewidth=2,
+        linewidth=1,
         color="k",
-        label="Calculated net",
+        label=r"$\mathcal{H}'_{calc} + \rangle T \langle M_{calc} $"
     )
+
+    ax[1].plot(
+        advection_terms["time"],
+        heat_lateral_full_2,
+        linestyle="-.",
+        linewidth=1,
+        color="gray",
+        label=r"$\mathcal{H}'_{calc} + \rangle T \langle M_{bench} $"
+    )
+
+    ax[1].plot(
+        advection_terms["time"],
+        heat_lateral_anom,
+        linestyle="-",
+        linewidth=1,
+        color="red",
+        label=r"$\mathcal{H}'_{calc}$"
+    )
+
 
     locator = mdates.AutoDateLocator()
     formatter = mdates.ConciseDateFormatter(locator)

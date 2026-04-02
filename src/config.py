@@ -23,7 +23,7 @@ DEFAULT_ARCO_PATH  = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk
 DEFAULT_ARCO_TOKEN = "anon"
 
 DEFAULT_TIME_START = "1941-06-01T00:00:00" # start time for budget period
-DEFAULT_TIME_END   = "1941-09-01T00:00:00" # end time for budget period 
+DEFAULT_TIME_END   = "1941-06-07T00:00:00" # end time for budget period 
 
 
 
