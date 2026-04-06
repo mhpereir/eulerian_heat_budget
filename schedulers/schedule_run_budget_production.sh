@@ -18,8 +18,13 @@ set -euo pipefail
 
 START_YEAR=1940
 END_YEAR=1949
+DATA_SOURCE="${DATA_SOURCE:-arco_era5}"
 PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_1940_1949}"
 INIT_MANIFEST_ONLY="${INIT_MANIFEST_ONLY:-0}"
+ENABLE_DIAGNOSTIC_PLOTS="${ENABLE_DIAGNOSTIC_PLOTS:-1}"
+ENABLE_CONSTANT_TEMPERATURE_TEST="${ENABLE_CONSTANT_TEMPERATURE_TEST:-0}"
+RUN_START_MONTH_DAY="${RUN_START_MONTH_DAY:-05-01}"
+RUN_END_MONTH_DAY="${RUN_END_MONTH_DAY:-09-30}"
 MANIFEST_PATH="${PRODUCTION_OUTPUT_DIR}/production_run.json"
 MANIFEST_LOCK_DIR="${PRODUCTION_OUTPUT_DIR}/.manifest_init.lock"
 MANIFEST_WAIT_SECONDS="${MANIFEST_WAIT_SECONDS:-300}"
@@ -28,16 +33,30 @@ mkdir -p "${PRODUCTION_OUTPUT_DIR}"
 
 cd /home/mhpereir/eulerian_heat_budget/scripts
 
+COMMON_RUN_ARGS=(
+  --data-source "${DATA_SOURCE}"
+  --production-output-dir "${PRODUCTION_OUTPUT_DIR}"
+)
+
+if [[ "${ENABLE_DIAGNOSTIC_PLOTS}" == "1" ]]; then
+  COMMON_RUN_ARGS+=(--diagnostic-plots)
+else
+  COMMON_RUN_ARGS+=(--no-diagnostic-plots)
+fi
+
+if [[ "${ENABLE_CONSTANT_TEMPERATURE_TEST}" == "1" ]]; then
+  COMMON_RUN_ARGS+=(--constant-temperature-test)
+else
+  COMMON_RUN_ARGS+=(--no-constant-temperature-test)
+fi
+
 initialize_manifest() {
   echo "[info] $(date -Is) initializing production manifest in ${PRODUCTION_OUTPUT_DIR}"
   /usr/bin/time -v python run_budget.py \
-    --data-source arco_era5 \
-    --production-output-dir "${PRODUCTION_OUTPUT_DIR}" \
+    "${COMMON_RUN_ARGS[@]}" \
     --init-production-manifest \
     --production-start-year "${START_YEAR}" \
-    --production-end-year "${END_YEAR}" \
-    --no-diagnostic-plots \
-    --no-constant-temperature-test
+    --production-end-year "${END_YEAR}"
   echo "[info] $(date -Is) manifest initialization complete"
 }
 
@@ -93,18 +112,15 @@ if (( YEAR > END_YEAR )); then
   exit 1
 fi
 
-TIME_START=$(printf "%04d-05-01T00:00:00" "${YEAR}")
-TIME_END=$(printf "%04d-09-30T23:00:00" "${YEAR}")
+TIME_START=$(printf "%04d-%sT00:00:00" "${YEAR}" "${RUN_START_MONTH_DAY}")
+TIME_END=$(printf "%04d-%sT23:00:00" "${YEAR}" "${RUN_END_MONTH_DAY}")
 
 ensure_manifest
 
 echo "[info] $(date -Is) starting production year ${YEAR} on host $(hostname)"
 echo "[info] output dir: ${PRODUCTION_OUTPUT_DIR}"
 /usr/bin/time -v python run_budget.py \
-  --data-source arco_era5 \
+  "${COMMON_RUN_ARGS[@]}" \
   --time-start "${TIME_START}" \
-  --time-end "${TIME_END}" \
-  --production-output-dir "${PRODUCTION_OUTPUT_DIR}" \
-  --diagnostic-plots \
-  --no-constant-temperature-test
+  --time-end "${TIME_END}"
 echo "[info] $(date -Is) finished production year ${YEAR}"
