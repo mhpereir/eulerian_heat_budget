@@ -15,6 +15,7 @@ Contract requirement: `io.py` is where any renaming between external conventions
 
 import xarray as xr
 import numpy as np
+import time
 
 from collections.abc import Mapping
 
@@ -64,11 +65,7 @@ def _load_local_era5(cfg: specs.DataSourceConfig, SurfaceSpecs: specs.SurfaceBeh
     return ds_merged
 
 def _load_arco_era5(cfg: specs.DataSourceConfig, SurfaceSpecs: specs.SurfaceBehaviour) -> xr.Dataset:
-    ds = xr.open_zarr(
-        cfg.arco_path,
-        storage_options={"token": cfg.arco_storage_token},
-        decode_timedelta=False,
-    )
+    ds = _open_arco_zarr_with_retry(cfg)
 
     var_map = {
         "temperature": "T",
@@ -372,11 +369,7 @@ def load_arco_benchmark_fluxes(
     cfg: specs.DataSourceConfig,
     variables: dict[str, str],
 ) -> xr.Dataset:
-    ds = xr.open_zarr(
-        cfg.arco_path,
-        storage_options={"token": cfg.arco_storage_token},
-        decode_timedelta=False,
-    )
+    ds = _open_arco_zarr_with_retry(cfg)
 
     ds = ds[list(variables.keys())]
 
@@ -419,6 +412,61 @@ def load_arco_benchmark_fluxes(
     ds = ds.chunk(chunk_map)
 
     return ds
+
+
+def _open_arco_zarr_with_retry(cfg: specs.DataSourceConfig) -> xr.Dataset:
+    max_attempts = config.DEFAULT_ARCO_OPEN_MAX_ATTEMPTS
+    base_delay_seconds = config.DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return xr.open_zarr(
+                cfg.arco_path,
+                storage_options={"token": cfg.arco_storage_token},
+                decode_timedelta=False,
+            )
+        except Exception as exc:
+            if not _is_transient_arco_open_error(exc) or attempt == max_attempts:
+                raise
+
+            delay_seconds = base_delay_seconds * (2 ** (attempt - 1))
+            print(
+                f"ARCO open_zarr attempt {attempt}/{max_attempts} failed with a transient error: {exc}. "
+                f"Retrying in {delay_seconds:.0f} seconds..."
+            )
+            time.sleep(delay_seconds)
+
+    raise RuntimeError("ARCO retry loop exhausted unexpectedly.")
+
+
+def _is_transient_arco_open_error(exc: BaseException) -> bool:
+    seen: set[int] = set()
+    current: BaseException | None = exc
+
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        message = str(current).lower()
+        class_name = type(current).__name__
+
+        if (
+            "temporary failure in name resolution" in message
+            or "cannot connect to host" in message
+            or "name or service not known" in message
+            or "connection reset by peer" in message
+            or "service unavailable" in message
+            or "timed out" in message
+            or class_name in {
+                "ClientConnectorDNSError",
+                "ClientConnectorError",
+                "ServerDisconnectedError",
+                "TimeoutError",
+            }
+        ):
+            return True
+
+        current = current.__cause__ or current.__context__
+
+    return False
 
 
 '''
@@ -471,4 +519,3 @@ def load_era5_merge_dataset(
 
     return merged
 '''
-

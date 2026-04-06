@@ -137,6 +137,72 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="End time for data selection (ISO format, e.g. 1941-06-07T23:00:00).",
     )
 
+    diagnostic_plots_group = parser.add_mutually_exclusive_group()
+    diagnostic_plots_group.add_argument(
+        "--diagnostic-plots",
+        dest="diagnostic_plots",
+        action="store_true",
+        default=None,
+        help="Generate diagnostic and summary plots for the run.",
+    )
+    diagnostic_plots_group.add_argument(
+        "--no-diagnostic-plots",
+        dest="diagnostic_plots",
+        action="store_false",
+        help="Skip all diagnostic and summary plot generation.",
+    )
+
+    constant_temperature_test_group = parser.add_mutually_exclusive_group()
+    constant_temperature_test_group.add_argument(
+        "--constant-temperature-test",
+        dest="constant_temperature_test",
+        action="store_true",
+        default=None,
+        help="Run the constant-temperature validation calculation.",
+    )
+    constant_temperature_test_group.add_argument(
+        "--no-constant-temperature-test",
+        dest="constant_temperature_test",
+        action="store_false",
+        help="Skip the constant-temperature validation calculation.",
+    )
+
+    parser.add_argument(
+        "--production-output-dir",
+        dest="production_output_dir",
+        type=str,
+        default=None,
+        help="Shared output directory for production yearly runs.",
+    )
+    parser.add_argument(
+        "--init-production-manifest",
+        dest="init_production_manifest",
+        action="store_true",
+        default=False,
+        help="Create the shared production manifest and exit.",
+    )
+    parser.add_argument(
+        "--production-start-year",
+        dest="production_start_year",
+        type=int,
+        default=None,
+        help="First year covered by the production campaign manifest.",
+    )
+    parser.add_argument(
+        "--production-end-year",
+        dest="production_end_year",
+        type=int,
+        default=None,
+        help="Last year covered by the production campaign manifest.",
+    )
+    parser.add_argument(
+        "--overwrite-output",
+        dest="overwrite_output",
+        action="store_true",
+        default=False,
+        help="Overwrite an existing yearly production NetCDF output.",
+    )
+
 
     return parser
 

@@ -15,8 +15,16 @@ mamba activate dev_env
 
 set -euo pipefail
 
+TIME_START="1941-06-01T00:00:00"
+TIME_END="1941-06-07T00:00:00"
+
 cd /home/mhpereir/eulerian_heat_budget/scripts
 
 echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hostname)"
-/usr/bin/time -v python run_budget.py --data-source arco_era5 # --lat-min 25 --lat-max 45 --lon-min -170 --lon-max -150
+/usr/bin/time -v python run_budget.py \
+  --data-source arco_era5 \
+  --time-start "${TIME_START}" \
+  --time-end "${TIME_END}" \
+  --diagnostic-plots \
+  --constant-temperature-test
 echo "[info] $(date -Is) done"

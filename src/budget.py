@@ -57,7 +57,6 @@ def calculate_budget(
     ) -> xr.Dataset:
     
     plot_diag_path = os.path.join(plot_dir, "diagnostics")
-    os.makedirs(plot_diag_path, exist_ok=True)
 
     print("Calculating cell areas")
     # Construct integand cell areas and weights for integration
@@ -293,6 +292,7 @@ def calculate_budget(
 
     print('Plotting diagnostics...')
     if plot_flag:
+        os.makedirs(plot_diag_path, exist_ok=True)
         #plot diagnostics for advective integrals
         plot_diagnostics.fig1_mass_continuity(out['dV_dt'], advection_terms_out, plot_diag_path)
         plot_diagnostics.fig2_mass_advection_residual_timeseries(advection_terms_out, out['dV_dt'], out['domain_volume'], plot_diag_path)

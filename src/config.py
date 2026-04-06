@@ -21,6 +21,8 @@ DEFAULT_DATA_SOURCE = "local_era5"
 DEFAULT_LOCAL_PATH = "/home/mhpereir/downloads-mhpereir/ERA5_zg_PNW"
 DEFAULT_ARCO_PATH  = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3"
 DEFAULT_ARCO_TOKEN = "anon"
+DEFAULT_ARCO_OPEN_MAX_ATTEMPTS: int = 4
+DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS: float = 15.0
 
 DEFAULT_TIME_START = "1941-06-01T00:00:00" # start time for budget period
 DEFAULT_TIME_END   = "1941-06-07T00:00:00" # end time for budget period 
@@ -54,6 +56,8 @@ DEFAULT_ZG_BOT_PA: float = 600 * 100 # lower boundary pressure for geopotential 
 DEFAULT_ZG_TOP_PA: float = 1 * 100 # upper boundary pressure for geopotential height budget in Pa
 
 DEFAULT_PLOTS_OUTPUT:str = str(PROJECT_ROOT / "results" / "plots")
+DEFAULT_DIAGNOSTIC_PLOTS: bool = False
+DEFAULT_CONSTANT_TEMPERATURE_TEST: bool = False
 
 n_time:int = 12
 n_lat :int = 36

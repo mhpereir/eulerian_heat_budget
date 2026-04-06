@@ -27,6 +27,17 @@ class GitProvenance:
     dirty: bool
 
 
+@dataclass(frozen=True)
+class ProductionPaths:
+    root_dir: str
+    manifest_path: str
+    annual_dir: str
+    plot_root: str
+    year: int | None
+    output_path: str | None
+    plot_dir: str | None
+
+
 def _sanitize_run_id(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
     if not cleaned:
@@ -71,6 +82,35 @@ def prepare_run_paths(
     )
 
 
+def prepare_production_paths(
+    production_output_dir: str,
+    *,
+    year: int | None = None,
+) -> ProductionPaths:
+    root_dir = Path(production_output_dir)
+    annual_dir = root_dir / "annual"
+    plot_root = root_dir / "plots"
+
+    annual_dir.mkdir(parents=True, exist_ok=True)
+    plot_root.mkdir(parents=True, exist_ok=True)
+
+    output_path = annual_dir / f"heat_budget_{year}.nc" if year is not None else None
+    plot_dir = plot_root / str(year) if year is not None else None
+
+    if plot_dir is not None:
+        plot_dir.mkdir(parents=True, exist_ok=True)
+
+    return ProductionPaths(
+        root_dir=str(root_dir),
+        manifest_path=str(root_dir / "production_run.json"),
+        annual_dir=str(annual_dir),
+        plot_root=str(plot_root),
+        year=year,
+        output_path=str(output_path) if output_path is not None else None,
+        plot_dir=str(plot_dir) if plot_dir is not None else None,
+    )
+
+
 def write_run_info(
     paths: RunPaths,
     *,
@@ -103,6 +143,86 @@ def write_run_info(
     metadata_path = Path(paths.metadata_path)
     metadata_path.write_text(json.dumps(payload, indent=2, default=_json_default) + "\n")
     return str(metadata_path)
+
+
+def resolve_production_year(*, time_start: str | None, time_end: str | None) -> int:
+    if time_start is None or time_end is None:
+        raise ValueError("Production yearly runs require both time_start and time_end.")
+
+    start = datetime.fromisoformat(time_start)
+    end = datetime.fromisoformat(time_end)
+
+    if start.year != end.year:
+        raise ValueError("Production yearly runs require time_start and time_end to be in the same calendar year.")
+
+    return start.year
+
+
+def require_output_path(output_path: str | None, *, overwrite: bool) -> str:
+    if output_path is None:
+        raise ValueError("Output path is required.")
+
+    output = Path(output_path)
+    if output.exists():
+        if not overwrite:
+            raise FileExistsError(f"Output already exists: {output}")
+        output.unlink()
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    return str(output)
+
+
+def write_budget_result(ds_budget: Any, output_path: str | None, *, overwrite: bool) -> str:
+    resolved_output_path = require_output_path(output_path, overwrite=overwrite)
+    ds_budget.to_netcdf(resolved_output_path)
+    return resolved_output_path
+
+
+def write_production_manifest(
+    paths: ProductionPaths,
+    *,
+    production_start_year: int,
+    production_end_year: int,
+    request: DomainRequest,
+    source_spec: DataSourceConfig,
+    surface_behaviour: SurfaceBehaviour,
+    git_provenance: GitProvenance,
+    cli_args: Mapping[str, Any],
+    env: Mapping[str, str] | None = None,
+    now: datetime | None = None,
+) -> str:
+    manifest_path = Path(paths.manifest_path)
+    if manifest_path.exists():
+        raise FileExistsError(f"Production manifest already exists: {manifest_path}")
+
+    active_env = os.environ if env is None else env
+    timestamp = datetime.now() if now is None else now
+
+    payload = {
+        "generated_at": timestamp.isoformat(),
+        "pbs_job_id": active_env.get("PBS_JOBID"),
+        "production_start_year": production_start_year,
+        "production_end_year": production_end_year,
+        "root_dir": paths.root_dir,
+        "annual_dir": paths.annual_dir,
+        "plot_root": paths.plot_root,
+        "manifest_path": paths.manifest_path,
+        "request": request,
+        "source_spec": source_spec,
+        "surface_behaviour": surface_behaviour,
+        "git": git_provenance,
+        "cli_args": dict(cli_args),
+    }
+
+    manifest_path.write_text(json.dumps(payload, indent=2, default=_json_default) + "\n")
+    return str(manifest_path)
+
+
+def require_production_manifest(paths: ProductionPaths) -> str:
+    manifest_path = Path(paths.manifest_path)
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Production manifest not found: {manifest_path}")
+    return str(manifest_path)
 
 
 def _json_default(value: Any) -> Any:
