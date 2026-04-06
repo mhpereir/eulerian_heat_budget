@@ -18,5 +18,5 @@ set -euo pipefail
 cd /home/mhpereir/eulerian_heat_budget/scripts
 
 echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hostname)"
-/usr/bin/time -v python run_budget.py --data-source arco_era5
+/usr/bin/time -v python run_budget.py --data-source arco_era5 # --lat-min 25 --lat-max 45 --lon-min -170 --lon-max -150
 echo "[info] $(date -Is) done"
