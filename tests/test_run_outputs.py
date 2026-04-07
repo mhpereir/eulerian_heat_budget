@@ -251,6 +251,37 @@ def test_write_budget_result_writes_netcdf_output(tmp_path):
     assert output_path.is_file()
 
 
+def test_write_budget_result_drops_none_attrs_before_serialization(tmp_path):
+    output_path = tmp_path / "production" / "annual" / "heat_budget_1947.nc"
+    ds_budget = xr.Dataset(
+        {
+            "value": xr.DataArray(
+                [1.0, 2.0],
+                dims=("time",),
+                attrs={"zg_bottom_pressure_pa": None, "units": "1"},
+            )
+        },
+        attrs={"optional_note": None, "run_id": "test-run"},
+    ).assign_coords(
+        time=xr.DataArray(
+            [0, 1],
+            dims=("time",),
+            attrs={"calendar_hint": None, "axis": "T"},
+        )
+    )
+
+    written = write_budget_result(ds_budget, str(output_path), overwrite=False)
+    reopened = xr.open_dataset(written)
+
+    assert written == str(output_path)
+    assert "optional_note" not in reopened.attrs
+    assert reopened.attrs["run_id"] == "test-run"
+    assert "zg_bottom_pressure_pa" not in reopened["value"].attrs
+    assert reopened["value"].attrs["units"] == "1"
+    assert "calendar_hint" not in reopened["time"].attrs
+    assert reopened["time"].attrs["axis"] == "T"
+
+
 def test_resolve_git_provenance_returns_branch_commit_and_clean_status(tmp_path):
     repo = _make_repo(tmp_path)
 

@@ -174,7 +174,7 @@ def require_output_path(output_path: str | None, *, overwrite: bool) -> str:
 
 def write_budget_result(ds_budget: Any, output_path: str | None, *, overwrite: bool) -> str:
     resolved_output_path = require_output_path(output_path, overwrite=overwrite)
-    ds_budget.to_netcdf(resolved_output_path)
+    _drop_none_attrs(ds_budget).to_netcdf(resolved_output_path)
     return resolved_output_path
 
 
@@ -231,6 +231,20 @@ def _json_default(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def _drop_none_attrs(ds: Any) -> Any:
+    cleaned = ds.copy(deep=False)
+    cleaned.attrs = {key: value for key, value in cleaned.attrs.items() if value is not None}
+
+    for name in cleaned.variables:
+        cleaned[name].attrs = {
+            key: value
+            for key, value in cleaned[name].attrs.items()
+            if value is not None
+        }
+
+    return cleaned
 
 
 def resolve_git_provenance(repo_dir: str | Path) -> GitProvenance:
