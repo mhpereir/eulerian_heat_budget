@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-08T10:27:49.276895",
-  "pbs_job_id": "2586473[8].venus",
+  "generated_at": "2026-04-07T09:59:46.644203",
+  "pbs_job_id": "2586471[3].venus",
   "production_start_year": 1940,
   "production_end_year": 1949,
   "root_dir": "/home/mhpereir/eulerian_heat_budget/results/production/pnw_1940_1949",
@@ -15,7 +15,7 @@
       -110
     ],
     "margin_n": 1,
-    "zg_top_pressure": 70000,
+    "zg_top_pressure": 100,
     "zg_bottom": "surface_pressure",
     "zg_bottom_pressure": null
   },
@@ -35,7 +35,7 @@
   },
   "git": {
     "branch": "production_development",
-    "commit": "37d7e51407731fe2795193afe848581eafd1b362",
+    "commit": "da5fe01a9b1f734a0075028a10e0b53acc77bf71",
     "dirty": true
   },
   "cli_args": {

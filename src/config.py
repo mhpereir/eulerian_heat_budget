@@ -53,7 +53,7 @@ DEFAULT_SURFACE_VARIABLE_MODE = 'none' # 'none', 'combined', or 'diagnostic_only
 # pressure levels for geopotential height domain boundaries (in Pa)
 # zg_bottom_pressure only used if zg_bottom == "pressure_level"; else surface pressure determines bottom boundary
 DEFAULT_ZG_BOT_PA: float = 600 * 100 # lower boundary pressure for geopotential height budget in Pa
-DEFAULT_ZG_TOP_PA: float = 1 * 100 # upper boundary pressure for geopotential height budget in Pa
+DEFAULT_ZG_TOP_PA: float = 700 * 100 # upper boundary pressure for geopotential height budget in Pa
 
 DEFAULT_PLOTS_OUTPUT:str = str(PROJECT_ROOT / "results" / "plots")
 DEFAULT_DIAGNOSTIC_PLOTS: bool = False
