@@ -96,7 +96,7 @@ def main() -> None:
     time_end = f"{args.year_end}-12-31"
     lat_min, lat_max, lon_min, lon_max = args.bbox
 
-    months_selection = [5,6,7,8,9]
+    months_selection = [6]
 
     print(f"Opening ARCO ERA5 store: {config.DEFAULT_ARCO_PATH}")
     ds_full = _open_arco_zarr_with_retry()
@@ -135,7 +135,7 @@ def main() -> None:
     print(f"Bbox       : lat [{lat_min}, {lat_max}], lon [{lon_min}, {lon_max}]")
     print(f"Grid points: time={pbl.sizes.get('time', '?')}, lat={pbl.sizes.get('lat', '?')}, lon={pbl.sizes.get('lon', '?')}")
     print("Computing statistics (this may take a moment)...")
-
+    
     pbl_max = float(pbl.max().compute())
     pbl_p99 = float(pbl.quantile(0.99).compute())
     pbl_p95 = float(pbl.quantile(0.95).compute())
@@ -171,28 +171,15 @@ def main() -> None:
     # Use log-pressure interpolation for accuracy: interp ln(p) as function of Z
     ln_p = np.log(p_levels)
 
-    def pressure_at_height(z_target, Z_field):
-        """Find the min pressure (highest altitude) where Z >= z_target across domain."""
-        # For each column, interpolate ln(p) at z_target
-        # xr.interp requires the coordinate to be monotonic.
-        # Z is monotonically decreasing with level index (higher pressure = lower Z).
-        # We need Z as the interpolation coordinate — flip so Z is ascending.
-        Z_flipped = Z_field.isel(level=slice(None, None, -1))
-        ln_p_flipped = ln_p.isel(level=slice(None, None, -1))
+    # Flip level axis once so Z is ascending (needed for np.interp)
+    Z_flipped = Z.isel(level=slice(None, None, -1))
+    ln_p_flipped = ln_p.isel(level=slice(None, None, -1))
+    lnp_vals = ln_p_flipped.values
 
-        # Interpolate along the (flipped) level axis using Z as the coordinate
-        Z_flipped = Z_flipped.assign_coords(level=ln_p_flipped.values)
-        # Now "level" dim actually holds ln(p) values, and the data is Z
-        # We want the inverse: given z_target, find ln(p). Use interp on Z as coord.
-        # Reshape: swap so we can interp Z -> ln(p)
-        # Simpler approach: for each column, use np.interp
-        Z_vals = Z_flipped.compute()  # (time, level_as_lnp, lat, lon)
-        lnp_vals = Z_vals.coords["level"].values  # ln(p) array, ascending with Z
-
-        # Flatten spatial dims, interpolate, reshape
-        shape = Z_vals.shape
-        n_time, n_lev, n_lat, n_lon = shape
-        Z_flat = Z_vals.values.reshape(n_time, n_lev, -1)  # (time, lev, ncol)
+    def pressure_at_height(z_target, Z_chunk):
+        """Interpolate ln(p) at z_target for a single time chunk (numpy array)."""
+        n_time, n_lev, n_lat, n_lon = Z_chunk.shape
+        Z_flat = Z_chunk.reshape(n_time, n_lev, -1)
         n_col = Z_flat.shape[2]
 
         result = np.full((n_time, n_col), np.nan)
@@ -201,21 +188,30 @@ def main() -> None:
                 z_col = Z_flat[t, :, c]
                 if np.all(np.isnan(z_col)):
                     continue
-                # z_col should be ascending (we flipped); lnp_vals is also ascending
                 result[t, c] = np.interp(z_target, z_col, lnp_vals,
                                          left=np.nan, right=np.nan)
+        return np.exp(result.reshape(n_time, n_lat, n_lon))
 
-        p_result = np.exp(result.reshape(n_time, n_lat, n_lon))
-        return p_result
+    # Process in time chunks to limit memory usage
+    chunk_size = 200  # timesteps per chunk
+    n_times = Z_flipped.sizes["time"]
+    z_targets = {"max": pbl_max, "p99": pbl_p99, "p95": pbl_p95}
+    p_min = {k: np.inf for k in z_targets}
 
-    p_at_max_field = pressure_at_height(pbl_max, Z)
-    p_at_p99_field = pressure_at_height(pbl_p99, Z)
-    p_at_p95_field = pressure_at_height(pbl_p95, Z)
+    for i_start in range(0, n_times, chunk_size):
+        i_end = min(i_start + chunk_size, n_times)
+        print(f"  Processing timesteps {i_start}–{i_end-1} of {n_times}...")
+        Z_chunk = Z_flipped.isel(time=slice(i_start, i_end)).values
 
-    # Take the minimum pressure (highest point) across the domain for safety
-    p_at_max = float(np.nanmin(p_at_max_field))
-    p_at_p99 = float(np.nanmin(p_at_p99_field))
-    p_at_p95 = float(np.nanmin(p_at_p95_field))
+        for key, z_target in z_targets.items():
+            p_field = pressure_at_height(z_target, Z_chunk)
+            p_min[key] = min(p_min[key], float(np.nanmin(p_field)))
+
+        del Z_chunk
+
+    p_at_max = p_min["max"]
+    p_at_p99 = p_min["p99"]
+    p_at_p95 = p_min["p95"]
 
     print(f"\n--- Pressure at PBL top (from ERA5 geopotential) [Pa] ---")
     print(f"  At max PBL : {p_at_max:>10.0f} Pa  ({p_at_max/100:>7.1f} hPa)")
