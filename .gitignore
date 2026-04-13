@@ -1,4 +1,5 @@
 *.OU
+*.log
 *.venus
 *.png
 __pycache__/

@@ -18,7 +18,7 @@ cd /home/mhpereir/eulerian_heat_budget/scripts
 
 echo "[info] $(date -Is) starting on host $(hostname)"
 /usr/bin/time -v python check_pbl.py \
-        --year-start 1941 \
-        --year-end 1941 \
+        --year-start 2021 \
+        --year-end 2021 \
         --bbox 60 40 -130 -110
 echo "[info] $(date -Is) done"

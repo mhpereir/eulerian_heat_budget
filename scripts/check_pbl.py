@@ -96,7 +96,7 @@ def main() -> None:
     time_end = f"{args.year_end}-12-31"
     lat_min, lat_max, lon_min, lon_max = args.bbox
 
-    months_selection = [6]
+    months_selection = [6,7,8]
 
     print(f"Opening ARCO ERA5 store: {config.DEFAULT_ARCO_PATH}")
     ds_full = _open_arco_zarr_with_retry()
@@ -135,7 +135,7 @@ def main() -> None:
     print(f"Bbox       : lat [{lat_min}, {lat_max}], lon [{lon_min}, {lon_max}]")
     print(f"Grid points: time={pbl.sizes.get('time', '?')}, lat={pbl.sizes.get('lat', '?')}, lon={pbl.sizes.get('lon', '?')}")
     print("Computing statistics (this may take a moment)...")
-    
+
     pbl_max = float(pbl.max().compute())
     pbl_p99 = float(pbl.quantile(0.99).compute())
     pbl_p95 = float(pbl.quantile(0.95).compute())
@@ -197,6 +197,7 @@ def main() -> None:
     n_times = Z_flipped.sizes["time"]
     z_targets = {"max": pbl_max, "p99": pbl_p99, "p95": pbl_p95}
     p_min = {k: np.inf for k in z_targets}
+    p_spatial_mean_chunks = {k: [] for k in z_targets}
 
     for i_start in range(0, n_times, chunk_size):
         i_end = min(i_start + chunk_size, n_times)
@@ -206,6 +207,10 @@ def main() -> None:
         for key, z_target in z_targets.items():
             p_field = pressure_at_height(z_target, Z_chunk)
             p_min[key] = min(p_min[key], float(np.nanmin(p_field)))
+            # Spatial mean for each timestep: (n_time,)
+            p_spatial_mean_chunks[key].append(
+                np.nanmean(p_field, axis=(1, 2))
+            )
 
         del Z_chunk
 
@@ -217,6 +222,17 @@ def main() -> None:
     print(f"  At max PBL : {p_at_max:>10.0f} Pa  ({p_at_max/100:>7.1f} hPa)")
     print(f"  At P99 PBL : {p_at_p99:>10.0f} Pa  ({p_at_p99/100:>7.1f} hPa)")
     print(f"  At P95 PBL : {p_at_p95:>10.0f} Pa  ({p_at_p95/100:>7.1f} hPa)")
+
+    # Spatially averaged pressure at PBL top — temporal statistics
+    print(f"\n--- Pressure at PBL top (spatial mean, then temporal stats) [Pa] ---")
+    for key in z_targets:
+        ts = np.concatenate(p_spatial_mean_chunks[key])
+        sm_min = float(np.nanmin(ts))
+        sm_p99 = float(np.nanpercentile(ts, 99))
+        sm_p95 = float(np.nanpercentile(ts, 95))
+        sm_mean = float(np.nanmean(ts))
+        label = key.upper().rjust(3)
+        print(f"  At {label} PBL :  min={sm_min/100:>7.1f}  P01={sm_p99/100:>7.1f}  P05={sm_p95/100:>7.1f}  mean={sm_mean/100:>7.1f} hPa")
 
     print(f"\n--- Recommendation ---")
     print(f"  Set DEFAULT_ZG_TOP_PA to at most {round(p_at_max / 100) * 100:.0f} Pa")
