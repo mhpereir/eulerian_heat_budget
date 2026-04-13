@@ -2,7 +2,11 @@
 #PBS -N pbl_check
 #PBS -l select=1:ncpus=4:mem=12gb
 #PBS -j oe
-#PBS -o /home/mhpereir/eulerian_heat_budget/logs/
+#PBS -o /dev/null
+# PBS -o /home/mhpereir/eulerian_heat_budget/logs/
+
+LOGFILE="/home/mhpereir/eulerian_heat_budget/logs/pbl_check_${PBS_JOBID}.log"
+exec > >(tee -a "${LOGFILE}") 2>&1
 
 export MAMBA_ROOT_PREFIX=/home/mhpereir/miniconda3
 source /home/mhpereir/miniconda3/etc/profile.d/mamba.sh
