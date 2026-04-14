@@ -108,6 +108,9 @@ def test_domain_mean_pressure_series_uses_local_heights_first():
         progress=False,
     )
     summary = check_pbl._summarize_pressure_series(ts)
+    local_pressure_summary_hpa = check_pbl._summarize_local_pressure_field_hpa(
+        p_field_time_series
+    )
     spatial_summary = check_pbl._summarize_spatial_pressure_fields(p_field_time_series)
 
     p_1500 = np.sqrt(100000.0 * 80000.0)
@@ -123,6 +126,15 @@ def test_domain_mean_pressure_series_uses_local_heights_first():
     assert np.isclose(summary["mean"], expected_ts.mean())
     assert np.isclose(summary["p01"], np.nanpercentile(expected_ts, 1))
     assert np.isclose(summary["p05"], np.nanpercentile(expected_ts, 5))
+    assert np.isclose(local_pressure_summary_hpa["min"], p_2500 / 100.0)
+    assert np.isclose(
+        local_pressure_summary_hpa["p01"],
+        np.nanpercentile(p_field_time_series / 100.0, 1),
+    )
+    assert np.isclose(
+        local_pressure_summary_hpa["p05"],
+        np.nanpercentile(p_field_time_series / 100.0, 5),
+    )
     np.testing.assert_allclose(
         spatial_summary["min"],
         np.array([[p_1500, p_1500], [p_2500, p_2500]]),
@@ -195,6 +207,11 @@ def test_write_run_info_serializes_summary_payload(tmp_path):
         },
         "grid_points": {"time": 2208, "lat": 81, "lon": 81},
         "pbl_height_stats_m": {"max": 6603.3, "p99": 3549.7, "p95": 2486.9, "mean": 755.4},
+        "local_pbl_top_pressure_hpa": {
+            "min": 459.22,
+            "p01": 468.11,
+            "p05": 481.34,
+        },
         "domain_mean_pbl_top_pressure_pa": {
             "min": 79883.0,
             "p01": 81047.0,
@@ -225,7 +242,9 @@ def test_write_run_info_serializes_summary_payload(tmp_path):
     assert content["year"] == 2021
     assert content["months_included"] == [6, 7, 8]
     assert isinstance(content["pbl_height_stats_m"]["max"], float)
+    assert isinstance(content["local_pbl_top_pressure_hpa"]["min"], float)
     assert isinstance(content["domain_mean_pbl_top_pressure_pa"]["min"], float)
+    assert content["local_pbl_top_pressure_hpa"]["p05"] == 481.34
     assert content["artifacts"]["run_info_json"] == str(run_info_path)
     assert content["artifacts"]["plots"]["min"] == str(output_dir / "pbl_top_pressure_min.png")
 

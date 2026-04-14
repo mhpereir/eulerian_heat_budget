@@ -165,6 +165,18 @@ def _summarize_pressure_series(p_series: np.ndarray) -> dict[str, float]:
     }
 
 
+def _summarize_local_pressure_field_hpa(
+    p_field_time_series: np.ndarray,
+) -> dict[str, float]:
+    """Summarize the full local pressure field before spatial averaging, in hPa."""
+    flat_hpa = np.asarray(p_field_time_series, dtype=float) / 100.0
+    return {
+        "min": float(np.nanmin(flat_hpa)),
+        "p01": float(np.nanpercentile(flat_hpa, 1)),
+        "p05": float(np.nanpercentile(flat_hpa, 5)),
+    }
+
+
 def _summarize_spatial_pressure_fields(
     p_field_time_series: np.ndarray,
 ) -> dict[str, np.ndarray]:
@@ -341,6 +353,9 @@ def main() -> None:
         progress=True,
     )
     p_summary = _summarize_pressure_series(p_domain_mean_ts)
+    local_pressure_summary_hpa = _summarize_local_pressure_field_hpa(
+        p_field_time_series
+    )
     p_spatial_maps = _summarize_spatial_pressure_fields(p_field_time_series)
     recommended_zg_top_pa = float(np.floor(p_min_anywhere / 100) * 100)
 
@@ -380,6 +395,7 @@ def main() -> None:
             "p95": pbl_p95,
             "mean": pbl_mean,
         },
+        "local_pbl_top_pressure_hpa": local_pressure_summary_hpa,
         "domain_mean_pbl_top_pressure_pa": p_summary,
         "recommendation": {
             "default_zg_top_pa": recommended_zg_top_pa,
