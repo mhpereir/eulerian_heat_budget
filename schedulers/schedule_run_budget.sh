@@ -2,7 +2,11 @@
 #PBS -N eulerian_head_budget
 #PBS -l select=1:ncpus=12:mem=32gb
 #PBS -j oe
-#PBS -o /home/mhpereir/eulerian_heat_budget/logs/
+#PBS -o /dev/null
+# PBS -o /home/mhpereir/eulerian_heat_budget/logs/
+
+LOGFILE="/home/mhpereir/eulerian_heat_budget/logs/${PBS_JOBID}_EHB_single.log"
+exec > >(tee -a "${LOGFILE}") 2>&1
 
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1

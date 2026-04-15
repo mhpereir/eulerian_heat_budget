@@ -1,12 +1,17 @@
 #!/bin/bash
 #PBS -N eulerian_heat_budget_prod
-#PBS -J 0-85
-#PBS -l select=1:ncpus=8:mem=32gb
+#PBS -J 0-85%5
+#PBS -l select=1:ncpus=8:mem=36gb
 #PBS -j oe
-#PBS -o /home/mhpereir/eulerian_heat_budget/logs/
+#PBS -o /dev/null
+# PBS -o /home/mhpereir/eulerian_heat_budget/logs/
+
+LOGFILE="/home/mhpereir/eulerian_heat_budget/logs/${PBS_JOBID}_EHB_prod.log"
+exec > >(tee -a "${LOGFILE}") 2>&1
+
 
 export OMP_NUM_THREADS=1
-export MKL_NUM_THREADS=12
+export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 
@@ -19,7 +24,7 @@ set -euo pipefail
 START_YEAR=1940
 END_YEAR=2025
 DATA_SOURCE="${DATA_SOURCE:-arco_era5}"
-PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_1940_1949}"
+PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_full_run}"
 INIT_MANIFEST_ONLY="${INIT_MANIFEST_ONLY:-0}"
 ENABLE_DIAGNOSTIC_PLOTS="${ENABLE_DIAGNOSTIC_PLOTS:-1}"
 ENABLE_CONSTANT_TEMPERATURE_TEST="${ENABLE_CONSTANT_TEMPERATURE_TEST:-0}"
@@ -32,6 +37,8 @@ MANIFEST_WAIT_SECONDS="${MANIFEST_WAIT_SECONDS:-300}"
 mkdir -p "${PRODUCTION_OUTPUT_DIR}"
 
 cd /home/mhpereir/eulerian_heat_budget/scripts
+
+
 
 COMMON_RUN_ARGS=(
   --data-source "${DATA_SOURCE}"
