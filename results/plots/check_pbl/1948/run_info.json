@@ -1,0 +1,49 @@
+{
+  "year": 1948,
+  "months_included": [
+    6,
+    7,
+    8
+  ],
+  "bbox": {
+    "lat_min": 60.0,
+    "lat_max": 40.0,
+    "lon_min": -130.0,
+    "lon_max": -110.0
+  },
+  "grid_points": {
+    "time": 2208,
+    "lat": 81,
+    "lon": 81
+  },
+  "pbl_height_stats_m": {
+    "max": 6157.5478515625,
+    "p99": 3247.155432128905,
+    "p95": 2290.007568359375,
+    "mean": 716.321044921875
+  },
+  "local_pbl_top_pressure_hpa": {
+    "min": 474.116015625,
+    "p01": 676.823984375,
+    "p05": 756.276015625
+  },
+  "domain_mean_pbl_top_pressure_pa": {
+    "min": 80942.28324144254,
+    "p01": 82170.879975753,
+    "p05": 83794.61181441546,
+    "mean": 92366.57776082735
+  },
+  "recommendation": {
+    "default_zg_top_pa": 47400.0,
+    "lowest_local_pbl_top_pressure_pa": 47411.599753649236
+  },
+  "artifacts": {
+    "output_dir": "/home/mhpereir/eulerian_heat_budget/results/plots/check_pbl/1948",
+    "run_info_json": "/home/mhpereir/eulerian_heat_budget/results/plots/check_pbl/1948/run_info.json",
+    "plots": {
+      "min": "/home/mhpereir/eulerian_heat_budget/results/plots/check_pbl/1948/pbl_top_pressure_min.png",
+      "p01": "/home/mhpereir/eulerian_heat_budget/results/plots/check_pbl/1948/pbl_top_pressure_p01.png",
+      "p05": "/home/mhpereir/eulerian_heat_budget/results/plots/check_pbl/1948/pbl_top_pressure_p05.png"
+    }
+  }
+}

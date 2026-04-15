@@ -1,6 +1,7 @@
 #!/bin/bash
 #PBS -N pbl_check
-#PBS -l select=1:ncpus=4:mem=12gb
+#PBS -J 0-85
+#PBS -l select=1:ncpus=4:mem=24gb
 #PBS -j oe
 #PBS -o /dev/null
 # PBS -o /home/mhpereir/eulerian_heat_budget/logs/
@@ -14,10 +15,22 @@ mamba activate dev_env
 
 set -euo pipefail
 
+START_YEAR=1940
+END_YEAR=2025
+BBOX=("${BBOX_LAT_MIN:-60}" "${BBOX_LAT_MAX:-40}" "${BBOX_LON_MIN:--130}" "${BBOX_LON_MAX:--110}")
+
+: "${PBS_ARRAY_INDEX:?PBS_ARRAY_INDEX must be set for yearly check_pbl runs}"
+
+YEAR=$((START_YEAR + PBS_ARRAY_INDEX))
+if (( YEAR > END_YEAR )); then
+  echo "[error] Computed YEAR=${YEAR} exceeds END_YEAR=${END_YEAR}" >&2
+  exit 1
+fi
+
 cd /home/mhpereir/eulerian_heat_budget/scripts
 
-echo "[info] $(date -Is) starting on host $(hostname)"
+echo "[info] $(date -Is) starting year ${YEAR} on host $(hostname)"
 /usr/bin/time -v python check_pbl.py \
-        --year 2021 \
-        --bbox 60 40 -130 -110
-echo "[info] $(date -Is) done"
+        --year "${YEAR}" \
+        --bbox "${BBOX[@]}"
+echo "[info] $(date -Is) finished year ${YEAR}"
