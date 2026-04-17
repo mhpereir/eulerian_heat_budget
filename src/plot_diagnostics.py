@@ -10,6 +10,8 @@ import matplotlib.dates as mdates
 
 from matplotlib.lines import Line2D
 
+from .time_utils import integrate_rate_over_time, samples_for_duration
+
 #set label sizes 16
 plt.rcParams.update({'font.size': 16})
 
@@ -88,10 +90,9 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
         print("Time coordinate is NOT in datetime format. Check your dataset.")
         raise ValueError("Time coordinate is not in datetime format.")
 
-    dt = (advection_terms["time"][1] - advection_terms["time"][0]).values / np.timedelta64(1, 's') # convert to seconds
-    cumulative_residual = np.cumsum( delta_mass * dt)
-    cumulative_net_adv  = np.cumsum(advection_terms['net_mass_advection'] * dt)
-    cumulative_dvdt     = np.cumsum(dV_dt * dt)
+    cumulative_residual = integrate_rate_over_time(delta_mass).cumsum(dim="time")
+    cumulative_net_adv  = integrate_rate_over_time(advection_terms['net_mass_advection']).cumsum(dim="time")
+    cumulative_dvdt     = integrate_rate_over_time(dV_dt).cumsum(dim="time")
 
     ax[1].plot(advection_terms['time'], cumulative_residual * mean_norm_factor, color='k')
     
@@ -164,20 +165,21 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
     
     fig,ax = plt.subplots(figsize=(10, 10), tight_layout=True, nrows=3, sharex=True)
 
-    advection_terms_smoothed = advection_terms.rolling(time=24, center=True).mean()
+    smoothing_window = samples_for_duration(advection_terms["time"], 24 * 3600)
+    advection_terms_smoothed = advection_terms.rolling(time=smoothing_window, center=True).mean()
 
     for var in mass_vars:
         ax[0].plot(advection_terms_smoothed['time'], advection_terms_smoothed[var] * mean_norm_factor * time_rate_conversion, label=var)
 
         if var.split('_')[-1] in ['east', 'west']:
             net_zonal_mass_advection += advection_terms_smoothed[var].values* mean_norm_factor * time_rate_conversion
-            net_cum_zonal_mass_advection += np.cumsum(advection_terms[var].values * dt) * mean_norm_factor
+            net_cum_zonal_mass_advection += integrate_rate_over_time(advection_terms[var]).cumsum(dim="time").values * mean_norm_factor
         elif var.split('_')[-1] in ['north', 'south']:
             net_meridional_mass_advection += advection_terms_smoothed[var].values* mean_norm_factor * time_rate_conversion
-            net_cum_meridional_mass_advection += np.cumsum(advection_terms[var].values * dt) * mean_norm_factor
+            net_cum_meridional_mass_advection += integrate_rate_over_time(advection_terms[var]).cumsum(dim="time").values * mean_norm_factor
         elif var.split('_')[-1] in ['top', 'bottom']:
             net_vertical_mass_advection += advection_terms_smoothed[var].values* mean_norm_factor * time_rate_conversion
-            net_cum_vertical_mass_advection += np.cumsum(advection_terms[var].values * dt) * mean_norm_factor
+            net_cum_vertical_mass_advection += integrate_rate_over_time(advection_terms[var]).cumsum(dim="time").values * mean_norm_factor
 
     net_horizontal_mass_advection     = net_zonal_mass_advection + net_meridional_mass_advection
     net_cum_horizontal_mass_advection = net_cum_zonal_mass_advection + net_cum_meridional_mass_advection

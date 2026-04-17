@@ -4,16 +4,23 @@
 #PBS -l select=1:ncpus=4:mem=24gb
 #PBS -j oe
 #PBS -o /dev/null
-# PBS -o /home/mhpereir/eulerian_heat_budget/logs/
-
-LOGFILE="/home/mhpereir/eulerian_heat_budget/logs/pbl_check_${PBS_JOBID}.log"
-exec > >(tee -a "${LOGFILE}") 2>&1
-
-export MAMBA_ROOT_PREFIX=/home/mhpereir/miniconda3
-source /home/mhpereir/miniconda3/etc/profile.d/mamba.sh
-mamba activate dev_env
 
 set -euo pipefail
+
+SCHEDULER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd "${SCHEDULER_DIR}/.." && pwd)
+SCRIPT_DIR="${REPO_ROOT}/scripts"
+LOG_DIR="${REPO_ROOT}/logs"
+
+mkdir -p "${LOG_DIR}"
+
+LOGFILE="${LOG_DIR}/pbl_check_${PBS_JOBID:-manual}.log"
+exec > >(tee -a "${LOGFILE}") 2>&1
+
+export HOME="${HOME:-$(getent passwd "$(id -un)" | cut -d: -f6)}"
+export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-${HOME}/miniconda3}"
+source "${MAMBA_ROOT_PREFIX}/etc/profile.d/mamba.sh"
+mamba activate dev_env
 
 START_YEAR=1940
 END_YEAR=2025
@@ -27,7 +34,7 @@ if (( YEAR > END_YEAR )); then
   exit 1
 fi
 
-cd /home/mhpereir/eulerian_heat_budget/scripts
+cd "${SCRIPT_DIR}"
 
 echo "[info] $(date -Is) starting year ${YEAR} on host $(hostname)"
 /usr/bin/time -v python check_pbl.py \

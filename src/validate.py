@@ -19,6 +19,8 @@ This prevents silent scientific errors.
 import xarray as xr
 import numpy as np
 
+from .time_utils import require_regular_time
+
 REQUIRED_DIMS = ("time", "level", "lat", "lon")
 REQUIRED_VARS_4D = ("T", "u", "v", "w")
 REQUIRED_VARS_3D = ("sp",)
@@ -77,10 +79,8 @@ def validate_schema(ds: xr.Dataset) -> None:
 
     # Check time coordinate regularity
     time = ds["time"].values
-    if len(time) > 2:
-        dt = np.diff(time)
-        if not np.all(dt == dt[0]):
-            raise ValueError("Time coordinate must be regular (constant time step)")
+    if len(time) > 1:
+        require_regular_time(time)
     
     
 

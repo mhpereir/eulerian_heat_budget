@@ -4,9 +4,17 @@
 #PBS -l select=1:ncpus=8:mem=36gb
 #PBS -j oe
 #PBS -o /dev/null
-# PBS -o /home/mhpereir/eulerian_heat_budget/logs/
 
-LOGFILE="/home/mhpereir/eulerian_heat_budget/logs/${PBS_JOBID}_EHB_prod.log"
+set -euo pipefail
+
+SCHEDULER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd "${SCHEDULER_DIR}/.." && pwd)
+SCRIPT_DIR="${REPO_ROOT}/scripts"
+LOG_DIR="${REPO_ROOT}/logs"
+
+mkdir -p "${LOG_DIR}"
+
+LOGFILE="${LOG_DIR}/${PBS_JOBID:-manual}_EHB_prod.log"
 exec > >(tee -a "${LOGFILE}") 2>&1
 
 
@@ -15,16 +23,15 @@ export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 
-export MAMBA_ROOT_PREFIX=/home/mhpereir/miniconda3
-source /home/mhpereir/miniconda3/etc/profile.d/mamba.sh
+export HOME="${HOME:-$(getent passwd "$(id -un)" | cut -d: -f6)}"
+export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-${HOME}/miniconda3}"
+source "${MAMBA_ROOT_PREFIX}/etc/profile.d/mamba.sh"
 mamba activate dev_env
-
-set -euo pipefail
 
 START_YEAR=1940
 END_YEAR=2025
 DATA_SOURCE="${DATA_SOURCE:-arco_era5}"
-PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_full_run}"
+PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-${REPO_ROOT}/results/production/pnw_full_run}"
 INIT_MANIFEST_ONLY="${INIT_MANIFEST_ONLY:-0}"
 ENABLE_DIAGNOSTIC_PLOTS="${ENABLE_DIAGNOSTIC_PLOTS:-1}"
 ENABLE_CONSTANT_TEMPERATURE_TEST="${ENABLE_CONSTANT_TEMPERATURE_TEST:-0}"
@@ -36,7 +43,7 @@ MANIFEST_WAIT_SECONDS="${MANIFEST_WAIT_SECONDS:-300}"
 
 mkdir -p "${PRODUCTION_OUTPUT_DIR}"
 
-cd /home/mhpereir/eulerian_heat_budget/scripts
+cd "${SCRIPT_DIR}"
 
 
 

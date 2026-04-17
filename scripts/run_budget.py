@@ -264,9 +264,9 @@ def main() -> None:
         print(f"Saved yearly output to {yearly_output_path}")
 
     if diagnostic_plots:
-        plot_results.plot_budget_terms_hourly(result, smoothing_window=1, plot_dir=plot_dir)
-        plot_results.plot_budget_terms_hourly(result, smoothing_window=24, plot_dir=plot_dir)
-        plot_results.plot_budget_terms_day_bin(result, plot_dir=plot_dir)
+        plot_results.plot_budget_terms_timeseries(result, plot_dir=plot_dir, smoothing_duration_hours=None)
+        plot_results.plot_budget_terms_timeseries(result, plot_dir=plot_dir, smoothing_duration_hours=24)
+        plot_results.plot_budget_terms_daily(result, plot_dir=plot_dir)
 
     if constant_temperature_test:
         # testing to see if a constant temperature field, yields a net heat advection error comparable to the estimated advection error from mass continuity (delta_mass * T_scale)
@@ -301,7 +301,7 @@ def main() -> None:
         )
 
         if diagnostic_plots:
-            plot_results.plot_budget_terms_day_bin(result_test, plot_dir=constant_t_plot_dir)
+            plot_results.plot_budget_terms_daily(result_test, plot_dir=constant_t_plot_dir)
             plot_results.plot_constant_T_results(result, result_test, plot_dir=constant_t_plot_dir)
 
 if __name__ == "__main__":

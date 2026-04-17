@@ -395,10 +395,10 @@ Produces summary budget figures after a run completes.
 
 Current figure functions:
 
-- `plot_budget_terms_hourly()`
-  - hourly view with configurable rolling smoothing
-- `plot_budget_terms_day_bin()`
-  - daily-binned and daily-accumulated view
+- `plot_budget_terms_timeseries()`
+  - per-timestep view with optional elapsed-time smoothing
+- `plot_budget_terms_daily()`
+  - daily-binned and daily-integrated view using the dataset's actual timestep
 - `plot_constant_T_results()`
   - compares the advection-error estimate against the constant-`T` diagnostic rerun
 
