@@ -28,7 +28,6 @@ DEFAULT_TIME_START = "1941-06-01T00:00:00" # start time for budget period
 DEFAULT_TIME_END   = "1941-06-07T00:00:00" # end time for budget period 
 
 
-
 # constants
 g: float        = 9.806e0 #[m/s2] gravitational acceleration constant
 R_value:float   = 2.870e2 #[J/(kg*K)] specific gas constant for dry air (R = R*/M, where R* is the universal gas constant and M is the molar mass of dry air)
