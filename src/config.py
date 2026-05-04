@@ -27,7 +27,6 @@ DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS: float = 15.0
 DEFAULT_TIME_START = "1941-06-01T00:00:00" # start time for budget period
 DEFAULT_TIME_END   = "1941-06-07T00:00:00" # end time for budget period 
 
-
 # constants
 g: float        = 9.806e0 #[m/s2] gravitational acceleration constant
 R_value:float   = 2.870e2 #[J/(kg*K)] specific gas constant for dry air (R = R*/M, where R* is the universal gas constant and M is the molar mass of dry air)
@@ -36,6 +35,23 @@ cp: float       = 1.005e3 #specific heat capacity of air in [J/(kg*K)]
 
 # default config values
 DEFAULT_BBOX          = (40, 60, -130, -110) # lat_min, lat_max, lon_min, lon_max for domain extent (before margin/snap)
+
+# REGIONs (consistent with your threshold files)
+REGIONS: dict[str, Tuple[slice, slice]] = {
+    "canada":       (slice(40, 70), slice(-140,    -60)),
+    "canada_north": (slice(55, 70), slice(-140, -60)),
+    "canada_south": (slice(40, 55), slice(-140, -60)),
+    "west":       (slice(40, 70), slice(-140,    -113.33)),
+    "west_north": (slice(55, 70), slice(-140, -113.33)),
+    "west_south": (slice(40, 55), slice(-140, -113.33)),
+    "central":       (slice(40, 70), slice(-113.33, -88.66)),
+    "central_north": (slice(55, 70), slice(-113.33, -88.66)),
+    "central_south": (slice(40, 55), slice(-113.33, -88.66)),
+    "east":       (slice(40, 70), slice(-88.66,  -60)),
+    "east_north": (slice(55, 70), slice(-88.66, -60)),
+    "east_south": (slice(40, 55), slice(-88.66, -60)),
+    "pnw_bartusek": (slice(40, 60), slice(-130, -110))  #DEFAULT_BBOX
+}
 
 DEFAULT_MARGIN_N: int = 1 # number of grid points to keep as margin when determining domain extent
 
@@ -68,3 +84,5 @@ DEFAULT_CHUNKS_3D1 = {
     "lat": n_lat,
     "lon": n_lon,
 }
+
+
