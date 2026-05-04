@@ -6,10 +6,36 @@
 
 set -euo pipefail
 
-SCHEDULER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=$(cd "${SCHEDULER_DIR}/.." && pwd)
+resolve_repo_root() {
+  if [[ -n "${PROJECT_ROOT:-}" ]]; then
+    cd "${PROJECT_ROOT}" && pwd
+    return
+  fi
+
+  local submit_dir="${PBS_O_WORKDIR:-$PWD}"
+  if [[ -d "${submit_dir}/scripts" ]]; then
+    cd "${submit_dir}" && pwd
+    return
+  fi
+  if [[ -d "${submit_dir}/../scripts" ]]; then
+    cd "${submit_dir}/.." && pwd
+    return
+  fi
+
+  local scheduler_dir
+  scheduler_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  if [[ -d "${scheduler_dir}/../scripts" ]]; then
+    cd "${scheduler_dir}/.." && pwd
+    return
+  fi
+
+  echo "[error] Unable to resolve repository root. Set PROJECT_ROOT explicitly." >&2
+  exit 1
+}
+
+REPO_ROOT=$(resolve_repo_root)
 SCRIPT_DIR="${REPO_ROOT}/scripts"
-LOG_DIR="${REPO_ROOT}/logs"
+LOG_DIR="${LOG_DIR:-${REPO_ROOT}/logs}"
 
 mkdir -p "${LOG_DIR}"
 
