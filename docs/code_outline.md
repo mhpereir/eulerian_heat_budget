@@ -1,69 +1,91 @@
 # Eulerian Heat Budget - Current Code Outline
 
-March 31st, 2026
+May 4, 2026
 
 ## 1. Purpose
 
-This document describes the code as it exists today in this repository. It is a code-faithful reference for the current Eulerian heat-budget workflow in pressure coordinates, including the runtime pipeline, module boundaries, data contracts, outputs, and the present state of the test suite.
+This document describes the code as it exists today in this repository. It is a code-faithful reference for the current Eulerian heat-budget workflow in pressure coordinates, including the runtime pipeline, module boundaries, data contracts, outputs, associated scripts, and the present shape of the test suite.
 
-The implementation currently computes volume-integrated temperature storage, advective fluxes, and adiabatic heating over a regional control volume, then diagnoses a residual diabatic term from those pieces.
+The implementation computes volume-integrated temperature storage, advective fluxes, adiabatic heating, and a residual diabatic term over a regional control volume. It also supports ad hoc diagnostic runs, optional constant-temperature validation runs, and production-style yearly NetCDF output.
+
+Only active code paths are documented here. Legacy code inside commented or triple-quoted blocks is not treated as current behavior.
 
 ## 2. Runtime Pipeline
 
-The current end-to-end flow is:
+The current end-to-end budget flow is:
 
 1. `src/cli.py` parses command-line inputs.
 2. `scripts/run_budget.py` combines CLI values with defaults from `src/config.py` and constructs:
    - `specs.DomainRequest`
    - `specs.SurfaceBehaviour`
    - `specs.DataSourceConfig`
-3. `src/run_outputs.py` creates a run directory and resolves git provenance for the run metadata.
-4. `src/io.py` loads ERA5 data from either local files or ARCO Zarr and standardizes it to the internal schema.
-5. `src/validate.py` enforces the canonical dataset schema.
-6. `src/grid.py::determine_domain()` crops the domain and returns:
-   - `ds_domain`
-   - `ds_halo`
-   - `DomainSpec`
-7. `src/grid.py` builds geometric areas and cell volumes.
-8. `src/weights.py` builds face and volume occupancy weights using the resolved control-volume boundaries and surface-pressure logic.
-9. `src/terms.py` prepares face-centered advection inputs and computes storage, advection, adiabatic, and residual diabatic terms.
-10. `src/budget.py::calculate_budget()` assembles the final budget dataset and optional diagnostics.
-11. `src/plot_diagnostics.py` and `src/plot_results.py` write diagnostic and summary figures.
-12. `src/run_outputs.py::write_run_info()` stores a `run_info.json` record alongside the plots.
+   - runtime controls for diagnostic plots and constant-temperature testing
+   - optional production output settings
+3. `src/run_outputs.py` resolves git provenance for runtime source paths under `src`, `scripts`, and `schedulers`.
+4. If `--init-production-manifest` is used, the run writes a production manifest and exits before loading data.
+5. For normal ad hoc runs, `run_outputs.prepare_run_paths()` creates a run directory under the configured plot output root.
+6. For yearly production runs, `run_outputs.prepare_production_paths()` resolves:
+   - shared production manifest path
+   - annual NetCDF output path
+   - year-specific plot directory
+7. `src/io.py` loads ERA5 data from local NetCDF files or ARCO Zarr and standardizes it to the internal schema.
+8. `src/validate.py` enforces the canonical dataset schema.
+9. When using `arco_era5`, `src/io.py::load_arco_benchmark_fluxes()` also loads benchmark vertically integrated heat and mass fluxes for diagnostic comparison.
+10. `src/grid.py::determine_domain()` crops the domain and returns:
+    - `ds_domain`
+    - `ds_halo`
+    - `DomainSpec`
+11. Ad hoc runs write `run_info.json` through `src/run_outputs.py::write_run_info()`.
+12. `src/budget.py::calculate_budget()` builds geometry and weights, computes storage/advection/adiabatic/diabatic terms, merges advection diagnostics, and optionally writes diagnostic figures.
+13. Production yearly runs serialize the resulting budget dataset to `annual/heat_budget_<year>.nc`.
+14. If diagnostic plots are enabled, `src/plot_results.py` writes raw, 24-hour-smoothed, and daily summary plots.
+15. If the constant-temperature test is enabled, `scripts/run_budget.py` runs a second budget calculation with `T` replaced by `T_scale` and writes comparison plots when plotting is enabled.
+
+Under `__main__`, `scripts/run_budget.py` starts a Dask distributed `Client` with four workers, one thread per worker, processes enabled, and an 8 GB memory limit per worker.
 
 ## 3. Repository Structure
 
 ```text
-eulerian_heat_budget/
-├── docs/
-│   └── code_outline.md
-├── logs/
-├── results/
-├── schedulers/
-│   └── schedule_run_budget.sh
-├── scripts/
-│   └── run_budget.py
-├── src/
-│   ├── __init__.py
-│   ├── budget.py
-│   ├── cli.py
-│   ├── config.py
-│   ├── grid.py
-│   ├── integrals.py
-│   ├── io.py
-│   ├── plot_diagnostics.py
-│   ├── plot_results.py
-│   ├── run_outputs.py
-│   ├── specs.py
-│   ├── terms.py
-│   ├── validate.py
-│   └── weights.py
-└── tests/
-    ├── test_budget_closure.py
-    ├── test_grid.py
-    ├── test_integrals.py
-    ├── test_run_outputs.py
-    └── test_weights.py
+eulerian_heat_budget_6hr_test/
+|-- docs/
+|   |-- Eulerian Heat Budget - Reformulation.md
+|   `-- code_outline.md
+|-- logs/
+|-- results/
+|-- schedulers/
+|   |-- schedule_check_pbl.sh
+|   |-- schedule_run_budget.sh
+|   `-- schedule_run_budget_production.sh
+|-- scripts/
+|   |-- check_pbl.py
+|   `-- run_budget.py
+|-- src/
+|   |-- __init__.py
+|   |-- budget.py
+|   |-- cli.py
+|   |-- config.py
+|   |-- grid.py
+|   |-- integrals.py
+|   |-- io.py
+|   |-- plot_diagnostics.py
+|   |-- plot_results.py
+|   |-- run_outputs.py
+|   |-- specs.py
+|   |-- terms.py
+|   |-- time_utils.py
+|   |-- validate.py
+|   `-- weights.py
+`-- tests/
+    |-- test_budget_closure.py
+    |-- test_check_pbl.py
+    |-- test_grid.py
+    |-- test_integrals.py
+    |-- test_io.py
+    |-- test_plot_results.py
+    |-- test_run_budget.py
+    |-- test_run_outputs.py
+    |-- test_time_utils.py
+    `-- test_weights.py
 ```
 
 ## 4. Module Reference
@@ -78,6 +100,8 @@ Defines project constants and runtime defaults:
   - `DEFAULT_LOCAL_PATH`
   - `DEFAULT_ARCO_PATH`
   - `DEFAULT_ARCO_TOKEN`
+  - `DEFAULT_ARCO_OPEN_MAX_ATTEMPTS`
+  - `DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS`
   - `DEFAULT_TIME_START`
   - `DEFAULT_TIME_END`
 - Default domain settings:
@@ -90,12 +114,14 @@ Defines project constants and runtime defaults:
   - `DEFAULT_ALLOW_BOTTOM_OVERFLOW`
   - `DEFAULT_USE_SURFACE_VARIABLES`
   - `DEFAULT_SURFACE_VARIABLE_MODE`
-- Output and Dask defaults:
+- Output, runtime, and Dask defaults:
   - `DEFAULT_PLOTS_OUTPUT`
+  - `DEFAULT_DIAGNOSTIC_PLOTS`
+  - `DEFAULT_CONSTANT_TEMPERATURE_TEST`
   - `DEFAULT_CHUNKS_3D1`
   - chunk-size helpers `n_time`, `n_lat`, `n_lon`
 
-`config.py` does not perform calculations; it is the central source of default values used by the entrypoint.
+`config.py` does not perform calculations; it is the central source of default values used by scripts and CLI helpers.
 
 ### `src/specs.py`
 
@@ -113,7 +139,7 @@ Defines the dataclass-based contracts used throughout the run:
 - `DomainSpec`
   - stores resolved lat/lon bounds actually used after cropping
   - stores resolved top and bottom control-volume pressures
-  - includes validation for bottom-boundary consistency
+  - validates bottom-boundary consistency
 
 This module is the canonical definition of what the domain request, resolved domain, data source, and surface treatment mean in the current codebase.
 
@@ -135,8 +161,17 @@ Builds the command-line parser. It currently parses:
   - `--data-source`
   - `--time-start`
   - `--time-end`
+- Runtime toggles:
+  - `--diagnostic-plots` / `--no-diagnostic-plots`
+  - `--constant-temperature-test` / `--no-constant-temperature-test`
+- Production-output controls:
+  - `--production-output-dir`
+  - `--init-production-manifest`
+  - `--production-start-year`
+  - `--production-end-year`
+  - `--overwrite-output`
 
-The parser mostly returns `None` defaults. `scripts/run_budget.py` is responsible for filling unspecified values from `config.py`.
+Most parser defaults are `None` so `scripts/run_budget.py` can distinguish unspecified values from explicit user choices.
 
 ### `src/io.py`
 
@@ -144,12 +179,13 @@ Loads and standardizes input data. Current responsibilities are:
 
 - `load_dataset()`
   - dispatches to `_load_local_era5()` or `_load_arco_era5()`
+  - runs `standardize_era5_dataset()` before returning
 - Local ERA5 load path:
   - loads `T`, `u`, `v`, `w`, and `sp`
   - optionally loads `T2m`, `u10`, and `v10`
   - merges component datasets
 - ARCO ERA5 load path:
-  - opens the ARCO Zarr store
+  - opens the ARCO Zarr store through `_open_arco_zarr_with_retry()`
   - renames ERA5 variable names to the internal schema
   - optionally includes surface variables
 - `standardize_era5_dataset()`
@@ -161,6 +197,12 @@ Loads and standardizes input data. Current responsibilities are:
   - normalizes longitudes into `[-180, 180]`
   - applies the requested time slice
   - chunks the dataset for Dask workflows
+- `load_arco_benchmark_fluxes()`
+  - loads vertically integrated ARCO benchmark flux variables
+  - standardizes time/lat/lon coordinates and longitude convention
+  - chunks the result for later diagnostic comparison
+- `_open_arco_zarr_with_retry()`
+  - retries transient DNS, connection, server-disconnect, timeout, and service-unavailable failures using exponential backoff
 
 The current internal variable names expected downstream are:
 
@@ -189,8 +231,8 @@ Provides domain resolution and geometric operators.
 
 Current domain logic:
 
-- `determine_domain(ds, request, eager_loading=False)` interprets input `lat` and `lon` as cell-start coordinates, not cell centers.
-- The requested bbox is snapped to whole cells.
+- `determine_domain(ds, request, eager_loading=False)` interprets input `lat` and `lon` as cell-center coordinates.
+- The requested bbox selects grid cells whose centers lie inside the requested bounds.
 - `margin_n` is applied in cell space and must currently be at least `1`, because `ds_halo` is built from `margin_n - 1`.
 - The function returns:
   - `ds_domain`: the interior control-volume grid
@@ -202,8 +244,12 @@ Current domain logic:
   - `p_start`, `p_end`, `p_mid`
   - `lat_cell_id`, `lon_cell_id`, `p_cell_id`
 
-Current geometry helpers:
+Current geometry and alignment helpers:
 
+- `crop_to_target_grid(ds, target)`
+  - nearest-neighbour aligns a dataset to coordinates shared with a target dataset
+- `get_boundary_line_elements(ds)`
+  - returns wall line elements `dl_east`, `dl_west`, `dl_south`, and `dl_north` in meters
 - `get_horizontal_cell_areas(ds)`
   - returns top-face horizontal area `A_horizontal(lat, lon)` in `m2`
 - `get_vertical_cell_areas(ds)`
@@ -216,7 +262,7 @@ Current geometry helpers:
 - `get_cell_volumes(ds)`
   - returns `V_cell(level, lat, lon)` in `m2*Pa`
 
-The grid module currently handles only geometry and domain bookkeeping. It does not compute physics.
+The grid module handles geometry, domain bookkeeping, and benchmark-grid alignment. It does not compute heat-budget physics.
 
 ### `src/weights.py`
 
@@ -253,14 +299,27 @@ Current volume weights:
 
 ### `src/integrals.py`
 
-Contains the current pure integration operators only:
+Contains pure integration operators:
 
 - `area_integral(field_2d, area_2d, weights_2d)`
 - `volume_integral_pcoords(field_3d, volume_3d, weights_3d)`
 
-These functions operate on xarray arrays and sum over all non-time dimensions after multiplying the field by geometric factors and weights.
+These functions multiply the field by geometric factors and weights, then sum over all non-time dimensions. They validate that area integrals reduce two non-time dimensions and volume integrals reduce three non-time dimensions.
 
-Time differencing does not live here in the current code. It is implemented in `src/terms.py`.
+### `src/time_utils.py`
+
+Contains utilities for regular time axes:
+
+- `infer_timestep_seconds()`
+  - infers the first timestep in seconds
+- `require_regular_time()`
+  - validates constant spacing and returns the timestep in seconds
+- `samples_for_duration()`
+  - converts a duration in seconds into an integer sample count
+- `integrate_rate_over_time()`
+  - multiplies a rate time series by the dataset timestep
+
+`validate.py` uses this module to reject irregular time axes. `plot_results.py` and `plot_diagnostics.py` use it for cadence-aware smoothing and time integration.
 
 ### `src/terms.py`
 
@@ -276,19 +335,24 @@ Current public helpers:
 - `compute_adiabatic_term()`
 - `compute_diabatic_term()`
 - `compute_T_domain_average()`
+- `compute_advective_benchmark_fluxes()`
 
-Important internal helper:
+Important internal helpers:
 
 - `_adjust_surface_field()`
   - blends model-level and surface variables in the surface-adjacent layer when `use_surface_variables=True`
+- `_trim_advective_state()`
+  - reduces domain and halo datasets to only the variables needed for advection
+- `_drop_face_coords()`
+  - removes scalar/bound coordinates that no longer apply after extracting a face
 
 Current advection workflow:
 
-1. `prepare_advective_faces()` reduces the datasets to the variables needed for advection.
-2. In the standard budget path, `budget.calculate_budget()` first converts advection temperature inputs into anomalies relative to `T_domain_avg`.
+1. `budget.calculate_budget()` constructs anomaly-temperature advection inputs by subtracting `T_domain_avg` unless the constant-temperature diagnostic path is active.
+2. `prepare_advective_faces()` trims domain and halo inputs to the needed advection variables.
 3. If surface variables are enabled, `prepare_advective_faces()` adjusts `u`, `v`, and `T` near the surface using `u10`, `v10`, and `T2m`.
 4. It constructs face-centered quantities on west, east, south, north, and top faces, and bottom when the bottom boundary is fixed pressure.
-5. `compute_advective_term()` integrates the signed face fluxes using geometric areas and area weights.
+5. `compute_advective_term()` integrates signed heat and optional mass face fluxes using geometric areas and area weights.
 
 Current outputs from `compute_advective_term()`:
 
@@ -302,10 +366,10 @@ Current outputs from `compute_advective_term()`:
 
 Current thermodynamic terms:
 
-- `compute_storage()` computes the centered time derivative of volume-integrated temperature
-- `compute_adiabatic_term()` integrates `w * R * T / (cp * p)`
-- `compute_diabatic_term()` currently uses the code sign convention:
-  `D = S + A - C`
+- `compute_storage()` computes the centered time derivative of volume-integrated temperature.
+- `compute_adiabatic_term()` integrates `w * R * T / (cp * p)`.
+- `compute_diabatic_term()` currently uses the code sign convention `D = S + A - C`.
+- `compute_advective_benchmark_fluxes()` converts ARCO vertically integrated benchmark mass and heat fluxes onto the lateral control-volume walls for diagnostic comparison.
 
 ### `src/budget.py`
 
@@ -313,7 +377,7 @@ Orchestrates the full budget calculation.
 
 Current `calculate_budget()` workflow:
 
-1. Builds geometric areas and cell volumes.
+1. Builds horizontal areas, vertical areas, and cell volumes.
 2. Builds horizontal, vertical, and volume weights.
 3. Computes:
    - storage term `d_dt_T`
@@ -321,17 +385,20 @@ Current `calculate_budget()` workflow:
    - volume tendency `dV_dt`
    - domain-mean temperature `T_domain_avg`
    - normalized temperature tendency diagnostics `dT_dt` and `dT_dt_2`
-4. Prepares advection inputs.
+4. Prepares anomaly or constant-temperature advection inputs.
 5. Runs `prepare_advective_faces()` and `compute_advective_term()`.
 6. Estimates advection uncertainty as:
    `advection_error = (dV_dt + net_mass_advection) * T_scale`
 7. Computes:
    - `adiabatic_term`
    - `diabatic_term`
-8. Assembles the output dataset.
-9. Optionally writes diagnostic figures through `plot_diagnostics.py`.
+8. Merges the scalar budget terms with advection diagnostics.
+9. If benchmark fluxes are provided, aligns them to the halo grid and computes lateral benchmark comparison terms.
+10. If plotting is enabled, writes diagnostic figures through `plot_diagnostics.py`.
 
-Current output dataset fields are:
+The active runtime calls `calculate_budget()` with `integral_diagnostics_flag=True`, so the returned dataset includes both heat-budget terms and mass/advection diagnostics.
+
+Current main output fields are:
 
 - `d_dt_T`
 - `dT_dt`
@@ -344,14 +411,22 @@ Current output dataset fields are:
 - `T_domain_avg`
 - `domain_volume`
 - `T_scale`
-
-The current implementation also supports a constant-`T` diagnostic rerun through the `test_constant_T` argument.
+- `net_mass_advection`
+- per-face `flux_contribution_*`
+- per-face `mass_flux_contribution_*`
+- `abs_mass_advection_residual_fraction`
 
 ### `src/run_outputs.py`
 
 Handles run metadata and output-path setup.
 
-Current responsibilities:
+Current dataclasses:
+
+- `RunPaths`
+- `GitProvenance`
+- `ProductionPaths`
+
+Current ad hoc responsibilities:
 
 - `resolve_run_id()`
   - uses `PBS_JOBID` when available
@@ -359,22 +434,30 @@ Current responsibilities:
 - `prepare_run_paths()`
   - creates the run root and plot directory
   - returns `RunPaths`
+- `write_run_info()`
+  - serializes run metadata into `run_info.json`
+
+Current production responsibilities:
+
+- `prepare_production_paths()`
+  - creates shared `annual/` and `plots/` directories
+  - resolves `production_run.json`
+  - resolves `annual/heat_budget_<year>.nc` and `plots/<year>/` for yearly runs
+- `write_production_manifest()`
+  - writes shared campaign metadata and exits before data loading in manifest-init mode
+- `require_production_manifest()`
+  - fails yearly production runs if the shared manifest is absent
+- `resolve_production_year()`
+  - derives the year from `time_start` and `time_end`
+  - rejects cross-year production slices
+- `require_output_path()`
+  - prevents accidental overwrite unless `--overwrite-output` is used
+- `write_budget_result()`
+  - drops `None` attributes and writes the budget dataset to NetCDF
 - `resolve_git_provenance()`
   - captures current branch, commit, and dirty state
   - dirty-state checks are limited to tracked runtime sources under `src`, `scripts`, and `schedulers`
   - ignores generated noise such as `__pycache__` and `.pyc`
-- `write_run_info()`
-  - serializes run metadata into `run_info.json`
-
-Current run metadata includes:
-
-- run id and path information
-- resolved request and domain specs
-- source config
-- surface behavior
-- git provenance
-- raw CLI args
-- `PBS_JOBID` when available
 
 ### `src/plot_diagnostics.py`
 
@@ -383,11 +466,17 @@ Produces diagnostic figures written by `budget.calculate_budget()` when plotting
 Current figure functions:
 
 - `fig1_mass_continuity()`
+  - mass-continuity scatter and binned residual plots
 - `fig2_mass_advection_residual_timeseries()`
+  - mass residual, cumulative mass terms, relative mass error, and component time series
 - `fig3_advection_components_timeseries()`
+  - heat-advection component diagnostics and advection-error comparison
 - `fig4_temperature_derivative_timeseries()`
+  - storage and domain-average temperature tendency comparison
+- `fig5_benchmark_comparison()`
+  - lateral mass and heat flux comparison against ARCO benchmark fluxes
 
-These focus on mass continuity, flux decomposition, accumulated residuals, and the relationship between different temperature-tendency diagnostics.
+These focus on mass continuity, flux decomposition, accumulated residuals, temperature-tendency diagnostics, and optional benchmark-flux comparison.
 
 ### `src/plot_results.py`
 
@@ -397,6 +486,7 @@ Current figure functions:
 
 - `plot_budget_terms_timeseries()`
   - per-timestep view with optional elapsed-time smoothing
+  - smoothing windows are derived from the dataset timestep
 - `plot_budget_terms_daily()`
   - daily-binned and daily-integrated view using the dataset's actual timestep
 - `plot_constant_T_results()`
@@ -412,14 +502,18 @@ Current responsibilities:
 
 - inserts the project root into `sys.path`
 - parses CLI arguments
-- builds `DomainRequest`, `SurfaceBehaviour`, and `DataSourceConfig`
-- prepares run directories and git provenance
+- builds `DomainRequest`, `SurfaceBehaviour`, `DataSourceConfig`, runtime controls, and optional production options
+- resolves git provenance
+- initializes a production manifest and exits when requested
+- prepares ad hoc run paths or production yearly output paths
 - loads and validates the source dataset
+- loads ARCO benchmark fluxes when using `arco_era5`
 - resolves `ds_domain`, `ds_halo`, and `DomainSpec`
-- writes `run_info.json`
+- writes ad hoc `run_info.json`
 - calls `budget.calculate_budget()`
-- writes summary plots
-- runs a second constant-`T` diagnostic budget calculation and plots that comparison
+- writes production yearly NetCDF output when production mode is active
+- writes summary plots when diagnostic plotting is enabled
+- optionally runs the second constant-`T` diagnostic budget calculation
 
 Current runtime behavior under `__main__`:
 
@@ -430,9 +524,32 @@ Current runtime behavior under `__main__`:
   - `processes=True`
   - `memory_limit="8GB"`
 
-### `schedulers/schedule_run_budget.sh`
+### `scripts/check_pbl.py`
 
-This repository also includes a scheduler wrapper for launching the budget workflow in batch environments.
+This utility checks planetary boundary layer height from ARCO ERA5 for a given year and bounding box. It is used to inform the choice of `DEFAULT_ZG_TOP_PA`.
+
+Current behavior:
+
+- opens ARCO ERA5 with retry logic matching the budget loader
+- selects `boundary_layer_height` and `geopotential`
+- limits analysis to June, July, and August for the requested year
+- estimates pressure at the local PBL top using geopotential height and log-pressure interpolation
+- summarizes PBL height and PBL-top pressure statistics
+- writes year-specific `run_info.json`
+- writes spatial plots for minimum, p01, and p05 PBL-top pressure
+
+### `schedulers/`
+
+The repository includes scheduler wrappers for batch environments:
+
+- `schedule_run_budget.sh`
+  - launches the standard budget workflow
+- `schedule_run_budget_production.sh`
+  - launches production-style budget runs
+- `schedule_check_pbl.sh`
+  - launches the PBL checking utility
+
+The current wrappers resolve the repository root from `PROJECT_ROOT`, `PBS_O_WORKDIR`, submit directory, or script location, and allow `LOG_DIR` to be overridden through the environment.
 
 ## 5. Data Contracts
 
@@ -463,12 +580,24 @@ Required coordinate conventions at this stage:
 - `lat` strictly increasing
 - `lon` strictly increasing
 - longitudes normalized to `[-180, 180]`
+- time coordinate regular when multiple time steps are present
 
-### 5.2 Domain And Halo Datasets
+### 5.2 ARCO Benchmark Flux Dataset
+
+When the source is `arco_era5`, benchmark flux loading maps ARCO variables to:
+
+- `Fx_heat`
+- `Fy_heat`
+- `Fx_mass`
+- `Fy_mass`
+
+The benchmark dataset is standardized to `time`, `lat`, and `lon`, normalized to `[-180, 180]`, chunked, then later cropped to the halo grid for lateral wall comparison.
+
+### 5.3 Domain And Halo Datasets
 
 After `grid.determine_domain()`:
 
-- input horizontal coordinates have been reinterpreted from cell starts to cell centers
+- input horizontal coordinates are treated as cell centers
 - `ds_domain` is the interior control-volume grid used for volume integrals and top-face quantities
 - `ds_halo` carries a one-cell horizontal pad used for wall-face quantities
 - both datasets carry bound metadata:
@@ -477,9 +606,9 @@ After `grid.determine_domain()`:
   - `p_start`, `p_end`, `p_mid`
   - `lat_cell_id`, `lon_cell_id`, `p_cell_id`
 
-`DomainSpec` stores the resolved control-volume bounds actually used after snapping and margin application.
+`DomainSpec` stores the resolved control-volume bounds actually used after center selection and margin application.
 
-### 5.3 Geometry And Weight Outputs
+### 5.4 Geometry And Weight Outputs
 
 Current geometry outputs:
 
@@ -489,6 +618,10 @@ Current geometry outputs:
 - `A_south(level, lon)`
 - `A_north(level, lon)`
 - `V_cell(level, lat, lon)`
+- `dl_east(lat)`
+- `dl_west(lat)`
+- `dl_south(lon)`
+- `dl_north(lon)`
 
 Current weight outputs:
 
@@ -500,27 +633,33 @@ Current weight outputs:
 - `W_north(time, level, lon)`
 - `W_volume(time, level, lat, lon)`
 
-### 5.4 Budget Output Dataset
+### 5.5 Budget Output Dataset
 
-`budget.calculate_budget()` currently returns an `xarray.Dataset` containing:
+The active runtime calls `budget.calculate_budget()` with integral diagnostics enabled. The returned `xarray.Dataset` contains:
 
-- `d_dt_T`
-- `dT_dt`
-- `dT_dt_2`
-- `dV_dt`
-- `advection_term`
-- `advection_error`
-- `adiabatic_term`
-- `diabatic_term`
-- `T_domain_avg`
-- `domain_volume`
-- `T_scale`
+- primary budget terms:
+  - `d_dt_T`
+  - `dT_dt`
+  - `dT_dt_2`
+  - `dV_dt`
+  - `advection_term`
+  - `advection_error`
+  - `adiabatic_term`
+  - `diabatic_term`
+  - `T_domain_avg`
+  - `domain_volume`
+  - `T_scale`
+- advection diagnostics:
+  - `net_mass_advection`
+  - per-face `flux_contribution_*`
+  - per-face `mass_flux_contribution_*`
+  - `abs_mass_advection_residual_fraction`
 
-This output is the main input to the result-plotting functions.
+This output is the main input to result plotting and production NetCDF serialization.
 
-### 5.5 Run Metadata
+### 5.6 Run Metadata And Production Outputs
 
-Each run writes `run_info.json` with the current structure:
+Ad hoc runs write `run_info.json` with the current structure:
 
 ```json
 {
@@ -542,36 +681,50 @@ Each run writes `run_info.json` with the current structure:
 }
 ```
 
-## 6. Testing
+Production manifest initialization writes `production_run.json` with campaign-level metadata:
 
-The current test suite is mixed: parts of it reflect the present implementation closely, and parts of it still carry path assumptions from the earlier `eulerian_heat_budget_surface` repository layout.
+- generation timestamp and optional `PBS_JOBID`
+- production start and end year
+- shared root, annual output, plot root, and manifest paths
+- request, source, surface behavior, git provenance, and CLI args
+
+Production yearly runs require the manifest to exist and write:
+
+- `annual/heat_budget_<year>.nc`
+- plots under `plots/<year>/` when diagnostic plotting is enabled
+
+## 6. Testing
 
 Current test files:
 
 - `tests/test_grid.py`
-  - covers domain cropping, bounds metadata, horizontal areas, vertical areas, and cell volumes
+  - covers domain cropping, centered-coordinate bounds metadata, horizontal areas, vertical areas, cell volumes, and halo/core alignment
 - `tests/test_weights.py`
-  - covers horizontal-face weights, vertical-wall weights, and volume weights
+  - covers horizontal-face weights, vertical-wall weights, volume weights, and bottom-overflow behavior
 - `tests/test_budget_closure.py`
   - covers mass and heat-advection closure behavior for idealized flows
 - `tests/test_run_outputs.py`
-  - covers run-path creation and git provenance / metadata serialization
+  - covers ad hoc paths, production paths, production manifests, yearly output guards, NetCDF writing, metadata serialization, and git provenance behavior
+- `tests/test_run_budget.py`
+  - covers runtime CLI flags, production option validation, default run behavior, plotting toggles, constant-temperature reruns, production manifest initialization, and yearly production output flow
+- `tests/test_io.py`
+  - covers ARCO retry behavior, benchmark flux loading, and ARCO dataset loading retry dispatch
+- `tests/test_time_utils.py`
+  - covers timestep inference, duration-to-sample conversion, irregular-time rejection, and timestep-aware rate integration
+- `tests/test_plot_results.py`
+  - covers smoothing-window selection and cadence-neutral daily totals
+- `tests/test_check_pbl.py`
+  - covers PBL pressure interpolation, chunk-invariant PBL pressure summaries, spatial pressure metric plots, check-PBL run metadata, and parser behavior
 - `tests/test_integrals.py`
-  - currently empty
+  - exists in the test tree but currently has no test definitions
 
-Observed status in this working tree:
-
-- `tests/test_grid.py` and `tests/test_weights.py` pass under:
-  `mamba run -n dev_env pytest -q tests/test_grid.py tests/test_weights.py`
-- `tests/test_budget_closure.py` also passes when run on its own
-- some test files still hard-code the old `eulerian_heat_budget_surface` path
-- because the suite mixes old and current import-root assumptions, not every test file cleanly validates this repository when collected together
-
-This means the testing section should be read as a description of current coverage, not as a claim that the whole suite is fully harmonized.
+No pytest run is implied by this document. Treat this section as a map of current test intent and coverage, not as a fresh claim that the suite passes.
 
 ## 7. Current Implementation Notes
 
 - The document describes current behavior, even where the implementation is transitional.
-- Commented-out legacy code in `terms.py` and `plot_results.py` is not part of the active API and is not treated as the current design.
+- Active `grid.determine_domain()` treats horizontal input coordinates as cell centers.
+- Commented-out or triple-quoted legacy code in modules such as `grid.py`, `terms.py`, and `io.py` is not part of the active API.
 - The plotting modules live under `src/`, not under `scripts/`.
 - The main runtime entrypoint is `scripts/run_budget.py`, with `src/budget.py` acting as the orchestration layer used by that script.
+- `scripts/check_pbl.py` is a related diagnostic utility, not part of the main budget calculation.
