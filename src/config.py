@@ -37,7 +37,7 @@ cp: float       = 1.005e3 #specific heat capacity of air in [J/(kg*K)]
 DEFAULT_BBOX          = (40, 60, -130, -110) # lat_min, lat_max, lon_min, lon_max for domain extent (before margin/snap)
 
 # REGIONs (consistent with your threshold files)
-REGIONS: dict[str, Tuple[slice, slice]] = {
+REGIONS: dict[str, tuple[slice, slice]] = {
     "canada":       (slice(40, 70), slice(-140,    -60)),
     "canada_north": (slice(55, 70), slice(-140, -60)),
     "canada_south": (slice(40, 55), slice(-140, -60)),

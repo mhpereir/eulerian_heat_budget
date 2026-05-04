@@ -121,6 +121,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Data source to load input dataset from.",
     )
+    parser.add_argument(
+        "--benchmark-fluxes",
+        dest="benchmark_fluxes",
+        action="store_true",
+        default=False,
+        help="Load ARCO benchmark fluxes and generate benchmark comparison diagnostics.",
+    )
 
     parser.add_argument(
         "--time-start",
@@ -201,6 +208,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Overwrite an existing yearly production NetCDF output.",
+    )
+
+    six_hourly_group = parser.add_mutually_exclusive_group()
+    six_hourly_group.add_argument(
+        "--six-hourly-phases",
+        dest="six_hourly_phases",
+        action="store_true",
+        default=False,
+        help="Run all six UTC-hour modulo-6 phase groups.",
+    )
+    six_hourly_group.add_argument(
+        "--six-hourly-phase",
+        dest="six_hourly_phase",
+        type=int,
+        choices=range(6),
+        metavar="R",
+        default=None,
+        help="Run one UTC-hour modulo-6 phase group.",
     )
 
 

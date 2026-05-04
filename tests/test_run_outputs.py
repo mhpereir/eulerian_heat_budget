@@ -10,11 +10,13 @@ import json
 from pathlib import Path
 import subprocess
 
+import numpy as np
 import pytest
 import xarray as xr
 
 from src.run_outputs import (
     GitProvenance,
+    combine_phase_budget_results,
     prepare_production_paths,
     prepare_run_paths,
     ProductionPaths,
@@ -22,6 +24,7 @@ from src.run_outputs import (
     require_production_manifest,
     resolve_production_year,
     resolve_git_provenance,
+    six_hourly_ad_hoc_output_path,
     write_budget_result,
     write_production_manifest,
     write_run_info,
@@ -155,6 +158,33 @@ def test_prepare_production_paths_creates_shared_layout(tmp_path):
     assert Path(paths.plot_dir).is_dir()
 
 
+def test_prepare_production_paths_uses_six_hourly_output_suffix(tmp_path):
+    all_phase = prepare_production_paths(
+        str(tmp_path / "production"),
+        year=1940,
+        output_suffix="6hr_phases",
+    )
+    single_phase = prepare_production_paths(
+        str(tmp_path / "production"),
+        year=1940,
+        output_suffix="6hr_phase_r3",
+    )
+
+    assert Path(all_phase.output_path) == tmp_path / "production" / "annual" / "heat_budget_1940_6hr_phases.nc"
+    assert Path(single_phase.output_path) == tmp_path / "production" / "annual" / "heat_budget_1940_6hr_phase_r3.nc"
+
+
+def test_six_hourly_ad_hoc_output_path_uses_run_root(tmp_path):
+    paths = prepare_run_paths(str(tmp_path), env={"PBS_JOBID": "2586030.venus"})
+
+    assert six_hourly_ad_hoc_output_path(paths, phases=list(range(6))) == str(
+        tmp_path / "2586030.venus" / "heat_budget_6hr_phases.nc"
+    )
+    assert six_hourly_ad_hoc_output_path(paths, phases=[3]) == str(
+        tmp_path / "2586030.venus" / "heat_budget_6hr_phase_r3.nc"
+    )
+
+
 def test_resolve_production_year_rejects_cross_year_ranges():
     with pytest.raises(ValueError, match="same calendar year"):
         resolve_production_year(
@@ -212,6 +242,100 @@ def test_write_production_manifest_serializes_shared_campaign_metadata(tmp_path)
     assert payload["source_spec"]["time_start"] is None
     assert payload["source_spec"]["time_end"] is None
     assert payload["git"]["dirty"] is False
+
+
+def test_write_metadata_serializes_temporal_sampling(tmp_path):
+    paths = prepare_run_paths(str(tmp_path), env={"PBS_JOBID": "2586030.venus"})
+    request = DomainRequest(
+        bbox=(40.0, 60.0, -130.0, -110.0),
+        margin_n=1,
+        zg_top_pressure=60000.0,
+        zg_bottom="surface_pressure",
+        zg_bottom_pressure=None,
+    )
+    source_spec = DataSourceConfig(kind="local_era5", path_data="/tmp/data")
+    domain_spec = DomainSpec(
+        lat_min=40.25,
+        lat_max=59.75,
+        lon_min=-129.75,
+        lon_max=-110.25,
+        zg_top_pressure=60000.0,
+        zg_bottom="surface_pressure",
+        zg_bottom_pressure=None,
+    )
+    surface_behaviour = SurfaceBehaviour(
+        allow_bottom_overflow=False,
+        use_surface_variables=False,
+        surface_variable_mode="none",
+    )
+    git_provenance = GitProvenance(branch="test", commit="abc", dirty=False)
+    temporal_sampling = {
+        "mode": "six_hourly_phase",
+        "stride_hours": 6,
+        "phase_hours": [3],
+        "phase_definition": "UTC hour modulo stride_hours",
+    }
+
+    metadata_path = write_run_info(
+        paths,
+        request=request,
+        source_spec=source_spec,
+        domain_spec=domain_spec,
+        surface_behaviour=surface_behaviour,
+        git_provenance=git_provenance,
+        cli_args={},
+        temporal_sampling=temporal_sampling,
+        budget_output_path=str(tmp_path / "out.nc"),
+    )
+
+    payload = json.loads(Path(metadata_path).read_text())
+
+    assert payload["temporal_sampling"] == temporal_sampling
+    assert payload["budget_output_path"] == str(tmp_path / "out.nc")
+
+
+def test_combine_phase_budget_results_pads_unequal_time_variables_and_scalars():
+    phase0 = xr.Dataset(
+        {
+            "d_dt_T": xr.DataArray([1.0, 2.0], dims=("time",)),
+            "T_scale": xr.DataArray(10.0),
+        },
+        coords={"time": [datetime(2000, 1, 1, 0), datetime(2000, 1, 1, 6)]},
+    )
+    phase1 = xr.Dataset(
+        {
+            "d_dt_T": xr.DataArray([3.0], dims=("time",)),
+            "T_scale": xr.DataArray(20.0),
+        },
+        coords={"time": [datetime(2000, 1, 1, 1)]},
+    )
+
+    combined = combine_phase_budget_results({0: phase0, 1: phase1})
+
+    assert combined["d_dt_T"].dims == ("phase", "sample")
+    assert combined["T_scale"].dims == ("phase",)
+    assert combined["phase"].values.tolist() == [0, 1]
+    assert combined["phase_hour"].values.tolist() == [0, 1]
+    assert combined["sample"].values.tolist() == [0, 1]
+    assert combined["valid_sample"].values.tolist() == [[True, True], [True, False]]
+    assert combined["utc_hour"].values.tolist() == [[0, 6], [1, -1]]
+    assert combined["T_scale"].values.tolist() == [10.0, 20.0]
+    assert np.isnan(combined["d_dt_T"].sel(phase=1, sample=1).item())
+
+
+def test_combine_phase_budget_results_rejects_non_time_non_scalar_variables():
+    phase0 = xr.Dataset(
+        {
+            "profile": xr.DataArray([1.0, 2.0], dims=("level",)),
+        },
+        coords={
+            "time": [datetime(2000, 1, 1, 0)],
+            "level": [1000.0, 900.0],
+        },
+    )
+
+    with pytest.raises(ValueError, match="unsupported non-time dimensions"):
+        combine_phase_budget_results({0: phase0})
 
 
 def test_require_production_manifest_raises_when_missing(tmp_path):

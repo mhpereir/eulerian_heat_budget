@@ -3,11 +3,14 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime
 import json
+import numpy as np
 import os
 import re
 from pathlib import Path
 import subprocess
 from typing import Any, Mapping
+
+import xarray as xr
 
 from .specs import DomainRequest, DomainSpec, SurfaceBehaviour, DataSourceConfig
 
@@ -86,6 +89,7 @@ def prepare_production_paths(
     production_output_dir: str,
     *,
     year: int | None = None,
+    output_suffix: str | None = None,
 ) -> ProductionPaths:
     root_dir = Path(production_output_dir)
     annual_dir = root_dir / "annual"
@@ -94,7 +98,12 @@ def prepare_production_paths(
     annual_dir.mkdir(parents=True, exist_ok=True)
     plot_root.mkdir(parents=True, exist_ok=True)
 
-    output_path = annual_dir / f"heat_budget_{year}.nc" if year is not None else None
+    if year is None:
+        output_path = None
+    elif output_suffix is None:
+        output_path = annual_dir / f"heat_budget_{year}.nc"
+    else:
+        output_path = annual_dir / f"heat_budget_{year}_{output_suffix}.nc"
     plot_dir = plot_root / str(year) if year is not None else None
 
     if plot_dir is not None:
@@ -120,6 +129,8 @@ def write_run_info(
     surface_behaviour: SurfaceBehaviour,
     git_provenance: GitProvenance,
     cli_args: Mapping[str, Any],
+    temporal_sampling: Mapping[str, Any] | None = None,
+    budget_output_path: str | None = None,
     env: Mapping[str, str] | None = None,
     now: datetime | None = None,
 ) -> str:
@@ -139,6 +150,10 @@ def write_run_info(
         "git": git_provenance,
         "cli_args": dict(cli_args),
     }
+    if temporal_sampling is not None:
+        payload["temporal_sampling"] = dict(temporal_sampling)
+    if budget_output_path is not None:
+        payload["budget_output_path"] = budget_output_path
 
     metadata_path = Path(paths.metadata_path)
     metadata_path.write_text(json.dumps(payload, indent=2, default=_json_default) + "\n")
@@ -188,6 +203,7 @@ def write_production_manifest(
     surface_behaviour: SurfaceBehaviour,
     git_provenance: GitProvenance,
     cli_args: Mapping[str, Any],
+    temporal_sampling: Mapping[str, Any] | None = None,
     env: Mapping[str, str] | None = None,
     now: datetime | None = None,
 ) -> str:
@@ -213,9 +229,114 @@ def write_production_manifest(
         "git": git_provenance,
         "cli_args": dict(cli_args),
     }
+    if temporal_sampling is not None:
+        payload["temporal_sampling"] = dict(temporal_sampling)
 
     manifest_path.write_text(json.dumps(payload, indent=2, default=_json_default) + "\n")
     return str(manifest_path)
+
+
+def six_hourly_output_suffix(*, phases: list[int]) -> str:
+    if phases == list(range(6)):
+        return "6hr_phases"
+    if len(phases) == 1:
+        return f"6hr_phase_r{phases[0]}"
+    raise ValueError("6-hour output suffix requires all phases or one selected phase.")
+
+
+def six_hourly_ad_hoc_output_path(paths: RunPaths, *, phases: list[int]) -> str:
+    return str(Path(paths.run_root) / f"heat_budget_{six_hourly_output_suffix(phases=phases)}.nc")
+
+
+def combine_phase_budget_results(
+    phase_results: Mapping[int, xr.Dataset],
+) -> xr.Dataset:
+    if not phase_results:
+        raise ValueError("At least one phase result is required.")
+
+    phases = list(phase_results.keys())
+    first_vars = set(next(iter(phase_results.values())).data_vars)
+    for phase, ds in phase_results.items():
+        if "time" not in ds.coords:
+            raise ValueError(f"Phase {phase} result must have a time coordinate.")
+        if set(ds.data_vars) != first_vars:
+            raise ValueError("All phase results must contain the same data variables.")
+
+    max_samples = max(ds.sizes["time"] for ds in phase_results.values())
+    sample = np.arange(max_samples, dtype=int)
+
+    combined_vars: dict[str, xr.DataArray] = {}
+    for name in sorted(first_vars):
+        arrays = [
+            _phase_variable_to_sample_array(phase_results[phase][name], sample)
+            for phase in phases
+        ]
+        combined_vars[name] = xr.concat(
+            arrays,
+            dim=xr.DataArray(phases, dims=("phase",), name="phase"),
+        )
+
+    valid_time, utc_hour, valid_sample = _phase_sample_metadata(phase_results, phases, sample)
+    combined = xr.Dataset(
+        combined_vars,
+        coords={
+            "phase": ("phase", phases),
+            "phase_hour": ("phase", phases),
+            "sample": ("sample", sample),
+        },
+    )
+    combined["valid_time"] = xr.DataArray(
+        valid_time,
+        dims=("phase", "sample"),
+        coords={"phase": phases, "sample": sample},
+    )
+    combined["utc_hour"] = xr.DataArray(
+        utc_hour,
+        dims=("phase", "sample"),
+        coords={"phase": phases, "sample": sample},
+    )
+    combined["valid_sample"] = xr.DataArray(
+        valid_sample,
+        dims=("phase", "sample"),
+        coords={"phase": phases, "sample": sample},
+    )
+    return combined
+
+
+def _phase_variable_to_sample_array(da: xr.DataArray, sample: np.ndarray) -> xr.DataArray:
+    if "time" in da.dims:
+        out = da.rename({"time": "sample"})
+        out = out.assign_coords(sample=np.arange(da.sizes["time"], dtype=int))
+        return out.reindex(sample=sample)
+    if da.dims == ():
+        return da
+    raise ValueError(
+        f"Variable {da.name!r} has unsupported non-time dimensions {da.dims}."
+    )
+
+
+def _phase_sample_metadata(
+    phase_results: Mapping[int, xr.Dataset],
+    phases: list[int],
+    sample: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    shape = (len(phases), sample.size)
+    valid_time = np.full(shape, np.datetime64("NaT", "ns"), dtype="datetime64[ns]")
+    utc_hour = np.full(shape, -1, dtype=np.int16)
+    valid_sample = np.zeros(shape, dtype=bool)
+
+    for i, phase in enumerate(phases):
+        times = np.asarray(phase_results[phase]["time"].values, dtype="datetime64[ns]")
+        n_time = times.size
+        valid_time[i, :n_time] = times
+        utc_hour[i, :n_time] = _utc_hours(times)
+        valid_sample[i, :n_time] = True
+
+    return valid_time, utc_hour, valid_sample
+
+
+def _utc_hours(times: np.ndarray) -> np.ndarray:
+    return (times.astype("datetime64[h]").astype("int64") % 24).astype(np.int16)
 
 
 def require_production_manifest(paths: ProductionPaths) -> str:

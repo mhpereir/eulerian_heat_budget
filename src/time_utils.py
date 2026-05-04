@@ -47,6 +47,35 @@ def require_regular_time(time: xr.DataArray | xr.Variable | np.ndarray) -> float
     return first_seconds
 
 
+def select_phase_by_utc_hour(
+    ds: xr.Dataset,
+    *,
+    stride_hours: int = 6,
+    phase: int,
+) -> xr.Dataset:
+    if stride_hours <= 0:
+        raise ValueError("stride_hours must be positive.")
+    if phase < 0 or phase >= stride_hours:
+        raise ValueError("phase must satisfy 0 <= phase < stride_hours.")
+    if "time" not in ds.coords:
+        raise ValueError("Dataset must have a time coordinate.")
+
+    time = ds["time"]
+    if time.ndim != 1 or time.dims != ("time",):
+        raise ValueError("Time coordinate must be one-dimensional over 'time'.")
+
+    mask = (time.dt.hour % stride_hours) == phase
+    selected = ds.sel(time=mask)
+
+    if selected.sizes.get("time", 0) < 3:
+        raise ValueError(
+            "Selected phase must contain at least three timestamps for centered differencing."
+        )
+
+    require_regular_time(selected["time"])
+    return selected
+
+
 def samples_for_duration(
     time: xr.DataArray | xr.Variable | np.ndarray,
     duration_seconds: float,

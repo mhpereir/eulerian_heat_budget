@@ -14,6 +14,7 @@ from src.time_utils import (
     integrate_rate_over_time,
     require_regular_time,
     samples_for_duration,
+    select_phase_by_utc_hour,
 )
 
 
@@ -54,3 +55,47 @@ def test_integrate_rate_over_time_uses_actual_timestep():
     integrated = integrate_rate_over_time(rate)
 
     assert integrated.values.tolist() == [21600.0] * 4
+
+
+def test_select_phase_by_utc_hour_selects_expected_hours():
+    time = pd.date_range("2000-01-01", periods=24, freq="1h")
+    ds = xr.Dataset(coords={"time": time})
+
+    for phase in range(6):
+        selected = select_phase_by_utc_hour(ds, stride_hours=6, phase=phase)
+
+        assert selected["time"].dt.hour.values.tolist() == [
+            phase,
+            phase + 6,
+            phase + 12,
+            phase + 18,
+        ]
+        assert require_regular_time(selected["time"]) == 21600.0
+
+
+def test_select_phase_by_utc_hour_rejects_invalid_stride():
+    ds = xr.Dataset(coords={"time": pd.date_range("2000-01-01", periods=4, freq="1h")})
+
+    with pytest.raises(ValueError, match="stride_hours must be positive"):
+        select_phase_by_utc_hour(ds, stride_hours=0, phase=0)
+
+
+def test_select_phase_by_utc_hour_rejects_invalid_phase():
+    ds = xr.Dataset(coords={"time": pd.date_range("2000-01-01", periods=4, freq="1h")})
+
+    with pytest.raises(ValueError, match="0 <= phase < stride_hours"):
+        select_phase_by_utc_hour(ds, stride_hours=6, phase=6)
+
+
+def test_select_phase_by_utc_hour_requires_time_coordinate():
+    ds = xr.Dataset(coords={"x": [1, 2, 3]})
+
+    with pytest.raises(ValueError, match="time coordinate"):
+        select_phase_by_utc_hour(ds, stride_hours=6, phase=0)
+
+
+def test_select_phase_by_utc_hour_requires_three_samples():
+    ds = xr.Dataset(coords={"time": pd.date_range("2000-01-01", periods=12, freq="1h")})
+
+    with pytest.raises(ValueError, match="at least three timestamps"):
+        select_phase_by_utc_hour(ds, stride_hours=6, phase=0)

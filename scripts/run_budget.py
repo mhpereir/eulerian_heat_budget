@@ -11,12 +11,22 @@ import xarray as xr
 
 from src import config, cli, specs, io, validate, grid, budget, run_outputs
 from src import plot_results
+from src.time_utils import select_phase_by_utc_hour
 
 import logging
 from dask.distributed import Client
     
 
 from src import terms
+
+
+SIX_HOURLY_STRIDE_HOURS = 6
+ARCO_BENCHMARK_VAR_MAP = {
+    "vertical_integral_of_eastward_heat_flux":  "Fx_heat",
+    "vertical_integral_of_northward_heat_flux": "Fy_heat",
+    "vertical_integral_of_eastward_mass_flux":  "Fx_mass",
+    "vertical_integral_of_northward_mass_flux": "Fy_mass",
+}
 
 
 @dataclass(frozen=True)
@@ -150,12 +160,205 @@ def build_production_options_from_cli(args) -> ProductionOptions | None:
         overwrite_output=args.overwrite_output,
     )
 
+
+def selected_six_hourly_phases_from_cli(args) -> list[int] | None:
+    if args.six_hourly_phases:
+        return list(range(SIX_HOURLY_STRIDE_HOURS))
+    if args.six_hourly_phase is not None:
+        return [args.six_hourly_phase]
+    return None
+
+
+def temporal_sampling_metadata(phases: list[int] | None) -> dict[str, object] | None:
+    if phases is None:
+        return None
+    return {
+        "mode": "six_hourly_phases" if len(phases) > 1 else "six_hourly_phase",
+        "stride_hours": SIX_HOURLY_STRIDE_HOURS,
+        "phase_hours": phases,
+        "phase_definition": "UTC hour modulo stride_hours",
+    }
+
+
+def _phase_plot_dir(plot_dir: str, phase: int | None) -> str:
+    if phase is None:
+        return plot_dir
+    return os.path.join(plot_dir, f"phase_r{phase}")
+
+
+def _load_inputs(
+    SourceCfg: specs.DataSourceConfig,
+    SurfaceSpecs: specs.SurfaceBehaviour,
+    *,
+    benchmark_fluxes: bool,
+) -> tuple[xr.Dataset, xr.Dataset | None]:
+    ds_merged = io.load_dataset(SourceCfg, SurfaceSpecs)
+    validate.validate_schema(ds_merged)
+
+    ds_bench = None
+    if benchmark_fluxes and SourceCfg.kind == "arco_era5":
+        ds_bench = io.load_arco_benchmark_fluxes(SourceCfg, ARCO_BENCHMARK_VAR_MAP)
+
+    return ds_merged, ds_bench
+
+
+def _plot_budget_result(result: xr.Dataset, *, plot_dir: str) -> None:
+    plot_results.plot_budget_terms_timeseries(
+        result,
+        plot_dir=plot_dir,
+        smoothing_duration_hours=None,
+    )
+    plot_results.plot_budget_terms_timeseries(
+        result,
+        plot_dir=plot_dir,
+        smoothing_duration_hours=24,
+    )
+    plot_results.plot_budget_terms_daily(result, plot_dir=plot_dir)
+
+
+def _run_one_budget(
+    ds_merged: xr.Dataset,
+    ds_bench: xr.Dataset | None,
+    request: specs.DomainRequest,
+    SurfaceSpecs: specs.SurfaceBehaviour,
+    *,
+    diagnostic_plots: bool,
+    constant_temperature_test: bool,
+    plot_dir: str,
+) -> tuple[xr.Dataset, specs.DomainSpec]:
+    ds_domain, ds_halo, DomainSpecs = grid.determine_domain(
+        ds_merged,
+        request,
+        eager_loading=True,
+    )
+
+    print('Proceeding with', DomainSpecs)
+
+    result = budget.calculate_budget(
+        ds_domain,
+        ds_halo,
+        DomainSpecs,
+        SurfaceSpecs,
+        integral_diagnostics_flag=True,
+        plot_dir=plot_dir,
+        plot_flag=diagnostic_plots,
+        benchmark_ds=ds_bench
+    )
+
+    if diagnostic_plots:
+        _plot_budget_result(result, plot_dir=plot_dir)
+
+    if constant_temperature_test:
+        _run_constant_temperature_test(
+            ds_domain,
+            ds_halo,
+            DomainSpecs,
+            SurfaceSpecs,
+            result,
+            diagnostic_plots=diagnostic_plots,
+            plot_dir=plot_dir,
+        )
+
+    return result, DomainSpecs
+
+
+def _run_constant_temperature_test(
+    ds_domain: xr.Dataset,
+    ds_halo: xr.Dataset,
+    DomainSpecs: specs.DomainSpec,
+    SurfaceSpecs: specs.SurfaceBehaviour,
+    result: xr.Dataset,
+    *,
+    diagnostic_plots: bool,
+    plot_dir: str,
+) -> None:
+    constant_t_plot_dir = plot_dir + '/constant_T'
+    if diagnostic_plots:
+        os.makedirs(constant_t_plot_dir, exist_ok=True)
+
+    ds_domain_test = ds_domain.assign(
+        T=xr.full_like(ds_domain['T'], result.T_scale)
+    )
+    ds_halo_test = ds_halo.assign(
+        T=xr.full_like(ds_halo['T'], result.T_scale)
+    )
+
+    result_test = budget.calculate_budget(
+        ds_domain_test,
+        ds_halo_test,
+        DomainSpecs,
+        SurfaceSpecs,
+        integral_diagnostics_flag=True,
+        plot_dir=constant_t_plot_dir,
+        plot_flag=diagnostic_plots,
+        test_constant_T=True
+    )
+
+    if diagnostic_plots:
+        plot_results.plot_budget_terms_daily(result_test, plot_dir=constant_t_plot_dir)
+        plot_results.plot_constant_T_results(result, result_test, plot_dir=constant_t_plot_dir)
+
+
+def _select_phase_dataset(ds: xr.Dataset | None, phase: int) -> xr.Dataset | None:
+    if ds is None:
+        return None
+    return select_phase_by_utc_hour(
+        ds,
+        stride_hours=SIX_HOURLY_STRIDE_HOURS,
+        phase=phase,
+    )
+
+
+def _run_phase_budgets(
+    ds_merged: xr.Dataset,
+    ds_bench: xr.Dataset | None,
+    request: specs.DomainRequest,
+    SurfaceSpecs: specs.SurfaceBehaviour,
+    *,
+    phases: list[int],
+    diagnostic_plots: bool,
+    constant_temperature_test: bool,
+    plot_dir: str,
+) -> tuple[dict[int, xr.Dataset], specs.DomainSpec]:
+    phase_results: dict[int, xr.Dataset] = {}
+    first_domain_spec: specs.DomainSpec | None = None
+
+    for phase in phases:
+        phase_plot_dir = _phase_plot_dir(plot_dir, phase)
+        if diagnostic_plots:
+            os.makedirs(phase_plot_dir, exist_ok=True)
+
+        result, DomainSpecs = _run_one_budget(
+            select_phase_by_utc_hour(
+                ds_merged,
+                stride_hours=SIX_HOURLY_STRIDE_HOURS,
+                phase=phase,
+            ),
+            _select_phase_dataset(ds_bench, phase),
+            request,
+            SurfaceSpecs,
+            diagnostic_plots=diagnostic_plots,
+            constant_temperature_test=constant_temperature_test,
+            plot_dir=phase_plot_dir,
+        )
+        phase_results[phase] = result
+        if first_domain_spec is None:
+            first_domain_spec = DomainSpecs
+
+    if first_domain_spec is None:
+        raise ValueError("At least one phase must be selected.")
+
+    return phase_results, first_domain_spec
+
+
 def main() -> None:
     args = cli.parse_args()
     request = build_request_from_cli(args)
     SurfaceSpecs = build_surface_behaviour_from_cli(args)
     diagnostic_plots, constant_temperature_test = build_runtime_controls_from_cli(args)
     production_options = build_production_options_from_cli(args)
+    six_hourly_phases = selected_six_hourly_phases_from_cli(args)
+    temporal_sampling = temporal_sampling_metadata(six_hourly_phases)
     git_provenance = run_outputs.resolve_git_provenance(PROJECT_ROOT)
     ad_hoc_run_paths: run_outputs.RunPaths | None = None
     production_paths: run_outputs.ProductionPaths | None = None
@@ -174,6 +377,7 @@ def main() -> None:
             surface_behaviour=SurfaceSpecs,
             git_provenance=git_provenance,
             cli_args=vars(args),
+            temporal_sampling=temporal_sampling,
         )
         print(f"Saved production manifest to {manifest_path}")
         return
@@ -181,9 +385,15 @@ def main() -> None:
     SourceCfg = build_data_source_from_cli(args)
 
     if production_options is not None:
+        output_suffix = (
+            run_outputs.six_hourly_output_suffix(phases=six_hourly_phases)
+            if six_hourly_phases is not None
+            else None
+        )
         production_paths = run_outputs.prepare_production_paths(
             production_options.output_dir,
             year=production_options.year,
+            output_suffix=output_suffix,
         )
         manifest_path = run_outputs.require_production_manifest(production_paths)
         yearly_output_path = run_outputs.require_output_path(
@@ -201,32 +411,42 @@ def main() -> None:
         plot_dir = ad_hoc_run_paths.plot_dir
         print(f"Saving plots to {plot_dir}")
 
-    ds_merged = io.load_dataset(SourceCfg, SurfaceSpecs)
-    
-    # Validate merged dataset against strict schema
-    validate.validate_schema(ds_merged)
+    ds_merged, ds_bench = _load_inputs(
+        SourceCfg,
+        SurfaceSpecs,
+        benchmark_fluxes=args.benchmark_fluxes,
+    )
 
-    ds_bench = None
-    if SourceCfg.kind == "arco_era5": #only available for arco era5 for now.
-        benchmark_var_map = {
-            "vertical_integral_of_eastward_heat_flux":  "Fx_heat",
-            "vertical_integral_of_northward_heat_flux": "Fy_heat",
-            "vertical_integral_of_eastward_mass_flux":  "Fx_mass",
-            "vertical_integral_of_northward_mass_flux": "Fy_mass",
-        }
-        ds_bench = io.load_arco_benchmark_fluxes(SourceCfg, benchmark_var_map)
-
-
-
-    # print(ds_bench)
-    # print(ds_bench['Fx_mass'].sel(lon=360-130, lat=50, method='nearest').values) #type: ignore
-    # print(ds_bench['Fx_heat'].sel(lon=360-130, lat=50, method='nearest').values) #type: ignore
-
-
-    # Determine domain extent based on grid and config margin
-    ds_domain, ds_halo, DomainSpecs = grid.determine_domain(ds_merged, request, eager_loading=True)
-
-    print('Proceeding with', DomainSpecs)
+    budget_output_path = None
+    if six_hourly_phases is None:
+        result, DomainSpecs = _run_one_budget(
+            ds_merged,
+            ds_bench,
+            request,
+            SurfaceSpecs,
+            diagnostic_plots=diagnostic_plots,
+            constant_temperature_test=constant_temperature_test,
+            plot_dir=plot_dir,
+        )
+    else:
+        phase_results, DomainSpecs = _run_phase_budgets(
+            ds_merged,
+            ds_bench,
+            request,
+            SurfaceSpecs,
+            phases=six_hourly_phases,
+            diagnostic_plots=diagnostic_plots,
+            constant_temperature_test=constant_temperature_test,
+            plot_dir=plot_dir,
+        )
+        result = run_outputs.combine_phase_budget_results(phase_results)
+        if production_options is None:
+            if ad_hoc_run_paths is None:
+                raise ValueError("Ad hoc runs require resolved run paths.")
+            budget_output_path = run_outputs.six_hourly_ad_hoc_output_path(
+                ad_hoc_run_paths,
+                phases=six_hourly_phases,
+            )
 
     if production_options is None:
         if ad_hoc_run_paths is None:
@@ -239,70 +459,26 @@ def main() -> None:
             surface_behaviour=SurfaceSpecs,
             git_provenance=git_provenance,
             cli_args=vars(args),
+            temporal_sampling=temporal_sampling,
+            budget_output_path=budget_output_path,
         )
         print(f"Saved run metadata to {metadata_path}")
-
-    result = budget.calculate_budget(
-        ds_domain,
-        ds_halo,
-        DomainSpecs,
-        SurfaceSpecs,
-        integral_diagnostics_flag=True,
-        plot_dir=plot_dir,
-        plot_flag=diagnostic_plots,
-        benchmark_ds=ds_bench
-    ) #already computed before returning
-
-    if production_options is not None:
+        if budget_output_path is not None:
+            written_path = run_outputs.write_budget_result(
+                result,
+                budget_output_path,
+                overwrite=False,
+            )
+            print(f"Saved 6-hour output to {written_path}")
+    else:
         if yearly_output_path is None:
             raise ValueError("Production yearly runs require a resolved output path.")
-        yearly_output_path = run_outputs.write_budget_result(
+        written_path = run_outputs.write_budget_result(
             result,
             yearly_output_path,
             overwrite=False,
         )
-        print(f"Saved yearly output to {yearly_output_path}")
-
-    if diagnostic_plots:
-        plot_results.plot_budget_terms_timeseries(result, plot_dir=plot_dir, smoothing_duration_hours=None)
-        plot_results.plot_budget_terms_timeseries(result, plot_dir=plot_dir, smoothing_duration_hours=24)
-        plot_results.plot_budget_terms_daily(result, plot_dir=plot_dir)
-
-    if constant_temperature_test:
-        # testing to see if a constant temperature field, yields a net heat advection error comparable to the estimated advection error from mass continuity (delta_mass * T_scale)
-        constant_t_plot_dir = plot_dir + '/constant_T'
-        if diagnostic_plots:
-            os.makedirs(constant_t_plot_dir, exist_ok=True)
-
-        # ds_domain_test = ds_domain.copy(deep=True)
-        # ds_domain_test['T'] = xr.full_like(ds_domain['T'], result.T_scale)
-
-        ds_domain_test = ds_domain.assign(
-            T = xr.full_like(ds_domain['T'], result.T_scale)
-        )
-
-        # ds_halo_test = ds_halo.copy(deep=True)
-        # ds_halo_test['T'] = xr.full_like(ds_halo['T'], result.T_scale)
-
-        ds_halo_test = ds_halo.assign(
-            T = xr.full_like(ds_halo['T'], result.T_scale)
-        )
-
-
-        result_test = budget.calculate_budget(
-            ds_domain_test,
-            ds_halo_test,
-            DomainSpecs,
-            SurfaceSpecs,
-            integral_diagnostics_flag=True,
-            plot_dir=constant_t_plot_dir,
-            plot_flag=diagnostic_plots,
-            test_constant_T=True
-        )
-
-        if diagnostic_plots:
-            plot_results.plot_budget_terms_daily(result_test, plot_dir=constant_t_plot_dir)
-            plot_results.plot_constant_T_results(result, result_test, plot_dir=constant_t_plot_dir)
+        print(f"Saved yearly output to {written_path}")
 
 if __name__ == "__main__":
     
