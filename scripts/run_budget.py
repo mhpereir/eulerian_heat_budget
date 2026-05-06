@@ -410,6 +410,11 @@ def main() -> None:
 
     budget_output_path = None
     if six_hourly_phases is None:
+        if production_options is None:
+            if ad_hoc_run_paths is None:
+                raise ValueError("Ad hoc runs require resolved run paths.")
+            budget_output_path = run_outputs.hourly_ad_hoc_output_path(ad_hoc_run_paths)
+
         ds_merged, ds_bench = _load_inputs(
             SourceCfg,
             SurfaceSpecs,
@@ -464,7 +469,10 @@ def main() -> None:
                 budget_output_path,
                 overwrite=False,
             )
-            print(f"Saved 6-hour output to {written_path}")
+            if six_hourly_phases is None:
+                print(f"Saved hourly output to {written_path}")
+            else:
+                print(f"Saved 6-hour output to {written_path}")
     else:
         if yearly_output_path is None:
             raise ValueError("Production yearly runs require a resolved output path.")

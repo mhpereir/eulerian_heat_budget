@@ -248,6 +248,10 @@ def six_hourly_ad_hoc_output_path(paths: RunPaths, *, phases: list[int]) -> str:
     return str(Path(paths.run_root) / f"heat_budget_{six_hourly_output_suffix(phases=phases)}.nc")
 
 
+def hourly_ad_hoc_output_path(paths: RunPaths) -> str:
+    return str(Path(paths.run_root) / "heat_budget_hourly.nc")
+
+
 def combine_phase_budget_results(
     phase_results: Mapping[int, xr.Dataset],
 ) -> xr.Dataset:
@@ -255,7 +259,7 @@ def combine_phase_budget_results(
         raise ValueError("At least one phase result is required.")
 
     phases = list(phase_results.keys())
-    first_vars = set(next(iter(phase_results.values())).data_vars)
+    first_vars = set(str(name) for name in next(iter(phase_results.values())).data_vars)
     for phase, ds in phase_results.items():
         if "time" not in ds.coords:
             raise ValueError(f"Phase {phase} result must have a time coordinate.")

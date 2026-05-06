@@ -17,6 +17,7 @@ import xarray as xr
 from src.run_outputs import (
     GitProvenance,
     combine_phase_budget_results,
+    hourly_ad_hoc_output_path,
     prepare_production_paths,
     prepare_run_paths,
     ProductionPaths,
@@ -182,6 +183,14 @@ def test_six_hourly_ad_hoc_output_path_uses_run_root(tmp_path):
     )
     assert six_hourly_ad_hoc_output_path(paths, phases=[3]) == str(
         tmp_path / "2586030.venus" / "heat_budget_6hr_phase_r3.nc"
+    )
+
+
+def test_hourly_ad_hoc_output_path_uses_run_root(tmp_path):
+    paths = prepare_run_paths(str(tmp_path), env={"PBS_JOBID": "2586030.venus"})
+
+    assert hourly_ad_hoc_output_path(paths) == str(
+        tmp_path / "2586030.venus" / "heat_budget_hourly.nc"
     )
 
 

@@ -238,6 +238,7 @@ def test_main_hourly_loads_inputs_once_without_temporal_sampling(monkeypatch):
     _configure_main_stubs(monkeypatch, cli.parse_args(["--data-source", "local_era5"]))
 
     loaded_configs = []
+    written_outputs = []
 
     monkeypatch.setattr(
         run_budget,
@@ -249,12 +250,18 @@ def test_main_hourly_loads_inputs_once_without_temporal_sampling(monkeypatch):
         "_run_one_budget",
         lambda *args, **kwargs: (_make_stub_budget_result(), object()),
     )
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "write_budget_result",
+        lambda ds_budget, output_path, overwrite=False: written_outputs.append((output_path, overwrite)) or str(output_path),
+    )
 
     run_budget.main()
 
     assert len(loaded_configs) == 1
     assert loaded_configs[0].temporal_stride_hours is None
     assert loaded_configs[0].temporal_phase_hour is None
+    assert written_outputs == [("/tmp/test-run/heat_budget_hourly.nc", False)]
 
 
 def test_main_with_diagnostic_plots_restores_main_plot_generation(monkeypatch):
@@ -830,6 +837,7 @@ def _configure_main_stubs(monkeypatch, args):
         ),
     )
     monkeypatch.setattr(run_budget.run_outputs, "write_run_info", lambda *args, **kwargs: "/tmp/test-run/run_info.json")
+    monkeypatch.setattr(run_budget.run_outputs, "write_budget_result", lambda ds_budget, output_path, overwrite=False: str(output_path))
 
 
 def _configure_six_hourly_stubs(monkeypatch, args):
