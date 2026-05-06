@@ -492,7 +492,7 @@ def fig5_benchmark_comparison(
     ax[1].xaxis.set_major_locator(locator)
     ax[1].xaxis.set_major_formatter(formatter)
 
-    ax[0].set_ylabel("Mass Flux [units]")
+    ax[0].set_ylabel("Mass Flux [m2 Pa/s]")
     ax[0].set_title("Comparison of Calculated Mass Fluxes with Benchmark")
 
     # face_handles = [
@@ -512,7 +512,7 @@ def fig5_benchmark_comparison(
     ax[0].legend(handles=style_handles, loc="lower left", fontsize=10)
 
     ax[1].set_xlabel("Time")
-    ax[1].set_ylabel("Heat Flux [units]")
+    ax[1].set_ylabel("Heat Flux [K m2 Pa/s]")
     ax[1].set_title("Comparison of Calculated Heat Fluxes with Benchmark")
     ax[1].legend(fontsize=10)
 

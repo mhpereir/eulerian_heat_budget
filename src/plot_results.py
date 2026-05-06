@@ -109,8 +109,8 @@ def plot_budget_terms_timeseries(
         line = term.plot.line(ax=ax[2], add_legend=False, color=color_terms[var])
 
         if error_var is not None and var in {"advection_term", "diabatic_term"}:
-            error = _rate_to_per_hour(ds_budget[error_var].abs() * norm_factor)
-            error = error.rolling(time=smoothing_window, center=True).mean()  # type: ignore[assignment]
+            error = _rate_to_per_hour(np.abs(ds_budget[error_var]) * norm_factor) # type: ignore
+            error = error.rolling(time=smoothing_window, center=True).mean()  
             ax[2].fill_between(
                 term["time"].values,
                 (term - error).values,
@@ -204,7 +204,7 @@ def plot_budget_terms_daily(ds_budget: xr.Dataset, plot_dir: str) -> None:
         line = term.plot.line(ax=ax[2], add_legend=False, color=color_terms[var], drawstyle="steps-post")
 
         if error_var is not None and var in {"advection_term", "diabatic_term"}:
-            error = _daily_total(ds_budget[error_var].abs() * norm_factor)
+            error = _daily_total(np.abs(ds_budget[error_var]) * norm_factor) # type: ignore
             ax[2].fill_between(
                 term["time"].values,
                 (term - error).values,

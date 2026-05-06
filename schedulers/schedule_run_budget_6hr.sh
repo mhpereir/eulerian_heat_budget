@@ -39,7 +39,7 @@ LOG_DIR="${LOG_DIR:-${REPO_ROOT}/logs}"
 
 mkdir -p "${LOG_DIR}"
 
-LOGFILE="${LOG_DIR}/${PBS_JOBID:-manual}_EHB_single.log"
+LOGFILE="${LOG_DIR}/${PBS_JOBID:-manual}_EHB_6hr_single.log"
 exec > >(tee -a "${LOGFILE}") 2>&1
 
 export OMP_NUM_THREADS=1
@@ -53,7 +53,7 @@ source "${MAMBA_ROOT_PREFIX}/etc/profile.d/mamba.sh"
 mamba activate dev_env
 
 TIME_START="1941-06-01T00:00:00"
-TIME_END="1941-06-07T00:00:00"
+TIME_END="1941-09-01T00:00:00"
 
 cd "${SCRIPT_DIR}"
 
