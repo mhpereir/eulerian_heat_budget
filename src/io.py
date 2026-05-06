@@ -20,7 +20,7 @@ import time
 from collections.abc import Mapping
 
 from . import config, specs
-
+from .time_utils import select_phase_by_utc_hour
 
 
 def load_dataset(source_cfg: specs.DataSourceConfig, SurfaceSpecs: specs.SurfaceBehaviour) -> xr.Dataset:
@@ -32,6 +32,24 @@ def load_dataset(source_cfg: specs.DataSourceConfig, SurfaceSpecs: specs.Surface
         raise ValueError(f"Unsupported data source: {source_cfg.kind}")
     ds = standardize_era5_dataset(ds, source_cfg)
     return ds
+
+
+def apply_temporal_sampling(ds: xr.Dataset, cfg: specs.DataSourceConfig) -> xr.Dataset:
+    stride = cfg.temporal_stride_hours
+    phase = cfg.temporal_phase_hour
+
+    if (stride is None) != (phase is None):
+        raise ValueError(
+            "temporal_stride_hours and temporal_phase_hour must both be set or both be omitted."
+        )
+    if stride is None or phase is None:
+        return ds
+
+    return select_phase_by_utc_hour(
+        ds,
+        stride_hours=stride,
+        phase=phase,
+    )
 
 
 def _load_local_era5(cfg: specs.DataSourceConfig, SurfaceSpecs: specs.SurfaceBehaviour) -> xr.Dataset:
@@ -249,7 +267,12 @@ def standardize_era5_dataset(ds: xr.Dataset, cfg: specs.DataSourceConfig) -> xr.
         ds = ds.sel(time=slice(cfg.time_start, cfg.time_end))
 
     # ------------------------------------------------------------------
-    # 11) Chunk for dask workflows
+    # 11) Apply optional temporal sub-sampling before rechunking
+    # ------------------------------------------------------------------
+    ds = apply_temporal_sampling(ds, cfg)
+
+    # ------------------------------------------------------------------
+    # 12) Chunk for dask workflows
     # ------------------------------------------------------------------
     chunk_map = dict(config.DEFAULT_CHUNKS_3D1)
     if cfg.kind == "arco_era5":
@@ -403,6 +426,8 @@ def load_arco_benchmark_fluxes(
 
     if ds["lon"].max() > 180:
         ds = ds.assign_coords(lon=((ds["lon"] + 180) % 360 - 180)).sortby("lon")
+
+    ds = apply_temporal_sampling(ds, cfg)
 
     chunk_map = {
         "time": cfg.chunks_time,

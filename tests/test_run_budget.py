@@ -52,6 +52,15 @@ def _make_time_dataset(periods: int = 24) -> xr.Dataset:
     )
 
 
+def _make_time_dataset_for_source_cfg(source_cfg) -> xr.Dataset:
+    ds = _make_time_dataset()
+    if source_cfg.temporal_phase_hour is None:
+        return ds
+
+    mask = (ds["time"].dt.hour % source_cfg.temporal_stride_hours) == source_cfg.temporal_phase_hour
+    return ds.sel(time=mask)
+
+
 def test_cli_runtime_flags_default_to_none():
     args = cli.parse_args(["--data-source", "local_era5"])
 
@@ -225,6 +234,29 @@ def test_main_arco_default_skips_benchmark_flux_loading(monkeypatch):
     assert benchmark_args == [None]
 
 
+def test_main_hourly_loads_inputs_once_without_temporal_sampling(monkeypatch):
+    _configure_main_stubs(monkeypatch, cli.parse_args(["--data-source", "local_era5"]))
+
+    loaded_configs = []
+
+    monkeypatch.setattr(
+        run_budget,
+        "_load_inputs",
+        lambda source_cfg, surface_specs, benchmark_fluxes: loaded_configs.append(source_cfg) or (xr.Dataset(), None),
+    )
+    monkeypatch.setattr(
+        run_budget,
+        "_run_one_budget",
+        lambda *args, **kwargs: (_make_stub_budget_result(), object()),
+    )
+
+    run_budget.main()
+
+    assert len(loaded_configs) == 1
+    assert loaded_configs[0].temporal_stride_hours is None
+    assert loaded_configs[0].temporal_phase_hour is None
+
+
 def test_main_with_diagnostic_plots_restores_main_plot_generation(monkeypatch):
     _configure_main_stubs(
         monkeypatch,
@@ -331,8 +363,14 @@ def test_main_six_hourly_phases_runs_budget_six_times(monkeypatch):
     )
 
     calculate_calls = []
+    loaded_phases = []
     written_outputs = []
 
+    monkeypatch.setattr(
+        run_budget.io,
+        "load_dataset",
+        lambda source_cfg, surface_specs: loaded_phases.append(source_cfg.temporal_phase_hour) or _make_time_dataset_for_source_cfg(source_cfg),
+    )
     monkeypatch.setattr(
         run_budget.budget,
         "calculate_budget",
@@ -347,6 +385,7 @@ def test_main_six_hourly_phases_runs_budget_six_times(monkeypatch):
 
     run_budget.main()
 
+    assert loaded_phases == [0, 1, 2, 3, 4, 5]
     assert len(calculate_calls) == 6
     assert [call[0][0] for call in calculate_calls] == [0, 1, 2, 3, 4, 5]
     assert calculate_calls[3][0] == [3, 9, 15, 21]
@@ -360,8 +399,14 @@ def test_main_six_hourly_single_phase_runs_selected_phase(monkeypatch):
     )
 
     calculate_calls = []
+    loaded_phases = []
     written_outputs = []
 
+    monkeypatch.setattr(
+        run_budget.io,
+        "load_dataset",
+        lambda source_cfg, surface_specs: loaded_phases.append(source_cfg.temporal_phase_hour) or _make_time_dataset_for_source_cfg(source_cfg),
+    )
     monkeypatch.setattr(
         run_budget.budget,
         "calculate_budget",
@@ -376,9 +421,75 @@ def test_main_six_hourly_single_phase_runs_selected_phase(monkeypatch):
 
     run_budget.main()
 
+    assert loaded_phases == [3]
     assert len(calculate_calls) == 1
     assert calculate_calls[0][0] == [3, 9, 15, 21]
     assert written_outputs == ["/tmp/test-run/heat_budget_6hr_phase_r3.nc"]
+
+
+def test_main_six_hourly_single_phase_loads_one_phase_config(monkeypatch):
+    _configure_main_stubs(
+        monkeypatch,
+        cli.parse_args(["--data-source", "local_era5", "--six-hourly-phase", "3"]),
+    )
+
+    loaded_configs = []
+
+    monkeypatch.setattr(
+        run_budget,
+        "_load_inputs",
+        lambda source_cfg, surface_specs, benchmark_fluxes: loaded_configs.append(source_cfg) or (_make_time_dataset_for_source_cfg(source_cfg), None),
+    )
+    monkeypatch.setattr(
+        run_budget,
+        "_run_one_budget",
+        lambda ds_merged, *args, **kwargs: (_make_stub_budget_result_for_domain(ds_merged), object()),
+    )
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "write_budget_result",
+        lambda ds_budget, output_path, overwrite=False: str(output_path),
+    )
+
+    run_budget.main()
+
+    assert [(cfg.temporal_stride_hours, cfg.temporal_phase_hour) for cfg in loaded_configs] == [(6, 3)]
+
+
+def test_main_six_hourly_all_phases_loads_each_phase_config(monkeypatch):
+    _configure_main_stubs(
+        monkeypatch,
+        cli.parse_args(["--data-source", "local_era5", "--six-hourly-phases"]),
+    )
+
+    loaded_configs = []
+
+    monkeypatch.setattr(
+        run_budget,
+        "_load_inputs",
+        lambda source_cfg, surface_specs, benchmark_fluxes: loaded_configs.append(source_cfg) or (_make_time_dataset_for_source_cfg(source_cfg), None),
+    )
+    monkeypatch.setattr(
+        run_budget,
+        "_run_one_budget",
+        lambda ds_merged, *args, **kwargs: (_make_stub_budget_result_for_domain(ds_merged), object()),
+    )
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "write_budget_result",
+        lambda ds_budget, output_path, overwrite=False: str(output_path),
+    )
+
+    run_budget.main()
+
+    assert [(cfg.temporal_stride_hours, cfg.temporal_phase_hour) for cfg in loaded_configs] == [
+        (6, 0),
+        (6, 1),
+        (6, 2),
+        (6, 3),
+        (6, 4),
+        (6, 5),
+    ]
 
 
 def test_main_six_hourly_phase_selects_benchmark_fluxes(monkeypatch):
@@ -394,8 +505,12 @@ def test_main_six_hourly_phase_selects_benchmark_fluxes(monkeypatch):
             ]
         ),
     )
-    benchmark = _make_time_dataset()
-    monkeypatch.setattr(run_budget.io, "load_arco_benchmark_fluxes", lambda source_cfg, var_map: benchmark)
+    benchmark_configs = []
+    monkeypatch.setattr(
+        run_budget.io,
+        "load_arco_benchmark_fluxes",
+        lambda source_cfg, var_map: benchmark_configs.append((source_cfg.temporal_stride_hours, source_cfg.temporal_phase_hour)) or _make_time_dataset_for_source_cfg(source_cfg),
+    )
 
     benchmark_hours = []
 
@@ -414,6 +529,7 @@ def test_main_six_hourly_phase_selects_benchmark_fluxes(monkeypatch):
     run_budget.main()
 
     assert benchmark_hours == [[2, 8, 14, 20]]
+    assert benchmark_configs == [(6, 2)]
 
 
 def test_main_six_hourly_plots_use_phase_directories(monkeypatch):
@@ -718,7 +834,7 @@ def _configure_main_stubs(monkeypatch, args):
 
 def _configure_six_hourly_stubs(monkeypatch, args):
     _configure_main_stubs(monkeypatch, args)
-    monkeypatch.setattr(run_budget.io, "load_dataset", lambda source_cfg, surface_specs: _make_time_dataset())
+    monkeypatch.setattr(run_budget.io, "load_dataset", lambda source_cfg, surface_specs: _make_time_dataset_for_source_cfg(source_cfg))
     monkeypatch.setattr(
         run_budget.grid,
         "determine_domain",

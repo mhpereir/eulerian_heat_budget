@@ -32,6 +32,8 @@ class DataSourceConfig:
     # common selection
     time_start: Optional[str] = None
     time_end: Optional[str] = None
+    temporal_stride_hours: Optional[int] = None
+    temporal_phase_hour: Optional[int] = None
 
 @dataclass(frozen=True)
 class DomainRequest:
@@ -73,4 +75,3 @@ class DomainSpec:
             raise ValueError("zg_bottom_pressure must be set when zg_bottom='pressure_level'")
         if self.zg_bottom == "surface_pressure" and self.zg_bottom_pressure is not None:
             raise ValueError("zg_bottom_pressure must be None when zg_bottom='surface_pressure'")
-    

@@ -11,7 +11,6 @@ import xarray as xr
 
 from src import config, cli, specs, io, validate, grid, budget, run_outputs
 from src import plot_results
-from src.time_utils import select_phase_by_utc_hour
 
 import logging
 from dask.distributed import Client
@@ -77,6 +76,7 @@ def build_data_source_from_cli(
     args,
     *,
     use_default_time_window: bool = True,
+    phase: int | None = None,
 ) -> specs.DataSourceConfig:
     time_start = args.time_start
     time_end = args.time_end
@@ -84,12 +84,16 @@ def build_data_source_from_cli(
         time_start = time_start if time_start is not None else config.DEFAULT_TIME_START
         time_end = time_end if time_end is not None else config.DEFAULT_TIME_END
 
+    temporal_stride_hours = SIX_HOURLY_STRIDE_HOURS if phase is not None else None
+
     if args.data_source == "local_era5":
         return specs.DataSourceConfig(
             kind="local_era5",
             path_data=config.DEFAULT_LOCAL_PATH,
             time_start=time_start,
             time_end=time_end,
+            temporal_stride_hours=temporal_stride_hours,
+            temporal_phase_hour=phase,
         )
     elif args.data_source == "arco_era5":
         return specs.DataSourceConfig(
@@ -97,6 +101,8 @@ def build_data_source_from_cli(
             arco_path=config.DEFAULT_ARCO_PATH,
             time_start=time_start,
             time_end=time_end,
+            temporal_stride_hours=temporal_stride_hours,
+            temporal_phase_hour=phase,
         )
     else:
         raise ValueError(f"Unsupported data source: {args.data_source}")
@@ -299,19 +305,8 @@ def _run_constant_temperature_test(
         plot_results.plot_constant_T_results(result, result_test, plot_dir=constant_t_plot_dir)
 
 
-def _select_phase_dataset(ds: xr.Dataset | None, phase: int) -> xr.Dataset | None:
-    if ds is None:
-        return None
-    return select_phase_by_utc_hour(
-        ds,
-        stride_hours=SIX_HOURLY_STRIDE_HOURS,
-        phase=phase,
-    )
-
-
 def _run_phase_budgets(
-    ds_merged: xr.Dataset,
-    ds_bench: xr.Dataset | None,
+    args,
     request: specs.DomainRequest,
     SurfaceSpecs: specs.SurfaceBehaviour,
     *,
@@ -328,13 +323,15 @@ def _run_phase_budgets(
         if diagnostic_plots:
             os.makedirs(phase_plot_dir, exist_ok=True)
 
+        SourceCfg = build_data_source_from_cli(args, phase=phase)
+        ds_merged, ds_bench = _load_inputs(
+            SourceCfg,
+            SurfaceSpecs,
+            benchmark_fluxes=args.benchmark_fluxes,
+        )
         result, DomainSpecs = _run_one_budget(
-            select_phase_by_utc_hour(
-                ds_merged,
-                stride_hours=SIX_HOURLY_STRIDE_HOURS,
-                phase=phase,
-            ),
-            _select_phase_dataset(ds_bench, phase),
+            ds_merged,
+            ds_bench,
             request,
             SurfaceSpecs,
             diagnostic_plots=diagnostic_plots,
@@ -411,14 +408,13 @@ def main() -> None:
         plot_dir = ad_hoc_run_paths.plot_dir
         print(f"Saving plots to {plot_dir}")
 
-    ds_merged, ds_bench = _load_inputs(
-        SourceCfg,
-        SurfaceSpecs,
-        benchmark_fluxes=args.benchmark_fluxes,
-    )
-
     budget_output_path = None
     if six_hourly_phases is None:
+        ds_merged, ds_bench = _load_inputs(
+            SourceCfg,
+            SurfaceSpecs,
+            benchmark_fluxes=args.benchmark_fluxes,
+        )
         result, DomainSpecs = _run_one_budget(
             ds_merged,
             ds_bench,
@@ -430,8 +426,7 @@ def main() -> None:
         )
     else:
         phase_results, DomainSpecs = _run_phase_budgets(
-            ds_merged,
-            ds_bench,
+            args,
             request,
             SurfaceSpecs,
             phases=six_hourly_phases,

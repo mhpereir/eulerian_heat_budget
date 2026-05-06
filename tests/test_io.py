@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
 import xarray as xr
 
@@ -10,6 +12,7 @@ if PROJECT_ROOT not in sys.path:
 
 from src import io
 from src.specs import DataSourceConfig, SurfaceBehaviour
+from src.time_utils import require_regular_time
 
 
 def _arco_cfg() -> DataSourceConfig:
@@ -19,6 +22,42 @@ def _arco_cfg() -> DataSourceConfig:
         arco_storage_token="anon",
         time_start="1940-01-01T00:00:00",
         time_end="1940-12-31T23:00:00",
+    )
+
+
+def _arco_dataset(periods: int = 24) -> xr.Dataset:
+    time = pd.date_range("1940-06-01T00:00:00", periods=periods, freq="1h")
+    values_4d = np.ones((periods, 1, 1, 1))
+    values_3d = np.ones((periods, 1, 1))
+    return xr.Dataset(
+        {
+            "temperature": xr.DataArray(
+                300.0 * values_4d,
+                dims=("time", "pressure_level", "latitude", "longitude"),
+            ),
+            "u_component_of_wind": xr.DataArray(
+                values_4d,
+                dims=("time", "pressure_level", "latitude", "longitude"),
+            ),
+            "v_component_of_wind": xr.DataArray(
+                values_4d,
+                dims=("time", "pressure_level", "latitude", "longitude"),
+            ),
+            "vertical_velocity": xr.DataArray(
+                0.0 * values_4d,
+                dims=("time", "pressure_level", "latitude", "longitude"),
+            ),
+            "surface_pressure": xr.DataArray(
+                100000.0 * values_3d,
+                dims=("time", "latitude", "longitude"),
+            ),
+        },
+        coords={
+            "time": time,
+            "pressure_level": [1000.0],
+            "latitude": [45.0],
+            "longitude": [230.0],
+        },
     )
 
 
@@ -94,6 +133,78 @@ def test_load_arco_benchmark_fluxes_uses_retrying_open(monkeypatch):
 
     assert "Fx_heat" in out
     assert calls["count"] == 2
+
+
+def test_standardize_era5_dataset_applies_temporal_sampling_before_chunking():
+    cfg = DataSourceConfig(
+        kind="arco_era5",
+        arco_path="gs://example-dataset.zarr",
+        time_start="1940-06-01T00:00:00",
+        time_end="1940-06-01T23:00:00",
+        temporal_stride_hours=6,
+        temporal_phase_hour=2,
+    )
+    dataset = _arco_dataset().rename(
+        {
+            "temperature": "T",
+            "u_component_of_wind": "u",
+            "v_component_of_wind": "v",
+            "vertical_velocity": "w",
+            "surface_pressure": "sp",
+        }
+    )
+
+    out = io.standardize_era5_dataset(dataset, cfg)
+
+    assert out["time"].dt.hour.values.tolist() == [2, 8, 14, 20]
+    assert require_regular_time(out["time"]) == 21600.0
+    assert out.sizes["time"] == 4
+
+
+def test_apply_temporal_sampling_requires_stride_and_phase_together():
+    cfg = DataSourceConfig(
+        kind="arco_era5",
+        temporal_stride_hours=6,
+        temporal_phase_hour=None,
+    )
+
+    with pytest.raises(ValueError, match="must both be set"):
+        io.apply_temporal_sampling(xr.Dataset(coords={"time": pd.date_range("1940-01-01", periods=4, freq="1h")}), cfg)
+
+
+def test_load_arco_benchmark_fluxes_applies_temporal_sampling(monkeypatch):
+    dataset = xr.Dataset(
+        {
+            "vertical_integral_of_eastward_heat_flux": xr.DataArray(
+                np.ones((24, 1, 1)),
+                dims=("time", "latitude", "longitude"),
+            ),
+        },
+        coords={
+            "time": pd.date_range("1940-06-01T00:00:00", periods=24, freq="1h"),
+            "latitude": [45.0],
+            "longitude": [230.0],
+        },
+    )
+    cfg = DataSourceConfig(
+        kind="arco_era5",
+        arco_path="gs://example-dataset.zarr",
+        arco_storage_token="anon",
+        time_start="1940-06-01T00:00:00",
+        time_end="1940-06-01T23:00:00",
+        temporal_stride_hours=6,
+        temporal_phase_hour=4,
+    )
+
+    monkeypatch.setattr(io.xr, "open_zarr", lambda *args, **kwargs: dataset)
+
+    out = io.load_arco_benchmark_fluxes(
+        cfg,
+        {"vertical_integral_of_eastward_heat_flux": "Fx_heat"},
+    )
+
+    assert out["time"].dt.hour.values.tolist() == [4, 10, 16, 22]
+    assert require_regular_time(out["time"]) == 21600.0
 
 
 def test_load_dataset_retries_arco_open(monkeypatch):
