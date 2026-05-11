@@ -30,10 +30,36 @@ def compute_domain_volume(ds_domain: xr.Dataset,
 
     return out.rename("V")
 
-def compute_time_derivative(da: xr.DataArray) -> xr.DataArray:
+
+def compute_time_derivative(da: xr.DataArray, method: str = "centered") -> xr.DataArray:
+    '''
+    For a time step t_i, the different methods represent:
+    centered:  [t_{i-1}, t_{i+1}]
+    forward:   [t_i,     t_{i+1}]
+    backward:  [t_{i-1}, t_i]
+    '''
+    
     if da.name is None:
         raise ValueError("Input DataArray must have a name")
 
+    if method == "centered":
+        return compute_time_derivative_centered(da)  # valid at time[1:-1], len N-2
+
+    elif method == "forward":
+        out = compute_time_derivative_forward(da)    # valid at time[0:-1], last NaN
+        return out.isel(time=slice(1, -1))           # align to time[1:-1]
+
+    elif method == "backward":
+        out = compute_time_derivative_backward(da)   # first NaN, valid at time[1:]
+        return out.isel(time=slice(1, -1))           # align to time[1:-1]
+
+    else:
+        raise ValueError(
+            "Invalid derivative method. Choose from 'centered', 'forward', or 'backward'."
+        )
+
+def compute_time_derivative_centered(da: xr.DataArray) -> xr.DataArray:
+    
     # centered difference: (f[i+1] - f[i-1]) / (t[i+1] - t[i-1]), on interior points
     num = (da.shift(time=-1) - da.shift(time=1)).isel(time=slice(1, -1))
     den = (da["time"].shift(time=-1) - da["time"].shift(time=1)).isel(time=slice(1, -1))
@@ -45,7 +71,33 @@ def compute_time_derivative(da: xr.DataArray) -> xr.DataArray:
     ddt = num / den
     ddt.name = f"d{da.name}_dt"
     return ddt
-   
+
+# def compute_time_derivative_forward(da: xr.DataArray) -> xr.DataArray:
+#     # forward difference: (f[i+1] - f[i]) / (t[i+1] - t[i]), on all but last point
+#     num = da.shift(time=-1) - da
+#     den = da["time"].shift(time=-1) - da["time"]
+
+#     # if time is datetime64, convert timedelta to seconds
+#     if np.issubdtype(den.dtype, np.timedelta64):
+#         den = den / np.timedelta64(1, "s")
+
+#     ddt = num / den
+#     ddt.name = f"d{da.name}_dt"
+#     return ddt
+
+# def compute_time_derivative_backward(da: xr.DataArray) -> xr.DataArray:
+#     # backward difference: (f[i] - f[i-1]) / (t[i] - t[i-1]), on all but first point
+#     num = da - da.shift(time=1)
+#     den = da["time"] - da["time"].shift(time=1)
+
+#     # if time is datetime64, convert timedelta to seconds
+#     if np.issubdtype(den.dtype, np.timedelta64):
+#         den = den / np.timedelta64(1, "s")
+
+#     ddt = num / den
+#     ddt.name = f"d{da.name}_dt"
+#     return ddt
+
 def compute_storage(T: xr.DataArray,
                     ds_cell_volumes: xr.DataArray,
                     ds_weights_volumes: xr.DataArray,
