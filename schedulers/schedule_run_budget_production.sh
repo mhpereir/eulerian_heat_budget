@@ -25,6 +25,9 @@ START_YEAR=1940
 END_YEAR=2025
 DATA_SOURCE="${DATA_SOURCE:-arco_era5}"
 PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_full_run}"
+ZG_TOP_PA="${ZG_TOP_PA:-50000}"
+ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-70000}"
+USE_SURFACE_AS_BOTTOM="${USE_SURFACE_AS_BOTTOM:-0}"
 INIT_MANIFEST_ONLY="${INIT_MANIFEST_ONLY:-0}"
 ENABLE_DIAGNOSTIC_PLOTS="${ENABLE_DIAGNOSTIC_PLOTS:-1}"
 ENABLE_CONSTANT_TEMPERATURE_TEST="${ENABLE_CONSTANT_TEMPERATURE_TEST:-0}"
@@ -43,7 +46,17 @@ cd /home/mhpereir/eulerian_heat_budget/scripts
 COMMON_RUN_ARGS=(
   --data-source "${DATA_SOURCE}"
   --production-output-dir "${PRODUCTION_OUTPUT_DIR}"
+  --zg-top-pa "${ZG_TOP_PA}"
 )
+
+if [[ "${USE_SURFACE_AS_BOTTOM}" == "1" ]]; then
+  COMMON_RUN_ARGS+=(--zg-bottom surface_pressure)
+else
+  COMMON_RUN_ARGS+=(
+    --zg-bottom pressure_level
+    --zg-bottom-pa "${ZG_BOTTOM_PA}"
+  )
+fi
 
 if [[ "${ENABLE_DIAGNOSTIC_PLOTS}" == "1" ]]; then
   COMMON_RUN_ARGS+=(--diagnostic-plots)

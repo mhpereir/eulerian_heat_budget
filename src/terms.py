@@ -72,31 +72,31 @@ def compute_time_derivative_centered(da: xr.DataArray) -> xr.DataArray:
     ddt.name = f"d{da.name}_dt"
     return ddt
 
-# def compute_time_derivative_forward(da: xr.DataArray) -> xr.DataArray:
-#     # forward difference: (f[i+1] - f[i]) / (t[i+1] - t[i]), on all but last point
-#     num = da.shift(time=-1) - da
-#     den = da["time"].shift(time=-1) - da["time"]
+def compute_time_derivative_forward(da: xr.DataArray) -> xr.DataArray:
+    # forward difference: (f[i+1] - f[i]) / (t[i+1] - t[i]), on all but last point
+    num = da.shift(time=-1) - da
+    den = da["time"].shift(time=-1) - da["time"]
 
-#     # if time is datetime64, convert timedelta to seconds
-#     if np.issubdtype(den.dtype, np.timedelta64):
-#         den = den / np.timedelta64(1, "s")
+    # if time is datetime64, convert timedelta to seconds
+    if np.issubdtype(den.dtype, np.timedelta64):
+        den = den / np.timedelta64(1, "s")
 
-#     ddt = num / den
-#     ddt.name = f"d{da.name}_dt"
-#     return ddt
+    ddt = num / den
+    ddt.name = f"d{da.name}_dt"
+    return ddt
 
-# def compute_time_derivative_backward(da: xr.DataArray) -> xr.DataArray:
-#     # backward difference: (f[i] - f[i-1]) / (t[i] - t[i-1]), on all but first point
-#     num = da - da.shift(time=1)
-#     den = da["time"] - da["time"].shift(time=1)
+def compute_time_derivative_backward(da: xr.DataArray) -> xr.DataArray:
+    # backward difference: (f[i] - f[i-1]) / (t[i] - t[i-1]), on all but first point
+    num = da - da.shift(time=1)
+    den = da["time"] - da["time"].shift(time=1)
 
-#     # if time is datetime64, convert timedelta to seconds
-#     if np.issubdtype(den.dtype, np.timedelta64):
-#         den = den / np.timedelta64(1, "s")
+    # if time is datetime64, convert timedelta to seconds
+    if np.issubdtype(den.dtype, np.timedelta64):
+        den = den / np.timedelta64(1, "s")
 
-#     ddt = num / den
-#     ddt.name = f"d{da.name}_dt"
-#     return ddt
+    ddt = num / den
+    ddt.name = f"d{da.name}_dt"
+    return ddt
 
 def compute_storage(T: xr.DataArray,
                     ds_cell_volumes: xr.DataArray,
