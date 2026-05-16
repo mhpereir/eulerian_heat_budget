@@ -81,7 +81,7 @@ Defines project constants and runtime defaults:
   - `DEFAULT_TIME_START`
   - `DEFAULT_TIME_END`
 - Default domain settings:
-  - `DEFAULT_BBOX`
+  - `REGIONS`
   - `DEFAULT_MARGIN_N`
   - `DEFAULT_ZG_TOP_PA`
   - `DEFAULT_ZG_BOT_MODE`
@@ -121,7 +121,7 @@ This module is the canonical definition of what the domain request, resolved dom
 
 Builds the command-line parser. It currently parses:
 
-- Horizontal bounds: `--lat-min`, `--lat-max`, `--lon-min`, `--lon-max`
+- Horizontal domain selection: `--region`, or all of `--lat-min`, `--lat-max`, `--lon-min`, `--lon-max`
 - Horizontal margin: `--margin-n`
 - Vertical control-volume settings:
   - `--zg-top-pa`
@@ -136,7 +136,7 @@ Builds the command-line parser. It currently parses:
   - `--time-start`
   - `--time-end`
 
-The parser mostly returns `None` defaults. `scripts/run_budget.py` is responsible for filling unspecified values from `config.py`.
+The parser mostly returns `None` defaults. `scripts/run_budget.py` is responsible for validating domain selection and filling unspecified runtime values from `config.py`.
 
 ### `src/io.py`
 

@@ -30,11 +30,69 @@ def _make_stub_domain_dataset() -> xr.Dataset:
     )
 
 
+def _parse_local_region_args(*extra: str):
+    return cli.parse_args(["--data-source", "local_era5", "--region", "pnw_bartusek", *extra])
+
+
 def test_cli_runtime_flags_default_to_none():
     args = cli.parse_args(["--data-source", "local_era5"])
 
     assert args.diagnostic_plots is None
     assert args.constant_temperature_test is None
+
+
+def test_cli_parses_region():
+    args = cli.parse_args(["--region", "pnw_bartusek"])
+
+    assert args.region == "pnw_bartusek"
+
+
+def test_build_request_uses_region_bbox():
+    args = cli.parse_args(["--region", "pnw_bartusek"])
+
+    request = run_budget.build_request_from_cli(args)
+
+    assert request.bbox == config.REGIONS["pnw_bartusek"]
+
+
+def test_build_request_requires_region_or_full_explicit_bbox():
+    args = cli.parse_args([])
+
+    with pytest.raises(ValueError, match="Provide --region or all explicit bbox flags"):
+        run_budget.build_request_from_cli(args)
+
+
+def test_build_request_rejects_partial_explicit_bbox():
+    args = cli.parse_args(["--lat-min", "40", "--lat-max", "60", "--lon-min", "-130"])
+
+    with pytest.raises(ValueError, match="Provide --region or all explicit bbox flags"):
+        run_budget.build_request_from_cli(args)
+
+
+def test_build_request_accepts_full_explicit_bbox():
+    args = cli.parse_args(
+        [
+            "--lat-min",
+            "40",
+            "--lat-max",
+            "60",
+            "--lon-min",
+            "-130",
+            "--lon-max",
+            "-110",
+        ]
+    )
+
+    request = run_budget.build_request_from_cli(args)
+
+    assert request.bbox == (40.0, 60.0, -130.0, -110.0)
+
+
+def test_build_request_rejects_region_with_explicit_bbox_flags():
+    args = cli.parse_args(["--region", "pnw_bartusek", "--lat-min", "40"])
+
+    with pytest.raises(ValueError, match="--region cannot be combined"):
+        run_budget.build_request_from_cli(args)
 
 
 def test_build_runtime_controls_use_config_defaults():
@@ -137,7 +195,7 @@ def test_build_production_options_rejects_cross_year_slices():
 
 
 def test_main_default_run_skips_plots_and_constant_temperature(monkeypatch):
-    _configure_main_stubs(monkeypatch, cli.parse_args(["--data-source", "local_era5"]))
+    _configure_main_stubs(monkeypatch, _parse_local_region_args())
 
     calculate_calls = []
     plot_calls = []
@@ -160,7 +218,7 @@ def test_main_default_run_skips_plots_and_constant_temperature(monkeypatch):
 def test_main_with_diagnostic_plots_restores_main_plot_generation(monkeypatch):
     _configure_main_stubs(
         monkeypatch,
-        cli.parse_args(["--data-source", "local_era5", "--diagnostic-plots"]),
+        _parse_local_region_args("--diagnostic-plots"),
     )
 
     calculate_calls = []
@@ -188,7 +246,7 @@ def test_main_with_diagnostic_plots_restores_main_plot_generation(monkeypatch):
 def test_main_with_constant_temperature_test_runs_second_budget_without_plots(monkeypatch):
     _configure_main_stubs(
         monkeypatch,
-        cli.parse_args(["--data-source", "local_era5", "--constant-temperature-test"]),
+        _parse_local_region_args("--constant-temperature-test"),
     )
 
     calculate_calls = []
@@ -221,6 +279,8 @@ def test_main_with_both_flags_restores_current_behavior(monkeypatch):
             [
                 "--data-source",
                 "local_era5",
+                "--region",
+                "pnw_bartusek",
                 "--diagnostic-plots",
                 "--constant-temperature-test",
             ]
@@ -266,6 +326,8 @@ def test_main_init_production_manifest_exits_before_loading_data(monkeypatch, tm
             [
                 "--data-source",
                 "local_era5",
+                "--region",
+                "pnw_bartusek",
                 "--production-output-dir",
                 str(production_dir),
                 "--init-production-manifest",
@@ -305,6 +367,8 @@ def test_main_production_yearly_run_writes_single_output_without_run_info(monkey
             [
                 "--data-source",
                 "local_era5",
+                "--region",
+                "pnw_bartusek",
                 "--production-output-dir",
                 str(production_dir),
                 "--time-start",
@@ -353,6 +417,8 @@ def test_main_production_mode_fails_when_manifest_is_missing(monkeypatch, tmp_pa
             [
                 "--data-source",
                 "local_era5",
+                "--region",
+                "pnw_bartusek",
                 "--production-output-dir",
                 str(production_dir),
                 "--time-start",
@@ -383,6 +449,8 @@ def test_main_production_plots_use_year_specific_directory(monkeypatch, tmp_path
             [
                 "--data-source",
                 "local_era5",
+                "--region",
+                "pnw_bartusek",
                 "--production-output-dir",
                 str(production_dir),
                 "--time-start",

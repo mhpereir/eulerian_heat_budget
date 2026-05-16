@@ -5,7 +5,7 @@ Defines:
 
 - Physical constants (currently: g, R, cp)
 - Standard pressure levels (e.g., LEVELS_HPA)
-- Default dataset paths / region aliases (project-specific)
+- Default dataset paths / region bbox aliases (project-specific)
 - Runtime defaults used by CLI (when flags are not provided)
 
 Contains minimal/no runtime logic.
@@ -33,24 +33,23 @@ R_value:float   = 2.870e2 #[J/(kg*K)] specific gas constant for dry air (R = R*/
 R_earth: float  = 6.371e6 #Earth radius in meters
 cp: float       = 1.005e3 #specific heat capacity of air in [J/(kg*K)]
 
-# default config values
-DEFAULT_BBOX          = (40, 60, -130, -110) # lat_min, lat_max, lon_min, lon_max for domain extent (before margin/snap)
-
 # REGIONs (consistent with your threshold files)
-REGIONS: dict[str, tuple[slice, slice]] = {
-    "canada":       (slice(40, 70), slice(-140,    -60)),
-    "canada_north": (slice(55, 70), slice(-140, -60)),
-    "canada_south": (slice(40, 55), slice(-140, -60)),
-    "west":       (slice(40, 70), slice(-140,    -113.33)),
-    "west_north": (slice(55, 70), slice(-140, -113.33)),
-    "west_south": (slice(40, 55), slice(-140, -113.33)),
-    "central":       (slice(40, 70), slice(-113.33, -88.66)),
-    "central_north": (slice(55, 70), slice(-113.33, -88.66)),
-    "central_south": (slice(40, 55), slice(-113.33, -88.66)),
-    "east":       (slice(40, 70), slice(-88.66,  -60)),
-    "east_north": (slice(55, 70), slice(-88.66, -60)),
-    "east_south": (slice(40, 55), slice(-88.66, -60)),
-    "pnw_bartusek": (slice(40, 60), slice(-130, -110))  #DEFAULT_BBOX
+# Values are (lat_min, lat_max, lon_min, lon_max).
+REGIONS: dict[str, tuple[float, float, float, float]] = {
+    "canada":       (40, 70, -140, -60),
+    "canada_north": (55, 70, -140, -60),
+    "canada_south": (40, 55, -140, -60),
+    "west":         (40, 70, -140, -113.33),
+    "west_north":   (55, 70, -140, -113.33),
+    "west_south":   (40, 55, -140, -113.33),
+    "central":       (40, 70, -113.33, -88.66),
+    "central_north": (55, 70, -113.33, -88.66),
+    "central_south": (40, 55, -113.33, -88.66),
+    "east":       (40, 70, -88.66, -60),
+    "east_north": (55, 70, -88.66, -60),
+    "east_south": (40, 55, -88.66, -60),
+    "pnw_bartusek": (40, 60, -130, -110),
+    "pnw_hotz":     (49, 59, -125, -115),
 }
 
 DEFAULT_MARGIN_N: int = 1 # number of grid points to keep as margin when determining domain extent
@@ -84,5 +83,4 @@ DEFAULT_CHUNKS_3D1 = {
     "lat": n_lat,
     "lon": n_lon,
 }
-
 

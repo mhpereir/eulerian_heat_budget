@@ -21,14 +21,17 @@ set -euo pipefail
 
 TIME_START="1941-06-01T00:00:00"
 TIME_END="1941-06-07T00:00:00"
+REGION="${REGION:-pnw_bartusek}"
 
 cd /home/mhpereir/eulerian_heat_budget/scripts
 
 echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hostname)"
 /usr/bin/time -v python run_budget.py \
   --data-source arco_era5 \
+  --region "${REGION}" \
   --time-start "${TIME_START}" \
   --time-end "${TIME_END}" \
+  --region pnw_hotz \
   --diagnostic-plots \
   --constant-temperature-test
 echo "[info] $(date -Is) done"
