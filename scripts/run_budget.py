@@ -223,7 +223,7 @@ def main() -> None:
     validate.validate_schema(ds_merged)
 
     ds_bench = None
-    if SourceCfg.kind == "arco_era5": #only available for arco era5 for now.
+    if args.include_benchmark_variables and SourceCfg.kind == "arco_era5": #only available for arco era5 for now.
         benchmark_var_map = {
             "vertical_integral_of_eastward_heat_flux":  "Fx_heat",
             "vertical_integral_of_northward_heat_flux": "Fy_heat",

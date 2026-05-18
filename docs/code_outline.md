@@ -135,6 +135,8 @@ Builds the command-line parser. It currently parses:
   - `--data-source`
   - `--time-start`
   - `--time-end`
+- Benchmark diagnostics:
+  - `--include-benchmark-variables`
 
 The parser mostly returns `None` defaults. `scripts/run_budget.py` is responsible for validating domain selection and filling unspecified runtime values from `config.py`.
 
@@ -415,6 +417,7 @@ Current responsibilities:
 - builds `DomainRequest`, `SurfaceBehaviour`, and `DataSourceConfig`
 - prepares run directories and git provenance
 - loads and validates the source dataset
+- optionally loads ARCO benchmark flux variables when `--include-benchmark-variables` is set
 - resolves `ds_domain`, `ds_halo`, and `DomainSpec`
 - writes `run_info.json`
 - calls `budget.calculate_budget()`
