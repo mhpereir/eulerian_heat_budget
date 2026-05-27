@@ -67,6 +67,61 @@ def test_cli_runtime_flags_default_to_none():
     assert args.diagnostic_plots is None
     assert args.constant_temperature_test is None
     assert args.benchmark_fluxes is False
+    assert args.include_benchmark_variables is False
+
+
+def test_cli_parses_region():
+    args = cli.parse_args(["--region", "pnw_bartusek"])
+
+    assert args.region == "pnw_bartusek"
+
+
+def test_build_request_uses_region_bbox():
+    args = cli.parse_args(["--region", "pnw_bartusek"])
+
+    request = run_budget.build_request_from_cli(args)
+
+    assert request.bbox == config.REGIONS["pnw_bartusek"]
+
+
+def test_build_request_requires_region_or_full_explicit_bbox():
+    args = cli.parse_args([])
+
+    with pytest.raises(ValueError, match="Provide --region or all explicit bbox flags"):
+        run_budget.build_request_from_cli(args)
+
+
+def test_build_request_rejects_partial_explicit_bbox():
+    args = cli.parse_args(["--lat-min", "40", "--lat-max", "60", "--lon-min", "-130"])
+
+    with pytest.raises(ValueError, match="Provide --region or all explicit bbox flags"):
+        run_budget.build_request_from_cli(args)
+
+
+def test_build_request_accepts_full_explicit_bbox():
+    args = cli.parse_args(
+        [
+            "--lat-min",
+            "40",
+            "--lat-max",
+            "60",
+            "--lon-min",
+            "-130",
+            "--lon-max",
+            "-110",
+        ]
+    )
+
+    request = run_budget.build_request_from_cli(args)
+
+    assert request.bbox == (40.0, 60.0, -130.0, -110.0)
+
+
+def test_build_request_rejects_region_with_explicit_bbox_flags():
+    args = cli.parse_args(["--region", "pnw_bartusek", "--lat-min", "40"])
+
+    with pytest.raises(ValueError, match="--region cannot be combined"):
+        run_budget.build_request_from_cli(args)
 
 
 def test_build_runtime_controls_use_config_defaults():
@@ -190,7 +245,7 @@ def test_build_production_options_rejects_cross_year_slices():
 
 
 def test_main_default_run_skips_plots_and_constant_temperature(monkeypatch):
-    _configure_main_stubs(monkeypatch, cli.parse_args(["--data-source", "local_era5"]))
+    _configure_main_stubs(monkeypatch, _parse_local_region_args())
 
     calculate_calls = []
     plot_calls = []
@@ -207,6 +262,7 @@ def test_main_default_run_skips_plots_and_constant_temperature(monkeypatch):
     assert len(calculate_calls) == 1
     assert calculate_calls[0]["plot_flag"] is False
     assert calculate_calls[0].get("test_constant_T", False) is False
+    assert calculate_calls[0]["benchmark_ds"] is None
     assert plot_calls == []
 
 
@@ -267,7 +323,7 @@ def test_main_hourly_loads_inputs_once_without_temporal_sampling(monkeypatch):
 def test_main_with_diagnostic_plots_restores_main_plot_generation(monkeypatch):
     _configure_main_stubs(
         monkeypatch,
-        cli.parse_args(["--data-source", "local_era5", "--diagnostic-plots"]),
+        _parse_local_region_args("--diagnostic-plots"),
     )
 
     calculate_calls = []
@@ -285,6 +341,7 @@ def test_main_with_diagnostic_plots_restores_main_plot_generation(monkeypatch):
     assert len(calculate_calls) == 1
     assert calculate_calls[0]["plot_flag"] is True
     assert calculate_calls[0].get("test_constant_T", False) is False
+    assert calculate_calls[0]["benchmark_ds"] is None
     assert plot_calls == [
         ("timeseries", None, "/tmp/test-plots"),
         ("timeseries", 24, "/tmp/test-plots"),
@@ -295,7 +352,7 @@ def test_main_with_diagnostic_plots_restores_main_plot_generation(monkeypatch):
 def test_main_with_constant_temperature_test_runs_second_budget_without_plots(monkeypatch):
     _configure_main_stubs(
         monkeypatch,
-        cli.parse_args(["--data-source", "local_era5", "--constant-temperature-test"]),
+        _parse_local_region_args("--constant-temperature-test"),
     )
 
     calculate_calls = []
@@ -315,8 +372,10 @@ def test_main_with_constant_temperature_test_runs_second_budget_without_plots(mo
     assert len(calculate_calls) == 2
     assert calculate_calls[0]["plot_flag"] is False
     assert calculate_calls[0].get("test_constant_T", False) is False
+    assert calculate_calls[0]["benchmark_ds"] is None
     assert calculate_calls[1]["plot_flag"] is False
     assert calculate_calls[1]["test_constant_T"] is True
+    assert "benchmark_ds" not in calculate_calls[1]
     assert plot_calls == []
     assert makedirs_calls == []
 
@@ -328,6 +387,8 @@ def test_main_with_both_flags_restores_current_behavior(monkeypatch):
             [
                 "--data-source",
                 "local_era5",
+                "--region",
+                "pnw_bartusek",
                 "--diagnostic-plots",
                 "--constant-temperature-test",
             ]
@@ -351,8 +412,10 @@ def test_main_with_both_flags_restores_current_behavior(monkeypatch):
     assert len(calculate_calls) == 2
     assert calculate_calls[0]["plot_flag"] is True
     assert calculate_calls[0].get("test_constant_T", False) is False
+    assert calculate_calls[0]["benchmark_ds"] is None
     assert calculate_calls[1]["plot_flag"] is True
     assert calculate_calls[1]["test_constant_T"] is True
+    assert "benchmark_ds" not in calculate_calls[1]
     assert plot_calls == [
         ("timeseries", None, "/tmp/test-plots"),
         ("timeseries", 24, "/tmp/test-plots"),
@@ -619,6 +682,8 @@ def test_main_init_production_manifest_exits_before_loading_data(monkeypatch, tm
             [
                 "--data-source",
                 "local_era5",
+                "--region",
+                "pnw_bartusek",
                 "--production-output-dir",
                 str(production_dir),
                 "--init-production-manifest",
@@ -658,6 +723,8 @@ def test_main_production_yearly_run_writes_single_output_without_run_info(monkey
             [
                 "--data-source",
                 "local_era5",
+                "--region",
+                "pnw_bartusek",
                 "--production-output-dir",
                 str(production_dir),
                 "--time-start",
@@ -693,6 +760,7 @@ def test_main_production_yearly_run_writes_single_output_without_run_info(monkey
 
     assert len(calculate_calls) == 1
     assert calculate_calls[0]["plot_dir"] == str(production_dir / "plots" / "1940")
+    assert calculate_calls[0]["benchmark_ds"] is None
     assert written_outputs == [(str(production_dir / "annual" / "heat_budget_1940.nc"), False)]
     assert run_info_calls == []
 
@@ -749,6 +817,8 @@ def test_main_production_mode_fails_when_manifest_is_missing(monkeypatch, tmp_pa
             [
                 "--data-source",
                 "local_era5",
+                "--region",
+                "pnw_bartusek",
                 "--production-output-dir",
                 str(production_dir),
                 "--time-start",
@@ -779,6 +849,8 @@ def test_main_production_plots_use_year_specific_directory(monkeypatch, tmp_path
             [
                 "--data-source",
                 "local_era5",
+                "--region",
+                "pnw_bartusek",
                 "--production-output-dir",
                 str(production_dir),
                 "--time-start",
@@ -808,11 +880,82 @@ def test_main_production_plots_use_year_specific_directory(monkeypatch, tmp_path
     run_budget.main()
 
     assert calculate_calls[0]["plot_dir"] == str(production_dir / "plots" / "1940")
+    assert calculate_calls[0]["benchmark_ds"] is None
     assert plot_calls == [
         ("timeseries", None, str(production_dir / "plots" / "1940")),
         ("timeseries", 24, str(production_dir / "plots" / "1940")),
         ("daily", str(production_dir / "plots" / "1940")),
     ]
+
+
+def test_main_arco_run_skips_benchmark_load_without_flag(monkeypatch):
+    _configure_main_stubs(
+        monkeypatch,
+        cli.parse_args(["--data-source", "arco_era5", "--region", "pnw_bartusek"]),
+    )
+
+    calculate_calls = []
+    benchmark_load_calls = []
+
+    monkeypatch.setattr(
+        run_budget.io,
+        "load_arco_benchmark_fluxes",
+        lambda *args, **kwargs: benchmark_load_calls.append((args, kwargs)) or xr.Dataset(),
+    )
+    monkeypatch.setattr(
+        run_budget.budget,
+        "calculate_budget",
+        lambda *args, **kwargs: calculate_calls.append(kwargs) or _make_stub_budget_result(),
+    )
+    _patch_plot_recorders(monkeypatch, [])
+
+    run_budget.main()
+
+    assert benchmark_load_calls == []
+    assert calculate_calls[0]["benchmark_ds"] is None
+
+
+def test_main_arco_run_loads_benchmark_with_flag(monkeypatch):
+    benchmark_ds = xr.Dataset({"Fx_heat": xr.DataArray([1.0], dims=("time",))})
+    _configure_main_stubs(
+        monkeypatch,
+        cli.parse_args(
+            [
+                "--data-source",
+                "arco_era5",
+                "--region",
+                "pnw_bartusek",
+                "--include-benchmark-variables",
+            ]
+        ),
+    )
+
+    calculate_calls = []
+    benchmark_load_calls = []
+
+    monkeypatch.setattr(
+        run_budget.io,
+        "load_arco_benchmark_fluxes",
+        lambda *args, **kwargs: benchmark_load_calls.append((args, kwargs)) or benchmark_ds,
+    )
+    monkeypatch.setattr(
+        run_budget.budget,
+        "calculate_budget",
+        lambda *args, **kwargs: calculate_calls.append(kwargs) or _make_stub_budget_result(),
+    )
+    _patch_plot_recorders(monkeypatch, [])
+
+    run_budget.main()
+
+    assert len(benchmark_load_calls) == 1
+    assert benchmark_load_calls[0][0][0].kind == "arco_era5"
+    assert set(benchmark_load_calls[0][0][1].values()) == {
+        "Fx_heat",
+        "Fy_heat",
+        "Fx_mass",
+        "Fy_mass",
+    }
+    assert calculate_calls[0]["benchmark_ds"] is benchmark_ds
 
 
 def _configure_main_stubs(monkeypatch, args):

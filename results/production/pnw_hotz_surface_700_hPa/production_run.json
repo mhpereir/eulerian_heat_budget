@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-05-16T08:48:42.875535",
+  "pbs_job_id": "2587860[5].venus",
+  "production_start_year": 1940,
+  "production_end_year": 2025,
+  "root_dir": "/home/mhpereir/eulerian_heat_budget/results/production/pnw_hotz_surface_700_hPa",
+  "annual_dir": "/home/mhpereir/eulerian_heat_budget/results/production/pnw_hotz_surface_700_hPa/annual",
+  "plot_root": "/home/mhpereir/eulerian_heat_budget/results/production/pnw_hotz_surface_700_hPa/plots",
+  "manifest_path": "/home/mhpereir/eulerian_heat_budget/results/production/pnw_hotz_surface_700_hPa/production_run.json",
+  "request": {
+    "bbox": [
+      49,
+      59,
+      -125,
+      -115
+    ],
+    "margin_n": 1,
+    "zg_top_pressure": 70000.0,
+    "zg_bottom": "surface_pressure",
+    "zg_bottom_pressure": null
+  },
+  "source_spec": {
+    "kind": "arco_era5",
+    "path_data": null,
+    "arco_path": "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3",
+    "arco_storage_token": "anon",
+    "chunks_time": 12,
+    "time_start": null,
+    "time_end": null
+  },
+  "surface_behaviour": {
+    "allow_bottom_overflow": true,
+    "use_surface_variables": false,
+    "surface_variable_mode": "none"
+  },
+  "git": {
+    "branch": "production_development",
+    "commit": "9c0bfad14ec09a311fb800cb983ae605f605db0f",
+    "dirty": true
+  },
+  "cli_args": {
+    "region": "pnw_hotz",
+    "lat_min": null,
+    "lat_max": null,
+    "lon_min": null,
+    "lon_max": null,
+    "margin_n": null,
+    "zg_top_pa": 70000.0,
+    "zg_bottom": "surface_pressure",
+    "zg_bottom_pa": null,
+    "allow_bottom_overflow": null,
+    "use_surface_variables": null,
+    "surface_variable_mode": null,
+    "data_source": "arco_era5",
+    "time_start": null,
+    "time_end": null,
+    "diagnostic_plots": true,
+    "constant_temperature_test": false,
+    "production_output_dir": "/home/mhpereir/eulerian_heat_budget/results/production/pnw_hotz_surface_700_hPa",
+    "init_production_manifest": true,
+    "production_start_year": 1940,
+    "production_end_year": 2025,
+    "overwrite_output": false
+  }
+}

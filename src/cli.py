@@ -10,6 +10,8 @@ from __future__ import annotations
 import argparse
 from typing import Optional, Sequence
 
+from . import config
+
 
 def build_arg_parser() -> argparse.ArgumentParser:
     """Create the parser used to collect DomainRequest CLI inputs."""
@@ -18,6 +20,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         description="Parse domain request arguments for Eulerian heat budget runs.",
     )
 
+    parser.add_argument(
+        "--region",
+        dest="region",
+        choices=sorted(config.REGIONS),
+        default=None,
+        help="Named region bbox to use for the horizontal domain.",
+    )
     parser.add_argument(
         "--lat-min",
         dest="lat_min",
@@ -142,6 +151,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="End time for data selection (ISO format, e.g. 1941-06-07T23:00:00).",
+    )
+
+    parser.add_argument(
+        "--include-benchmark-variables",
+        dest="include_benchmark_variables",
+        action="store_true",
+        default=False,
+        help="Load ARCO benchmark vertically integrated mass and heat fluxes for benchmark diagnostic plots.",
     )
 
     diagnostic_plots_group = parser.add_mutually_exclusive_group()

@@ -37,6 +37,27 @@ class ProductionOptions:
     year: int | None
     overwrite_output: bool
 
+BOUND_ARGS = ("lat_min", "lat_max", "lon_min", "lon_max")
+
+
+def _resolve_bbox_from_cli(args) -> tuple[float, float, float, float]:
+    provided_bounds = [name for name in BOUND_ARGS if getattr(args, name) is not None]
+    region = getattr(args, "region", None)
+
+    if region is not None:
+        if provided_bounds:
+            flags = ", ".join(f"--{name.replace('_', '-')}" for name in provided_bounds)
+            raise ValueError(f"--region cannot be combined with explicit bbox flags: {flags}")
+        return config.REGIONS[region]
+
+    if len(provided_bounds) != len(BOUND_ARGS):
+        required_flags = ", ".join(f"--{name.replace('_', '-')}" for name in BOUND_ARGS)
+        raise ValueError(f"Provide --region or all explicit bbox flags: {required_flags}")
+
+    lat_min, lat_max, lon_min, lon_max = (float(getattr(args, name)) for name in BOUND_ARGS)
+    return lat_min, lat_max, lon_min, lon_max
+
+
 def build_request_from_cli(args) -> specs.DomainRequest:
     zg_bottom = args.zg_bottom if args.zg_bottom is not None else config.DEFAULT_ZG_BOT_MODE
     zg_bottom_pressure = (
@@ -45,12 +66,7 @@ def build_request_from_cli(args) -> specs.DomainRequest:
     if zg_bottom == "surface_pressure":
         zg_bottom_pressure = None
 
-    bbox = (
-        args.lat_min if args.lat_min is not None else config.DEFAULT_BBOX[0],
-        args.lat_max if args.lat_max is not None else config.DEFAULT_BBOX[1],
-        args.lon_min if args.lon_min is not None else config.DEFAULT_BBOX[2],
-        args.lon_max if args.lon_max is not None else config.DEFAULT_BBOX[3],
-    )
+    bbox = _resolve_bbox_from_cli(args)
     return specs.DomainRequest(
         bbox=bbox,
         margin_n=args.margin_n if args.margin_n is not None else config.DEFAULT_MARGIN_N,
@@ -447,6 +463,28 @@ def main() -> None:
                 ad_hoc_run_paths,
                 phases=six_hourly_phases,
             )
+
+    # ds_bench = None
+    # if args.include_benchmark_variables and SourceCfg.kind == "arco_era5": #only available for arco era5 for now.
+    #     benchmark_var_map = {
+    #         "vertical_integral_of_eastward_heat_flux":  "Fx_heat",
+    #         "vertical_integral_of_northward_heat_flux": "Fy_heat",
+    #         "vertical_integral_of_eastward_mass_flux":  "Fx_mass",
+    #         "vertical_integral_of_northward_mass_flux": "Fy_mass",
+    #     }
+    #     ds_bench = io.load_arco_benchmark_fluxes(SourceCfg, benchmark_var_map)
+
+
+
+    # print(ds_bench)
+    # print(ds_bench['Fx_mass'].sel(lon=360-130, lat=50, method='nearest').values) #type: ignore
+    # print(ds_bench['Fx_heat'].sel(lon=360-130, lat=50, method='nearest').values) #type: ignore
+
+
+    # Determine domain extent based on grid and config margin
+    # ds_domain, ds_halo, DomainSpecs = grid.determine_domain(ds_merged, request, eager_loading=True)
+
+    print('Proceeding with', DomainSpecs)
 
     if production_options is None:
         if ad_hoc_run_paths is None:
