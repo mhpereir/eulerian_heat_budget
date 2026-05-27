@@ -31,7 +31,6 @@ echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hos
   --region "${REGION}" \
   --time-start "${TIME_START}" \
   --time-end "${TIME_END}" \
-  --region pnw_hotz \
   --diagnostic-plots \
   --constant-temperature-test
 echo "[info] $(date -Is) done"

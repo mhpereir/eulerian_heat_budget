@@ -1,6 +1,6 @@
 #!/bin/bash
 #PBS -N eulerian_heat_budget_prod
-#PBS -J 0-85
+#PBS -J 0-85%7
 #PBS -l select=1:ncpus=8:mem=25gb
 #PBS -j oe
 #PBS -o /dev/null
@@ -24,11 +24,11 @@ set -euo pipefail
 START_YEAR=1940
 END_YEAR=2025
 DATA_SOURCE="${DATA_SOURCE:-arco_era5}"
-PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_hotz_surface_700_hPa}"
-REGION="${REGION:-pnw_hotz}"
-ZG_TOP_PA="${ZG_TOP_PA:-70000}"
+PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_full_run_700_500_hPa}"
+REGION="${REGION:-pnw_bartusek}"
+ZG_TOP_PA="${ZG_TOP_PA:-50000}"
 ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-70000}"
-USE_SURFACE_AS_BOTTOM="${USE_SURFACE_AS_BOTTOM:-1}"
+USE_SURFACE_AS_BOTTOM="${USE_SURFACE_AS_BOTTOM:-0}"
 INIT_MANIFEST_ONLY="${INIT_MANIFEST_ONLY:-0}"
 ENABLE_DIAGNOSTIC_PLOTS="${ENABLE_DIAGNOSTIC_PLOTS:-1}"
 ENABLE_CONSTANT_TEMPERATURE_TEST="${ENABLE_CONSTANT_TEMPERATURE_TEST:-0}"
