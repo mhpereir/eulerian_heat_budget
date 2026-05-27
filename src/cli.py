@@ -131,14 +131,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Data source to load input dataset from.",
     )
     parser.add_argument(
-        "--benchmark-fluxes",
-        dest="benchmark_fluxes",
-        action="store_true",
-        default=False,
-        help="Load ARCO benchmark fluxes and generate benchmark comparison diagnostics.",
-    )
-
-    parser.add_argument(
         "--time-start",
         dest="time_start",
         type=str,

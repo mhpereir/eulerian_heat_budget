@@ -212,13 +212,13 @@ def _load_inputs(
     SourceCfg: specs.DataSourceConfig,
     SurfaceSpecs: specs.SurfaceBehaviour,
     *,
-    benchmark_fluxes: bool,
+    include_benchmark_variables: bool,
 ) -> tuple[xr.Dataset, xr.Dataset | None]:
     ds_merged = io.load_dataset(SourceCfg, SurfaceSpecs)
     validate.validate_schema(ds_merged)
 
     ds_bench = None
-    if benchmark_fluxes and SourceCfg.kind == "arco_era5":
+    if include_benchmark_variables and SourceCfg.kind == "arco_era5":
         ds_bench = io.load_arco_benchmark_fluxes(SourceCfg, ARCO_BENCHMARK_VAR_MAP)
 
     return ds_merged, ds_bench
@@ -343,7 +343,7 @@ def _run_phase_budgets(
         ds_merged, ds_bench = _load_inputs(
             SourceCfg,
             SurfaceSpecs,
-            benchmark_fluxes=args.benchmark_fluxes,
+            include_benchmark_variables=args.include_benchmark_variables,
         )
         result, DomainSpecs = _run_one_budget(
             ds_merged,
@@ -434,7 +434,7 @@ def main() -> None:
         ds_merged, ds_bench = _load_inputs(
             SourceCfg,
             SurfaceSpecs,
-            benchmark_fluxes=args.benchmark_fluxes,
+            include_benchmark_variables=args.include_benchmark_variables,
         )
         result, DomainSpecs = _run_one_budget(
             ds_merged,
@@ -463,26 +463,6 @@ def main() -> None:
                 ad_hoc_run_paths,
                 phases=six_hourly_phases,
             )
-
-    # ds_bench = None
-    # if args.include_benchmark_variables and SourceCfg.kind == "arco_era5": #only available for arco era5 for now.
-    #     benchmark_var_map = {
-    #         "vertical_integral_of_eastward_heat_flux":  "Fx_heat",
-    #         "vertical_integral_of_northward_heat_flux": "Fy_heat",
-    #         "vertical_integral_of_eastward_mass_flux":  "Fx_mass",
-    #         "vertical_integral_of_northward_mass_flux": "Fy_mass",
-    #     }
-    #     ds_bench = io.load_arco_benchmark_fluxes(SourceCfg, benchmark_var_map)
-
-
-
-    # print(ds_bench)
-    # print(ds_bench['Fx_mass'].sel(lon=360-130, lat=50, method='nearest').values) #type: ignore
-    # print(ds_bench['Fx_heat'].sel(lon=360-130, lat=50, method='nearest').values) #type: ignore
-
-
-    # Determine domain extent based on grid and config margin
-    # ds_domain, ds_halo, DomainSpecs = grid.determine_domain(ds_merged, request, eager_loading=True)
 
     print('Proceeding with', DomainSpecs)
 

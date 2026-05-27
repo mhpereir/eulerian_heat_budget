@@ -61,12 +61,15 @@ def _make_time_dataset_for_source_cfg(source_cfg) -> xr.Dataset:
     return ds.sel(time=mask)
 
 
+def _parse_local_region_args(*extra: str):
+    return cli.parse_args(["--data-source", "local_era5", "--region", "pnw_bartusek", *extra])
+
+
 def test_cli_runtime_flags_default_to_none():
     args = cli.parse_args(["--data-source", "local_era5"])
 
     assert args.diagnostic_plots is None
     assert args.constant_temperature_test is None
-    assert args.benchmark_fluxes is False
     assert args.include_benchmark_variables is False
 
 
@@ -140,7 +143,7 @@ def test_cli_runtime_flags_parse_explicit_values():
             "local_era5",
             "--diagnostic-plots",
             "--constant-temperature-test",
-            "--benchmark-fluxes",
+            "--include-benchmark-variables",
         ]
     )
 
@@ -148,7 +151,7 @@ def test_cli_runtime_flags_parse_explicit_values():
 
     assert args.diagnostic_plots is True
     assert args.constant_temperature_test is True
-    assert args.benchmark_fluxes is True
+    assert args.include_benchmark_variables is True
     assert diagnostic_plots is True
     assert constant_temperature_test is True
 
@@ -193,13 +196,13 @@ def test_cli_parses_production_arguments():
 
 
 def test_cli_parses_six_hourly_arguments():
-    args = cli.parse_args(["--data-source", "local_era5", "--six-hourly-phases"])
+    args = _parse_local_region_args("--six-hourly-phases")
 
     assert args.six_hourly_phases is True
     assert args.six_hourly_phase is None
     assert run_budget.selected_six_hourly_phases_from_cli(args) == [0, 1, 2, 3, 4, 5]
 
-    args = cli.parse_args(["--data-source", "local_era5", "--six-hourly-phase", "3"])
+    args = _parse_local_region_args("--six-hourly-phase", "3")
 
     assert args.six_hourly_phases is False
     assert args.six_hourly_phase == 3
@@ -208,7 +211,7 @@ def test_cli_parses_six_hourly_arguments():
 
 def test_cli_rejects_invalid_six_hourly_phase():
     with pytest.raises(SystemExit):
-        cli.parse_args(["--data-source", "local_era5", "--six-hourly-phase", "6"])
+        _parse_local_region_args("--six-hourly-phase", "6")
 
 
 def test_build_production_options_requires_manifest_year_bounds():
@@ -267,7 +270,10 @@ def test_main_default_run_skips_plots_and_constant_temperature(monkeypatch):
 
 
 def test_main_arco_default_skips_benchmark_flux_loading(monkeypatch):
-    _configure_main_stubs(monkeypatch, cli.parse_args(["--data-source", "arco_era5"]))
+    _configure_main_stubs(
+        monkeypatch,
+        cli.parse_args(["--data-source", "arco_era5", "--region", "pnw_bartusek"]),
+    )
 
     benchmark_args = []
 
@@ -291,7 +297,7 @@ def test_main_arco_default_skips_benchmark_flux_loading(monkeypatch):
 
 
 def test_main_hourly_loads_inputs_once_without_temporal_sampling(monkeypatch):
-    _configure_main_stubs(monkeypatch, cli.parse_args(["--data-source", "local_era5"]))
+    _configure_main_stubs(monkeypatch, _parse_local_region_args())
 
     loaded_configs = []
     written_outputs = []
@@ -299,7 +305,7 @@ def test_main_hourly_loads_inputs_once_without_temporal_sampling(monkeypatch):
     monkeypatch.setattr(
         run_budget,
         "_load_inputs",
-        lambda source_cfg, surface_specs, benchmark_fluxes: loaded_configs.append(source_cfg) or (xr.Dataset(), None),
+        lambda source_cfg, surface_specs, include_benchmark_variables: loaded_configs.append(source_cfg) or (xr.Dataset(), None),
     )
     monkeypatch.setattr(
         run_budget,
@@ -429,7 +435,7 @@ def test_main_with_both_flags_restores_current_behavior(monkeypatch):
 def test_main_six_hourly_phases_runs_budget_six_times(monkeypatch):
     _configure_six_hourly_stubs(
         monkeypatch,
-        cli.parse_args(["--data-source", "local_era5", "--six-hourly-phases"]),
+        _parse_local_region_args("--six-hourly-phases"),
     )
 
     calculate_calls = []
@@ -465,7 +471,7 @@ def test_main_six_hourly_phases_runs_budget_six_times(monkeypatch):
 def test_main_six_hourly_single_phase_runs_selected_phase(monkeypatch):
     _configure_six_hourly_stubs(
         monkeypatch,
-        cli.parse_args(["--data-source", "local_era5", "--six-hourly-phase", "3"]),
+        _parse_local_region_args("--six-hourly-phase", "3"),
     )
 
     calculate_calls = []
@@ -500,7 +506,7 @@ def test_main_six_hourly_single_phase_runs_selected_phase(monkeypatch):
 def test_main_six_hourly_single_phase_loads_one_phase_config(monkeypatch):
     _configure_main_stubs(
         monkeypatch,
-        cli.parse_args(["--data-source", "local_era5", "--six-hourly-phase", "3"]),
+        _parse_local_region_args("--six-hourly-phase", "3"),
     )
 
     loaded_configs = []
@@ -508,7 +514,7 @@ def test_main_six_hourly_single_phase_loads_one_phase_config(monkeypatch):
     monkeypatch.setattr(
         run_budget,
         "_load_inputs",
-        lambda source_cfg, surface_specs, benchmark_fluxes: loaded_configs.append(source_cfg) or (_make_time_dataset_for_source_cfg(source_cfg), None),
+        lambda source_cfg, surface_specs, include_benchmark_variables: loaded_configs.append(source_cfg) or (_make_time_dataset_for_source_cfg(source_cfg), None),
     )
     monkeypatch.setattr(
         run_budget,
@@ -529,7 +535,7 @@ def test_main_six_hourly_single_phase_loads_one_phase_config(monkeypatch):
 def test_main_six_hourly_all_phases_loads_each_phase_config(monkeypatch):
     _configure_main_stubs(
         monkeypatch,
-        cli.parse_args(["--data-source", "local_era5", "--six-hourly-phases"]),
+        _parse_local_region_args("--six-hourly-phases"),
     )
 
     loaded_configs = []
@@ -537,7 +543,7 @@ def test_main_six_hourly_all_phases_loads_each_phase_config(monkeypatch):
     monkeypatch.setattr(
         run_budget,
         "_load_inputs",
-        lambda source_cfg, surface_specs, benchmark_fluxes: loaded_configs.append(source_cfg) or (_make_time_dataset_for_source_cfg(source_cfg), None),
+        lambda source_cfg, surface_specs, include_benchmark_variables: loaded_configs.append(source_cfg) or (_make_time_dataset_for_source_cfg(source_cfg), None),
     )
     monkeypatch.setattr(
         run_budget,
@@ -569,9 +575,11 @@ def test_main_six_hourly_phase_selects_benchmark_fluxes(monkeypatch):
             [
                 "--data-source",
                 "arco_era5",
+                "--region",
+                "pnw_bartusek",
                 "--six-hourly-phase",
                 "2",
-                "--benchmark-fluxes",
+                "--include-benchmark-variables",
             ]
         ),
     )
@@ -605,7 +613,7 @@ def test_main_six_hourly_phase_selects_benchmark_fluxes(monkeypatch):
 def test_main_six_hourly_plots_use_phase_directories(monkeypatch):
     _configure_six_hourly_stubs(
         monkeypatch,
-        cli.parse_args(["--data-source", "local_era5", "--six-hourly-phase", "3", "--diagnostic-plots"]),
+        _parse_local_region_args("--six-hourly-phase", "3", "--diagnostic-plots"),
     )
 
     calculate_calls = []
@@ -643,6 +651,8 @@ def test_main_six_hourly_constant_temperature_runs_per_phase_directory(monkeypat
             [
                 "--data-source",
                 "local_era5",
+                "--region",
+                "pnw_bartusek",
                 "--six-hourly-phase",
                 "3",
                 "--constant-temperature-test",
@@ -776,6 +786,8 @@ def test_main_production_six_hourly_outputs_use_distinct_filenames(monkeypatch, 
             [
                 "--data-source",
                 "local_era5",
+                "--region",
+                "pnw_bartusek",
                 "--production-output-dir",
                 str(production_dir),
                 "--time-start",

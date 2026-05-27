@@ -54,15 +54,26 @@ mamba activate dev_env
 
 TIME_START="1941-06-01T00:00:00"
 TIME_END="1941-09-01T00:00:00"
+REGION="${REGION:-pnw_bartusek}"
+ENABLE_BENCHMARK_VARIABLES="${ENABLE_BENCHMARK_VARIABLES:-0}"
 
 cd "${SCRIPT_DIR}"
 
+RUN_ARGS=(
+  --data-source arco_era5
+  --region "${REGION}"
+  --time-start "${TIME_START}"
+  --time-end "${TIME_END}"
+  --diagnostic-plots
+  --constant-temperature-test
+  --six-hourly-phases
+)
+
+if [[ "${ENABLE_BENCHMARK_VARIABLES}" == "1" ]]; then
+  RUN_ARGS+=(--include-benchmark-variables)
+fi
+
 echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hostname)"
 /usr/bin/time -v python run_budget.py \
-  --data-source arco_era5 \
-  --time-start "${TIME_START}" \
-  --time-end "${TIME_END}" \
-  --diagnostic-plots \
-  --constant-temperature-test \
-  --six-hourly-phases
+  "${RUN_ARGS[@]}"
 echo "[info] $(date -Is) done"
