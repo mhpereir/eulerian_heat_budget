@@ -34,22 +34,6 @@ R_earth: float  = 6.371e6 #Earth radius in meters
 cp: float       = 1.005e3 #specific heat capacity of air in [J/(kg*K)]
 
 # REGIONs (consistent with your threshold files)
-<<<<<<< HEAD
-REGIONS: dict[str, tuple[slice, slice]] = {
-    "canada":       (slice(40, 70), slice(-140,    -60)),
-    "canada_north": (slice(55, 70), slice(-140, -60)),
-    "canada_south": (slice(40, 55), slice(-140, -60)),
-    "west":       (slice(40, 70), slice(-140,    -113.33)),
-    "west_north": (slice(55, 70), slice(-140, -113.33)),
-    "west_south": (slice(40, 55), slice(-140, -113.33)),
-    "central":       (slice(40, 70), slice(-113.33, -88.66)),
-    "central_north": (slice(55, 70), slice(-113.33, -88.66)),
-    "central_south": (slice(40, 55), slice(-113.33, -88.66)),
-    "east":       (slice(40, 70), slice(-88.66,  -60)),
-    "east_north": (slice(55, 70), slice(-88.66, -60)),
-    "east_south": (slice(40, 55), slice(-88.66, -60)),
-    "pnw_bartusek": (slice(40, 60), slice(-130, -110))  #DEFAULT_BBOX
-=======
 # Values are (lat_min, lat_max, lon_min, lon_max).
 REGIONS: dict[str, tuple[float, float, float, float]] = {
     "canada":       (40, 70, -140, -60),
@@ -66,7 +50,6 @@ REGIONS: dict[str, tuple[float, float, float, float]] = {
     "east_south": (40, 55, -88.66, -60),
     "pnw_bartusek": (40, 60, -130, -110),
     "pnw_hotz":     (49, 59, -125, -115),
->>>>>>> production_development
 }
 
 DEFAULT_MARGIN_N: int = 1 # number of grid points to keep as margin when determining domain extent

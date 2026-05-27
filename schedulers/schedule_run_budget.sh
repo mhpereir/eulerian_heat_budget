@@ -53,12 +53,8 @@ source "${MAMBA_ROOT_PREFIX}/etc/profile.d/mamba.sh"
 mamba activate dev_env
 
 TIME_START="1941-06-01T00:00:00"
-<<<<<<< HEAD
-TIME_END="1941-09-01T00:00:00"
-=======
 TIME_END="1941-06-07T00:00:00"
 REGION="${REGION:-pnw_bartusek}"
->>>>>>> production_development
 
 cd "${SCRIPT_DIR}"
 

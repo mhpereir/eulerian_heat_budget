@@ -161,7 +161,6 @@ Builds the command-line parser. It currently parses:
   - `--data-source`
   - `--time-start`
   - `--time-end`
-<<<<<<< HEAD
 - Runtime toggles:
   - `--diagnostic-plots` / `--no-diagnostic-plots`
   - `--constant-temperature-test` / `--no-constant-temperature-test`
@@ -173,12 +172,6 @@ Builds the command-line parser. It currently parses:
   - `--overwrite-output`
 
 Most parser defaults are `None` so `scripts/run_budget.py` can distinguish unspecified values from explicit user choices.
-=======
-- Benchmark diagnostics:
-  - `--include-benchmark-variables`
-
-The parser mostly returns `None` defaults. `scripts/run_budget.py` is responsible for validating domain selection and filling unspecified runtime values from `config.py`.
->>>>>>> production_development
 
 ### `src/io.py`
 
@@ -514,11 +507,7 @@ Current responsibilities:
 - initializes a production manifest and exits when requested
 - prepares ad hoc run paths or production yearly output paths
 - loads and validates the source dataset
-<<<<<<< HEAD
 - loads ARCO benchmark fluxes when using `arco_era5`
-=======
-- optionally loads ARCO benchmark flux variables when `--include-benchmark-variables` is set
->>>>>>> production_development
 - resolves `ds_domain`, `ds_halo`, and `DomainSpec`
 - writes ad hoc `run_info.json`
 - calls `budget.calculate_budget()`
