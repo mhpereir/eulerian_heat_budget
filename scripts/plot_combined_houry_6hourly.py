@@ -537,13 +537,13 @@ def print_degradation_metrics(hourly: xr.Dataset, six_hourly: xr.Dataset) -> Non
 
         print(
             f"  {term:<8} {hourly_values.size:5d}"
-            f" {np.mean(hourly_values):14.6e}"
-            f" {np.mean(six_values):14.6e}"
-            f" {np.mean(diff):14.6e}"
-            f" {np.mean(np.abs(diff)):14.6e}"
-            f" {rmse:14.6e}"
-            f" {correlation(hourly_values, six_values):9.5f}"
-            f" {nrmse:9.5f}"
+            f" {np.mean(hourly_values):10.2e}"
+            f" {np.mean(six_values):10.2e}"
+            f" {np.mean(diff):10.2e}"
+            f" {np.mean(np.abs(diff)):10.2e}"
+            f" {rmse:10.2e}"
+            f" {correlation(hourly_values, six_values):9.2f}"
+            f" {nrmse:9.2f}"
         )
 
 
@@ -577,13 +577,13 @@ def print_centered_window_degradation_metrics(
 
         print(
             f"  {term:<8} {hourly_values.size:5d}"
-            f" {hourly_mean:14.6e}"
-            f" {six_mean:14.6e}"
-            f" {bias:14.6e}"
-            f" {mae:14.6e}"
-            f" {rmse:14.6e}"
-            f" {corr:9.5f}"
-            f" {nrmse:9.5f}"
+            f" {hourly_mean:10.2e}"
+            f" {six_mean:10.2e}"
+            f" {bias:10.2e}"
+            f" {mae:10.2e}"
+            f" {rmse:10.2e}"
+            f" {corr:9.2f}"
+            f" {nrmse:9.2f}"
         )
 
 
@@ -619,13 +619,13 @@ def print_centered_period_degradation_metrics(
 
         print(
             f"  {term:<8} {hourly_values.size:5d}"
-            f" {hourly_mean:14.6e}"
-            f" {six_mean:14.6e}"
-            f" {bias:14.6e}"
-            f" {mae:14.6e}"
-            f" {rmse:14.6e}"
-            f" {corr:9.5f}"
-            f" {nrmse:9.5f}"
+            f" {hourly_mean:10.2e}"
+            f" {six_mean:10.2e}"
+            f" {bias:10.2e}"
+            f" {mae:10.2e}"
+            f" {rmse:10.2e}"
+            f" {corr:9.2f}"
+            f" {nrmse:9.2f}"
         )
 
 

@@ -54,10 +54,10 @@ export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-${HOME}/miniconda3}"
 source "${MAMBA_ROOT_PREFIX}/etc/profile.d/mamba.sh"
 mamba activate dev_env
 
-START_YEAR=1960
-END_YEAR=2000
+START_YEAR=1940
+END_YEAR=2024
 DATA_SOURCE="${DATA_SOURCE:-arco_era5}"
-PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-${REPO_ROOT}/results/production/pnw_full_run}"
+PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-${REPO_ROOT}/results/production/pnw_full_run_6hr}"
 INIT_MANIFEST_ONLY="${INIT_MANIFEST_ONLY:-0}"
 ENABLE_DIAGNOSTIC_PLOTS="${ENABLE_DIAGNOSTIC_PLOTS:-1}"
 ENABLE_CONSTANT_TEMPERATURE_TEST="${ENABLE_CONSTANT_TEMPERATURE_TEST:-0}"
@@ -101,7 +101,7 @@ initialize_manifest() {
     "${COMMON_RUN_ARGS[@]}" \
     --init-production-manifest \
     --production-start-year "${START_YEAR}" \
-    --production-end-year "${END_YEAR}"
+    --production-end-year "${END_YEAR}" 
   echo "[info] $(date -Is) manifest initialization complete"
 }
 
