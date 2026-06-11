@@ -24,7 +24,7 @@ def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_
     # symmetric limits
     L = np.nanmax(np.abs(np.concatenate([x, y])))
 
-    ax.plot([-L, L], [L, -L], linestyle='--', color='k')
+    ax.plot([-L, L], [-L, L], linestyle='--', color='k')
 
     ax.set_xlim(-L, L)
     ax.set_ylim(-L, L)
