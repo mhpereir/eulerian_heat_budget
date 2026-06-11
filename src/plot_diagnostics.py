@@ -65,16 +65,18 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
     mean_norm_factor     = 1/np.nanmean(domain_volume)
     time_rate_conversion = 3600
 
+    neg_dV_dt = - dV_dt
+
     fig, ax = plt.subplots(figsize=(10, 10), nrows=2, tight_layout=True, sharex=True)
 
-    delta_mass = dV_dt + advection_terms['net_mass_advection']
+    delta_mass = advection_terms['net_mass_advection'] - dV_dt
 
     ax[0].plot(delta_mass['time'], delta_mass * mean_norm_factor * time_rate_conversion, label=r'$\delta M$', color='k', alpha=0.8)
 
     ax[0].plot(delta_mass['time'], advection_terms['net_mass_advection']* mean_norm_factor * time_rate_conversion, 
                label='Net Mass Advection', alpha=0.5, color='C0')
-    ax[0].plot(delta_mass['time'], dV_dt * mean_norm_factor * time_rate_conversion, 
-               label='dV/dt', alpha=0.5, color='C1')
+    ax[0].plot(delta_mass['time'], neg_dV_dt * mean_norm_factor * time_rate_conversion, 
+               label='-dV/dt', alpha=0.5, color='C1')
 
     ax[0].legend()
     # ax[0].set_xlabel("Time")
@@ -85,13 +87,13 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
     if np.issubdtype(advection_terms['time'].dtype, np.datetime64):
         print("Time coordinate is in datetime format.")
     else:
-        print("Time coordinate is NOT in datetime format. Check your dataset.")
+        print("Time coordinate is NOT in dneg_atetime format. Check your dataset.")
         raise ValueError("Time coordinate is not in datetime format.")
 
     dt = (advection_terms["time"][1] - advection_terms["time"][0]).values / np.timedelta64(1, 's') # convert to seconds
     cumulative_residual = np.cumsum( delta_mass * dt)
     cumulative_net_adv  = np.cumsum(advection_terms['net_mass_advection'] * dt)
-    cumulative_dvdt     = np.cumsum(dV_dt * dt)
+    cumulative_dvdt     = np.cumsum(neg_dV_dt * dt)
 
     ax[1].plot(advection_terms['time'], cumulative_residual * mean_norm_factor, color='k')
     
