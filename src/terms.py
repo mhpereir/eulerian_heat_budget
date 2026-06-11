@@ -358,10 +358,10 @@ def compute_advective_term(
         )
 
     wall_sign = {
-        "west":   -1.0,
-        "east":   +1.0,
-        "south":  -1.0,
-        "north":  +1.0,
+        "west":   +1.0,
+        "east":   -1.0,
+        "south":  +1.0,
+        "north":  -1.0,
         "top":    -1.0,
         "bottom": +1.0,
     }
@@ -633,7 +633,7 @@ def compute_diabatic_term(
     math term: S + R = - A + C + D  => D = S + R + A - C
     '''
     # Compute diabatic term as residual
-    return S + A - C + R
+    return S + R + A - C 
 
 
 
