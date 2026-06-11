@@ -362,8 +362,8 @@ def compute_advective_term(
         "east":   -1.0,
         "south":  +1.0,
         "north":  -1.0,
-        "top":    -1.0,
-        "bottom": +1.0,
+        "top":    +1.0,
+        "bottom": -1.0,
     }
 
     residual_denom = xr.zeros_like(ds_domain_adv["time"], dtype="float64")
