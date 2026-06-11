@@ -50,6 +50,7 @@ REGIONS: dict[str, tuple[float, float, float, float]] = {
     "east_south": (40, 55, -88.66, -60),
     "pnw_bartusek": (40, 60, -130, -110),
     "pnw_hotz":     (49, 59, -125, -115),
+    "ocean_test": (25, 45, -170, -150),
 }
 
 DEFAULT_MARGIN_N: int = 1 # number of grid points to keep as margin when determining domain extent
