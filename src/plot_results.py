@@ -104,10 +104,10 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
 
     # ---------------- Panel 2 ---------------
     term_signs = {
-        "advection_term": -1, # flip sign for advection term
+        "advection_term": 1, # flip sign for advection term
         "adiabatic_term": 1,  
         "diabatic_term": 1,
-        "residual_heat": -1,
+        "residual_heat": 1,
     }
 
     dT_dt = ds_budget["dT_dt"] * norm_factor * time_conversion_factor  # convert to K/s by dividing by volume and multiplying by T scale (using domain average T as scale)
@@ -251,10 +251,10 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
 
     # ---------------- Panel 2 ---------------
     term_signs = {
-        "advection_term": -1, # flip sign for advection term
+        "advection_term": 1, # flip sign for advection term
         "adiabatic_term": 1,  
         "diabatic_term": 1,
-        "residual_heat": -1,
+        "residual_heat": 1,
     }
 
     #storage term
