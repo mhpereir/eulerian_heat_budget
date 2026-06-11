@@ -246,6 +246,8 @@ def calculate_budget(
     print("Is T_constant:", test_constant_T)
     print("T_scale:", T_scale)
 
+    dH = (dV_dt + advection_terms['net_mass_advection']) * T_domain_avg # mass closure residual heating
+
     advection_error = (dV_dt + advection_terms['net_mass_advection']) * T_scale # mass * K
 
     print('\t Calculating adiabatic term')
@@ -259,6 +261,7 @@ def calculate_budget(
         dT_dt,
         advection_terms["net_heat_advection"],
         adiabatic_term,
+        dH
     )
 
     print('Combining terms into output dataset')
@@ -274,6 +277,7 @@ def calculate_budget(
             'advection_error': advection_error.sel(time=d_dt_T['time']),
             'adiabatic_term': adiabatic_term.sel(time=d_dt_T['time']),
             'diabatic_term': diabatic_term.sel(time=d_dt_T['time']),
+            'residual_heat': dH.sel(time=d_dt_T['time']),
             'T_domain_avg': T_domain_avg.sel(time=d_dt_T['time']),
             'domain_volume': domain_volume.sel(time=d_dt_T['time']),
             'T_scale': T_scale,

@@ -104,9 +104,10 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
 
     # ---------------- Panel 2 ---------------
     term_signs = {
-        "advection_term": -1,
-        "adiabatic_term": 1,  # flip sign for adiabatic term
-        "diabatic_term": 1
+        "advection_term": -1, # flip sign for advection term
+        "adiabatic_term": 1,  
+        "diabatic_term": 1,
+        "residual_heat": -1,
     }
 
     dT_dt = ds_budget["dT_dt"] * norm_factor * time_conversion_factor  # convert to K/s by dividing by volume and multiplying by T scale (using domain average T as scale)
@@ -131,6 +132,11 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
         linestyle='--'
     )
 
+    ax[1].legend(
+        handles=[line_dT[0], line_dT_2[0]],
+        labels=["d<T>/dt", "d<T>/dt w/o residual"],
+    )
+
     ax[1].axhline(0, color='k', linestyle='-', linewidth=1)
 
     ax[1].set_ylabel(rf"dT/dt {units}")
@@ -139,7 +145,7 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
     # ---------------- Panel 3 ----------------
     lines = []
     
-    color_terms = {'advection_term': 'k', 'adiabatic_term': 'green', 'diabatic_term': 'red'}
+    color_terms = {'advection_term': 'k', 'adiabatic_term': 'green', 'diabatic_term': 'red', 'residual_heat': 'brown'}
 
     error_var = None
     if "advection_error" in ds_budget.data_vars:
@@ -150,6 +156,7 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
         ("advection_term", "Net Heat Advection"),
         ("adiabatic_term", "Adiabatic Term"),
         ("diabatic_term", "Diabatic Term"),
+        ("residual_heat", "Mass Closure Residual")
     ]:
         term = term_signs[var] * ds_budget[var] * norm_factor * time_conversion_factor
         term = term.rolling(time=smoothing_window, center=True).mean()
@@ -180,7 +187,8 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
     ax[2].legend(lines, [
         "Net Heat Advection",
         "Adiabatic Term",
-        "Diabatic Term"
+        "Diabatic Term",
+        "Mass Residual"
     ], fontsize=10)
 
     ax[2].axhline(0, color='k', linestyle='-', linewidth=1)
@@ -243,9 +251,10 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
 
     # ---------------- Panel 2 ---------------
     term_signs = {
-        "advection_term": -1,
-        "adiabatic_term": 1,  # flip sign for adiabatic term
-        "diabatic_term": 1
+        "advection_term": -1, # flip sign for advection term
+        "adiabatic_term": 1,  
+        "diabatic_term": 1,
+        "residual_heat": -1,
     }
 
     #storage term
@@ -301,7 +310,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     # ---------------- Panel 3 ----------------
     lines = []
     
-    color_terms = {'advection_term': 'k', 'adiabatic_term': 'green', 'diabatic_term': 'red'}
+    color_terms = {'advection_term': 'k', 'adiabatic_term': 'green', 'diabatic_term': 'red', 'residual_heat': 'brown'}
 
     error_var = None
     if "advection_error" in ds_budget.data_vars:
@@ -311,6 +320,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         ("advection_term", "Net Heat Advection"),
         ("adiabatic_term", "Adiabatic Term"),
         ("diabatic_term", "Diabatic Term"),
+        ("residual_heat", "Mass Closure Residual")
     ]:
         term = term_signs[var] * ds_budget[var] * norm_factor * time_conversion_factor
         term = term.resample(time="1D").sum() # sum over 24 hours, data is hourly -> daily
@@ -357,7 +367,8 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     ax[2].legend(lines, [
         "Net Heat Advection",
         "Adiabatic Term",
-        "Diabatic Term"
+        "Diabatic Term",
+        "Mass Residual"
     ], fontsize=10)
 
     ax[2].axhline(0, color='k', linestyle='-', linewidth=1)

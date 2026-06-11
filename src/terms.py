@@ -627,12 +627,13 @@ def compute_diabatic_term(
     S: xr.DataArray, #storage, dT_dt
     A: xr.DataArray, #advection, net_heat_advection
     C: xr.DataArray, #adiabatic, adiabatic_heating
+    R: xr.DataArray, #mass-closure residual heating term
 ) -> xr.DataArray: # D
     r'''
-    math term: S = - A + C + D  => D = S + A - C
+    math term: S + R = - A + C + D  => D = S + R + A - C
     '''
     # Compute diabatic term as residual
-    return S + A - C
+    return S + A - C + R
 
 
 

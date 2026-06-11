@@ -31,6 +31,13 @@ echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hos
   --region "${REGION}" \
   --time-start "${TIME_START}" \
   --time-end "${TIME_END}" \
+  --zg-bottom "pressure_level" \
+  --zg-bottom-pa 50000 \
+  --zg-top-pa 30000 \
   --diagnostic-plots \
   --constant-temperature-test
 echo "[info] $(date -Is) done"
+
+
+
+#   --include-benchmark-variables \
