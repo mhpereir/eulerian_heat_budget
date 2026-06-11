@@ -36,7 +36,7 @@ def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_
 
     x = dV_dt.values
     y = advection_terms['net_mass_advection'].values
-    r = y + x
+    r = y - x
 
     # bin by x
     nbin = 20
@@ -50,7 +50,7 @@ def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_
     plt.plot(xb, rb, marker='o')
     plt.axhline(0, linestyle='--', color='k')
     plt.xlabel("dV/dt")
-    plt.ylabel("mean residual (net_mass_advection + dV/dt)")
+    plt.ylabel("mean residual (net_mass_advection - dV/dt)")
     plt.savefig(plot_dir + "/fig1.1_mass_continuity_binned_residual.png", dpi=300)
 
     plt.close()
