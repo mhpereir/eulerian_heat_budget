@@ -246,7 +246,7 @@ def calculate_budget(
     print("Is T_constant:", test_constant_T)
     print("T_scale:", T_scale)
 
-    dH = (dV_dt - advection_terms['net_mass_advection']) * T_domain_avg # mass closure residual heating
+    dH = (dV_dt + advection_terms['net_mass_advection']) * T_domain_avg # mass closure residual heating
 
     advection_error = (dV_dt - advection_terms['net_mass_advection']) * T_scale # mass * K
 
