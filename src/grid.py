@@ -6,13 +6,13 @@ Geometry + domain resolution.
 Key responsibilities:
 
 - determine_domain(ds, req):
-  - crops the dataset to whole grid cells consistent with the requested bounds
-  - returns (ds_domain, DomainSpec)
-  - constructs and attaches cell-boundary coordinates:
+  - interprets incoming lat/lon coordinates as cell centers
+  - selects centers inside the requested bounds and applies the requested cell margin
+  - returns (ds_domain, ds_halo, DomainSpec)
+  - retains selected lat/lon centers and constructs cell-boundary coordinates:
     - lat_start, lat_end, lon_start, lon_end
     - p_start, p_end
   - constructs and attaches cell IDs for bookkeeping (e.g., lat_cell_id, lon_cell_id, p_cell_id)
-  - rewrites lat/lon to cell centers after cropping (internal convention)
 
 This module should remain deterministic and independently testable.
 '''
