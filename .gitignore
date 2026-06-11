@@ -1,9 +1,6 @@
-*.OU
-*.log
-*.venus
-*.png
 __pycache__/
-saved_results/*
 .pytest_cache/
-*.nc
-*production/*
+logs/
+results/
+saved_results/
+archive/run_catalog.csv
