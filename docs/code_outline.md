@@ -191,14 +191,15 @@ Provides domain resolution and geometric operators.
 
 Current domain logic:
 
-- `determine_domain(ds, request, eager_loading=False)` interprets input `lat` and `lon` as cell-start coordinates, not cell centers.
-- The requested bbox is snapped to whole cells.
-- `margin_n` is applied in cell space and must currently be at least `1`, because `ds_halo` is built from `margin_n - 1`.
+- `determine_domain(ds, request, eager_loading=False)` interprets input `lat` and `lon` as cell-center coordinates.
+- Cell edges are reconstructed halfway between adjacent centers, with the outermost edges extrapolated by half of the nearest center spacing.
+- Cells whose centers lie inside the requested bbox are selected.
+- `margin_n` trims selected center cells from each horizontal boundary and must currently be at least `1`, because `ds_halo` is built using `margin_n - 1`.
 - The function returns:
   - `ds_domain`: the interior control-volume grid
   - `ds_halo`: the same domain with a one-cell horizontal pad, used for wall-flux and wall-weight calculations
   - `DomainSpec`: resolved bounds and vertical boundary settings
-- The returned datasets carry cell-center coordinates plus bound metadata:
+- The returned datasets retain the selected input centers as `lat` and `lon` and carry reconstructed bound metadata:
   - `lat_start`, `lat_end`
   - `lon_start`, `lon_end`
   - `p_start`, `p_end`, `p_mid`
@@ -463,6 +464,7 @@ Required coordinate conventions at this stage:
 
 - `level` in Pa
 - `level` strictly decreasing
+- `lat` and `lon` represent cell centers
 - `lat` strictly increasing
 - `lon` strictly increasing
 - longitudes normalized to `[-180, 180]`
@@ -471,7 +473,8 @@ Required coordinate conventions at this stage:
 
 After `grid.determine_domain()`:
 
-- input horizontal coordinates have been reinterpreted from cell starts to cell centers
+- input horizontal coordinates are treated as cell centers and retained for the selected cells
+- horizontal cell bounds are reconstructed from adjacent centers
 - `ds_domain` is the interior control-volume grid used for volume integrals and top-face quantities
 - `ds_halo` carries a one-cell horizontal pad used for wall-face quantities
 - both datasets carry bound metadata:
