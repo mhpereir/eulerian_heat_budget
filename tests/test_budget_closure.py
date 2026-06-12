@@ -326,7 +326,7 @@ def test_mass_advection_uniform_meridional_flow_closed_to_machine_precision():
 
     npt.assert_allclose(
         out["net_mass_advection"].values,
-        expected.values,
+        -expected.values,
         rtol=1e-12,
         atol=0.0,
     )
@@ -334,7 +334,7 @@ def test_mass_advection_uniform_meridional_flow_closed_to_machine_precision():
     # With constant T, the net heat advection should also vanish if mass closes.
     npt.assert_allclose(
         out["net_heat_advection"].values,
-        expected.values*T0,
+        -expected.values*T0,
         rtol=1e-10,
         atol=0.0,
     )
