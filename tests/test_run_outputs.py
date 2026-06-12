@@ -72,6 +72,8 @@ def test_prepare_run_paths_uses_pbs_jobid(tmp_path):
     assert Path(paths.plot_dir) == tmp_path / "2586030.venus" / "plots"
     assert Path(paths.plot_dir).is_dir()
     assert Path(paths.metadata_path) == tmp_path / "2586030.venus" / "run_info.json"
+    assert Path(paths.output_path) == tmp_path / "2586030.venus" / "heat_budget.nc"
+    assert Path(paths.constant_t_output_path) == tmp_path / "2586030.venus" / "heat_budget_constant_T.nc"
 
 
 def test_write_run_info_serializes_specs_to_json(tmp_path):

@@ -40,6 +40,7 @@ def test_cli_runtime_flags_default_to_none():
     assert args.diagnostic_plots is None
     assert args.constant_temperature_test is None
     assert args.include_benchmark_variables is False
+    assert args.write_netcdf is False
 
 
 def test_cli_parses_region():
@@ -113,6 +114,7 @@ def test_cli_runtime_flags_parse_explicit_values():
             "--diagnostic-plots",
             "--constant-temperature-test",
             "--include-benchmark-variables",
+            "--write-netcdf",
         ]
     )
 
@@ -121,6 +123,7 @@ def test_cli_runtime_flags_parse_explicit_values():
     assert args.diagnostic_plots is True
     assert args.constant_temperature_test is True
     assert args.include_benchmark_variables is True
+    assert args.write_netcdf is True
     assert diagnostic_plots is True
     assert constant_temperature_test is True
 
@@ -197,16 +200,50 @@ def test_build_production_options_rejects_cross_year_slices():
         run_budget.build_production_options_from_cli(args)
 
 
+def test_build_production_options_rejects_write_netcdf_in_production_mode():
+    args = _parse_local_region_args(
+        "--production-output-dir",
+        "/tmp/production",
+        "--time-start",
+        "1940-01-01T00:00:00",
+        "--time-end",
+        "1940-12-31T23:00:00",
+        "--write-netcdf",
+    )
+
+    with pytest.raises(ValueError, match="--write-netcdf cannot be combined"):
+        run_budget.build_production_options_from_cli(args)
+
+
+def test_build_production_options_rejects_overwrite_without_output_mode():
+    args = _parse_local_region_args("--overwrite-output")
+
+    with pytest.raises(ValueError, match="--overwrite-output requires"):
+        run_budget.build_production_options_from_cli(args)
+
+
+def test_build_production_options_accepts_overwrite_for_ad_hoc_netcdf():
+    args = _parse_local_region_args("--write-netcdf", "--overwrite-output")
+
+    assert run_budget.build_production_options_from_cli(args) is None
+
+
 def test_main_default_run_skips_plots_and_constant_temperature(monkeypatch):
     _configure_main_stubs(monkeypatch, _parse_local_region_args())
 
     calculate_calls = []
     plot_calls = []
+    written_outputs = []
 
     monkeypatch.setattr(
         run_budget.budget,
         "calculate_budget",
         lambda *args, **kwargs: calculate_calls.append(kwargs) or _make_stub_budget_result(),
+    )
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "write_budget_result",
+        lambda ds_budget, output_path, overwrite=False: written_outputs.append((output_path, overwrite)) or str(output_path),
     )
     _patch_plot_recorders(monkeypatch, plot_calls)
 
@@ -217,6 +254,84 @@ def test_main_default_run_skips_plots_and_constant_temperature(monkeypatch):
     assert calculate_calls[0].get("test_constant_T", False) is False
     assert calculate_calls[0]["benchmark_ds"] is None
     assert plot_calls == []
+    assert written_outputs == []
+
+
+def test_main_ad_hoc_write_netcdf_writes_primary_result(monkeypatch):
+    _configure_main_stubs(monkeypatch, _parse_local_region_args("--write-netcdf"))
+
+    validated_outputs = []
+    written_outputs = []
+
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "require_output_path",
+        lambda output_path, overwrite=False: validated_outputs.append((output_path, overwrite)) or str(output_path),
+    )
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "write_budget_result",
+        lambda ds_budget, output_path, overwrite=False: written_outputs.append((output_path, overwrite)) or str(output_path),
+    )
+    monkeypatch.setattr(run_budget.budget, "calculate_budget", lambda *args, **kwargs: _make_stub_budget_result())
+    _patch_plot_recorders(monkeypatch, [])
+
+    run_budget.main()
+
+    assert validated_outputs == [("/tmp/test-run/heat_budget.nc", False)]
+    assert written_outputs == [("/tmp/test-run/heat_budget.nc", False)]
+
+
+def test_main_ad_hoc_write_netcdf_fails_on_collision_before_loading_data(monkeypatch):
+    _configure_main_stubs(monkeypatch, _parse_local_region_args("--write-netcdf"))
+
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "require_output_path",
+        lambda output_path, overwrite=False: (_ for _ in ()).throw(FileExistsError(output_path)),
+    )
+    monkeypatch.setattr(
+        run_budget.io,
+        "load_dataset",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("load_dataset should not be called")),
+    )
+
+    with pytest.raises(FileExistsError, match="heat_budget.nc"):
+        run_budget.main()
+
+
+def test_main_ad_hoc_write_netcdf_writes_constant_temperature_result(monkeypatch):
+    _configure_main_stubs(
+        monkeypatch,
+        _parse_local_region_args("--write-netcdf", "--constant-temperature-test", "--overwrite-output"),
+    )
+
+    validated_outputs = []
+    written_outputs = []
+
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "require_output_path",
+        lambda output_path, overwrite=False: validated_outputs.append((output_path, overwrite)) or str(output_path),
+    )
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "write_budget_result",
+        lambda ds_budget, output_path, overwrite=False: written_outputs.append((output_path, overwrite)) or str(output_path),
+    )
+    monkeypatch.setattr(run_budget.budget, "calculate_budget", lambda *args, **kwargs: _make_stub_budget_result())
+    _patch_plot_recorders(monkeypatch, [])
+
+    run_budget.main()
+
+    assert validated_outputs == [
+        ("/tmp/test-run/heat_budget.nc", True),
+        ("/tmp/test-run/heat_budget_constant_T.nc", True),
+    ]
+    assert written_outputs == [
+        ("/tmp/test-run/heat_budget.nc", False),
+        ("/tmp/test-run/heat_budget_constant_T.nc", False),
+    ]
 
 
 def test_main_with_diagnostic_plots_restores_main_plot_generation(monkeypatch):
@@ -578,6 +693,8 @@ def _configure_main_stubs(monkeypatch, args):
             run_root="/tmp/test-run",
             plot_dir="/tmp/test-plots",
             metadata_path="/tmp/test-run/run_info.json",
+            output_path="/tmp/test-run/heat_budget.nc",
+            constant_t_output_path="/tmp/test-run/heat_budget_constant_T.nc",
         ),
     )
     monkeypatch.setattr(

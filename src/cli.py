@@ -185,6 +185,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--write-netcdf",
+        dest="write_netcdf",
+        action="store_true",
+        default=False,
+        help="Write ad hoc budget results as NetCDF files beside run_info.json.",
+    )
+
+    parser.add_argument(
         "--production-output-dir",
         dest="production_output_dir",
         type=str,
@@ -217,7 +225,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         dest="overwrite_output",
         action="store_true",
         default=False,
-        help="Overwrite an existing yearly production NetCDF output.",
+        help="Overwrite existing production or opted-in ad hoc NetCDF output files.",
     )
 
 

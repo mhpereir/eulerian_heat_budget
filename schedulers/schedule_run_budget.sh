@@ -21,7 +21,7 @@ set -euo pipefail
 
 TIME_START="1941-06-01T00:00:00"
 TIME_END="1941-07-01T00:00:00"
-REGION="${REGION:-ocean_test}"
+REGION="${REGION:-pnw_bartusek}"
 
 cd /home/mhpereir/eulerian_heat_budget/scripts
 

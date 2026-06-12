@@ -128,10 +128,14 @@ def build_production_options_from_cli(args) -> ProductionOptions | None:
             args.init_production_manifest
             or args.production_start_year is not None
             or args.production_end_year is not None
-            or args.overwrite_output
         ):
             raise ValueError("Production CLI arguments require --production-output-dir.")
+        if args.overwrite_output and not args.write_netcdf:
+            raise ValueError("--overwrite-output requires --write-netcdf or --production-output-dir.")
         return None
+
+    if args.write_netcdf:
+        raise ValueError("--write-netcdf cannot be combined with --production-output-dir.")
 
     if args.init_production_manifest:
         if args.production_start_year is None or args.production_end_year is None:
@@ -177,6 +181,8 @@ def main() -> None:
     production_paths: run_outputs.ProductionPaths | None = None
     plot_dir: str
     yearly_output_path: str | None = None
+    ad_hoc_output_path: str | None = None
+    constant_t_output_path: str | None = None
 
     if production_options is not None and production_options.init_manifest:
         SourceCfg = build_data_source_from_cli(args, use_default_time_window=False)
@@ -215,6 +221,19 @@ def main() -> None:
     else:
         ad_hoc_run_paths = run_outputs.prepare_run_paths(config.DEFAULT_PLOTS_OUTPUT)
         plot_dir = ad_hoc_run_paths.plot_dir
+        if args.write_netcdf:
+            ad_hoc_output_path = run_outputs.require_output_path(
+                ad_hoc_run_paths.output_path,
+                overwrite=args.overwrite_output,
+            )
+            if constant_temperature_test:
+                constant_t_output_path = run_outputs.require_output_path(
+                    ad_hoc_run_paths.constant_t_output_path,
+                    overwrite=args.overwrite_output,
+                )
+            print(f"Saving ad hoc output to {ad_hoc_output_path}")
+            if constant_t_output_path is not None:
+                print(f"Saving constant-temperature output to {constant_t_output_path}")
         print(f"Saving plots to {plot_dir}")
 
     ds_merged = io.load_dataset(SourceCfg, SurfaceSpecs)
@@ -278,6 +297,13 @@ def main() -> None:
             overwrite=False,
         )
         print(f"Saved yearly output to {yearly_output_path}")
+    elif ad_hoc_output_path is not None:
+        ad_hoc_output_path = run_outputs.write_budget_result(
+            result,
+            ad_hoc_output_path,
+            overwrite=False,
+        )
+        print(f"Saved ad hoc output to {ad_hoc_output_path}")
 
     if diagnostic_plots:
         plot_results.plot_budget_terms_hourly(result, smoothing_window=1, plot_dir=plot_dir)
@@ -324,6 +350,14 @@ def main() -> None:
             plot_flag=diagnostic_plots,
             test_constant_T=True
         )
+
+        if constant_t_output_path is not None:
+            constant_t_output_path = run_outputs.write_budget_result(
+                result_test,
+                constant_t_output_path,
+                overwrite=False,
+            )
+            print(f"Saved constant-temperature output to {constant_t_output_path}")
 
         if diagnostic_plots:
             plot_results.plot_budget_terms_day_bin(result_test, plot_dir=constant_t_plot_dir)

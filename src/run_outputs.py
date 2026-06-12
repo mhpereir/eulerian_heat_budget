@@ -18,6 +18,8 @@ class RunPaths:
     run_root: str
     plot_dir: str
     metadata_path: str
+    output_path: str
+    constant_t_output_path: str
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,8 @@ def prepare_run_paths(
         run_root=str(run_root),
         plot_dir=str(plot_dir),
         metadata_path=str(run_root / "run_info.json"),
+        output_path=str(run_root / "heat_budget.nc"),
+        constant_t_output_path=str(run_root / "heat_budget_constant_T.nc"),
     )
 
 
