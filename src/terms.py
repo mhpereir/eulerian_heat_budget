@@ -664,7 +664,7 @@ def compute_advective_benchmark_fluxes(benchmark_ds: xr.Dataset,
                                        ds_domain: xr.Dataset,
                                        DomainSpecs: DomainSpec) -> tuple[xr.Dataset, xr.Dataset]:
     '''
-    arco provide vertical integral of mass fluxes for the two horizontal directions in kg/s
+    arco provide vertical integral of mass fluxes for the two horizontal directions in kg/m/s
     we can convert to our code units by multiplying by g
     '''
 
