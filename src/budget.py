@@ -179,31 +179,36 @@ def calculate_budget(
         domain_vars += ["T2m"]
         halo_vars   += ["T2m", "u10", "v10"]
 
-    if not test_constant_T:
-        ds_domain_adv_base = ds_domain[domain_vars]
-        ds_halo_adv_base   = ds_halo[halo_vars]
+    # if not test_constant_T:
+    
+    ds_domain_adv_base = ds_domain[domain_vars]
+    ds_halo_adv_base   = ds_halo[halo_vars]
 
-        assign_domain = {"T": ds_domain_adv_base["T"] - T_domain_avg}
-        assign_halo   = {"T": ds_halo_adv_base["T"] - T_domain_avg}
+    assign_domain = {"T": ds_domain_adv_base["T"] - T_domain_avg}
+    assign_halo   = {"T": ds_halo_adv_base["T"] - T_domain_avg}
 
-        if SurfaceSpecs.use_surface_variables:
-            assign_domain["T2m"] = ds_domain_adv_base["T2m"] - T_domain_avg
-            assign_halo["T2m"]   = ds_halo_adv_base["T2m"] - T_domain_avg
+    if SurfaceSpecs.use_surface_variables:
+        assign_domain["T2m"] = ds_domain_adv_base["T2m"] - T_domain_avg
+        assign_halo["T2m"]   = ds_halo_adv_base["T2m"] - T_domain_avg
 
-        ds_domain_adv = ds_domain_adv_base.assign(**assign_domain)  #type: ignore
-        ds_halo_adv   = ds_halo_adv_base.assign(**assign_halo) #type: ignore
+    ds_domain_adv = ds_domain_adv_base.assign(**assign_domain)  #type: ignore
+    ds_halo_adv   = ds_halo_adv_base.assign(**assign_halo) #type: ignore
 
-    else:
-        ds_domain_adv = ds_domain[domain_vars]
-        ds_halo_adv   = ds_halo[halo_vars]
+    # else:
+    #     ds_domain_adv = ds_domain[domain_vars]
+    #     ds_halo_adv   = ds_halo[halo_vars]
 
-        if SurfaceSpecs.use_surface_variables:
-            ds_domain_adv = ds_domain_adv.assign(
-                T2m=xr.full_like(ds_domain["T2m"], T_domain_avg.mean(dim="time", skipna=True).compute().item()),
-            )
-            ds_halo_adv = ds_halo_adv.assign(
-                T2m=xr.full_like(ds_halo["T2m"], T_domain_avg.mean(dim="time", skipna=True).compute().item()),
-            )
+    #     assign_domain = {"T": ds_domain_adv_base["T"] - T_domain_avg}
+    #     assign_halo   = {"T": ds_halo_adv_base["T"] - T_domain_avg}
+
+
+    #     if SurfaceSpecs.use_surface_variables:
+    #         ds_domain_adv = ds_domain_adv.assign(
+    #             T2m=xr.full_like(ds_domain["T2m"], T_domain_avg.mean(dim="time", skipna=True).compute().item()),
+    #         )
+    #         ds_halo_adv = ds_halo_adv.assign(
+    #             T2m=xr.full_like(ds_halo["T2m"], T_domain_avg.mean(dim="time", skipna=True).compute().item()),
+    #         )
 
     print('\t\t Preparing advective faces')
     ds_domain_adv_trim, ds_faces = terms.prepare_advective_faces(

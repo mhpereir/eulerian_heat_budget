@@ -304,6 +304,15 @@ def main() -> None:
             T = xr.full_like(ds_halo['T'], result.T_scale)
         )
 
+        if SurfaceSpecs.use_surface_variables:
+            ds_domain_test = ds_domain_test.assign(
+                T2m=xr.full_like(ds_domain_test["T2m"], result.T_scale)
+            )
+            ds_halo_test = ds_halo_test.assign(
+                T2m=xr.full_like(ds_halo_test["T2m"], result.T_scale)
+            )
+
+
 
         result_test = budget.calculate_budget(
             ds_domain_test,

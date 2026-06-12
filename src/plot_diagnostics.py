@@ -311,6 +311,10 @@ def fig5_benchmark_comparison(
     advection_terms: xr.Dataset,
     plot_dir: str,
 ):
+    
+    benchmark_mass_fluxes = - benchmark_mass_fluxes
+    benchmark_heat_fluxes = - benchmark_heat_fluxes
+    
     fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True, nrows=2, sharex=True)
 
     wall_faces = ["north", "south", "east", "west"]
@@ -321,6 +325,7 @@ def fig5_benchmark_comparison(
         "west": "red",
     }
 
+    
     T_average = results["T_domain_avg"]
 
     name_mass_benchmark = "benchmark_mass_flux_"
