@@ -21,7 +21,7 @@ set -euo pipefail
 
 TIME_START="1941-06-01T00:00:00"
 TIME_END="1941-07-01T00:00:00"
-REGION="${REGION:-pnw_bartusek}"
+REGION="${REGION:-ocean_test}"
 
 cd /home/mhpereir/eulerian_heat_budget/scripts
 
@@ -36,9 +36,8 @@ echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hos
   --diagnostic-plots \
   --include-benchmark-variables \
   --no-allow-bottom-overflow \
-  --use-surface-variables \
-  --surface-variable-mode "combined" \
-  --constant-temperature-test
+  --write-netcdf \
+  --constant-temperature-test 
 echo "[info] $(date -Is) done"
 
 
