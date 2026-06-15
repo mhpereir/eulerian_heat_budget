@@ -419,6 +419,8 @@ Current responsibilities:
 - prepares run directories and git provenance
 - loads and validates the source dataset
 - optionally loads ARCO benchmark flux variables when `--include-benchmark-variables` is set
+- includes the six net mass and heat flux series from diagnostic Figure 5.1 in
+  the returned and saved budget dataset when benchmark variables are loaded
 - resolves `ds_domain`, `ds_halo`, and `DomainSpec`
 - writes `run_info.json`
 - calls `budget.calculate_budget()`
@@ -521,6 +523,16 @@ Current weight outputs:
 - `T_domain_avg`
 - `domain_volume`
 - `T_scale`
+
+When `--include-benchmark-variables` is set for an ARCO ERA5 run, the output
+also contains the six series plotted in diagnostic Figure 5.1:
+
+- `benchmark_mass_flux_net`
+- `calculated_mass_flux_net_lateral`
+- `benchmark_heat_flux_net`
+- `calculated_heat_flux_net_lateral_full`
+- `calculated_heat_flux_net_lateral_full_benchmark_mass`
+- `calculated_heat_flux_net_lateral`
 
 This output is the main input to the result-plotting functions.
 

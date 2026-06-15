@@ -723,3 +723,120 @@ def compute_advective_benchmark_fluxes(benchmark_ds: xr.Dataset,
     })
 
     return advective_mass_fluxes, advective_heat_fluxes
+
+
+def compute_benchmark_diagnostic_totals(
+    benchmark_mass_fluxes: xr.Dataset,
+    benchmark_heat_fluxes: xr.Dataset,
+    results: xr.Dataset,
+    advection_terms: xr.Dataset,
+) -> xr.Dataset:
+    """Return the six net mass and heat flux series plotted in Figure 5.1."""
+    output_time = advection_terms["time"]
+
+    # The ARCO benchmark uses the opposite sign convention from the calculated
+    # advection terms. Limit it to the centered-derivative output time axis.
+    benchmark_mass_fluxes = -benchmark_mass_fluxes.sel(time=output_time)
+    benchmark_heat_fluxes = -benchmark_heat_fluxes.sel(time=output_time)
+
+    mass_lateral = (
+        advection_terms["net_mass_advection"]
+        - advection_terms["mass_flux_contribution_top"] #wonder if this should be here....
+    )
+    heat_lateral = (
+        advection_terms["advection_term"]
+        - advection_terms["flux_contribution_top"] #same thing here, should we be substracting top?
+    )
+
+    ## in practice these settings should never run with benchmark test....
+    if "mass_flux_contribution_bottom" in advection_terms:
+        mass_lateral = (
+            mass_lateral - advection_terms["mass_flux_contribution_bottom"]
+        )
+    if "flux_contribution_bottom" in advection_terms:
+        heat_lateral = (
+            heat_lateral - advection_terms["flux_contribution_bottom"]
+        )
+
+    T_average = results["T_domain_avg"].sel(time=output_time)
+    benchmark_mass_net = benchmark_mass_fluxes["benchmark_mass_flux_net"]
+    heat_lateral_full = heat_lateral + T_average * mass_lateral
+    heat_lateral_full_benchmark_mass = (
+        heat_lateral + T_average * benchmark_mass_net
+    )
+
+    out = xr.Dataset(
+        {
+            "benchmark_mass_flux_net": benchmark_mass_net,
+            "calculated_mass_flux_net_lateral": mass_lateral,
+            "benchmark_heat_flux_net": benchmark_heat_fluxes[
+                "benchmark_heat_flux_net"
+            ],
+            "calculated_heat_flux_net_lateral_full": heat_lateral_full,
+            "calculated_heat_flux_net_lateral_full_benchmark_mass": (
+                heat_lateral_full_benchmark_mass
+            ),
+            "calculated_heat_flux_net_lateral": heat_lateral,
+        }
+    )
+
+    mass_units = "m2 Pa s-1"
+    heat_units = "K m2 Pa s-1"
+    out["benchmark_mass_flux_net"].attrs.update(
+        {
+            "long_name": "Benchmark net lateral mass flux",
+            "units": mass_units,
+            "sign_convention": "positive into domain",
+            "diagnostic_figure": "5.1",
+        }
+    )
+    out["calculated_mass_flux_net_lateral"].attrs.update(
+        {
+            "long_name": "Calculated net lateral mass flux",
+            "units": mass_units,
+            "sign_convention": "positive into domain",
+            "diagnostic_figure": "5.1",
+        }
+    )
+    out["benchmark_heat_flux_net"].attrs.update(
+        {
+            "long_name": "Benchmark net lateral full-temperature heat flux",
+            "units": heat_units,
+            "sign_convention": "positive into domain",
+            "diagnostic_figure": "5.1",
+        }
+    )
+    out["calculated_heat_flux_net_lateral_full"].attrs.update(
+        {
+            "long_name": "Calculated net lateral temperature heat flux plus mass-closure correction",
+            "units": heat_units,
+            "diagnostic_figure": "5.1",
+            "formula": (
+                "calculated_heat_flux_net_lateral + "
+                "T_domain_avg * calculated_mass_flux_net_lateral"
+            ),
+        }
+    )
+    out["calculated_heat_flux_net_lateral_full_benchmark_mass"].attrs.update(
+        {
+            "long_name": (
+                "Calculated net lateral full-temperature heat flux plus "
+                "benchmark mass flux for mass-closure correction"
+            ),
+            "units": heat_units,
+            "diagnostic_figure": "5.1",
+            "formula": (
+                "calculated_heat_flux_net_lateral + "
+                "T_domain_avg * benchmark_mass_flux_net"
+            ),
+        }
+    )
+    out["calculated_heat_flux_net_lateral"].attrs.update(
+        {
+            "long_name": "Calculated net lateral temperature heat flux",
+            "units": heat_units,
+            "diagnostic_figure": "5.1",
+        }
+    )
+
+    return out

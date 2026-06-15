@@ -297,6 +297,17 @@ def calculate_budget(
 
         benchmark_ds = grid.crop_to_target_grid(benchmark_ds, ds_halo)
         benchmark_mass_fluxes, benchmark_heat_fluxes = terms.compute_advective_benchmark_fluxes(benchmark_ds, ds_domain, DomainSpecs)
+        benchmark_diagnostic_totals = terms.compute_benchmark_diagnostic_totals(
+            benchmark_mass_fluxes,
+            benchmark_heat_fluxes,
+            out,
+            advection_terms_out,
+        )
+        out = xr.merge(
+            [out, benchmark_diagnostic_totals],
+            compat="equals",
+            join="exact",
+        ).compute()
 
 
     print('Plotting diagnostics...')

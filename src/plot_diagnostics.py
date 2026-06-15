@@ -10,6 +10,8 @@ import matplotlib.dates as mdates
 
 from matplotlib.lines import Line2D
 
+from . import terms
+
 #set label sizes 16
 plt.rcParams.update({'font.size': 16})
 
@@ -311,7 +313,13 @@ def fig5_benchmark_comparison(
     advection_terms: xr.Dataset,
     plot_dir: str,
 ):
-    
+    benchmark_diagnostic_totals = terms.compute_benchmark_diagnostic_totals(
+        benchmark_mass_fluxes,
+        benchmark_heat_fluxes,
+        results,
+        advection_terms,
+    )
+
     benchmark_mass_fluxes = - benchmark_mass_fluxes
     benchmark_heat_fluxes = - benchmark_heat_fluxes
     
@@ -332,18 +340,6 @@ def fig5_benchmark_comparison(
     name_heat_benchmark = "benchmark_heat_flux_"
     name_calculated_mass = "mass_flux_contribution_"
     name_calculated_heat = "flux_contribution_"
-
-    # lateral-only net mass/heat from your calculation
-    mass_lateral = advection_terms["net_mass_advection"] - advection_terms["mass_flux_contribution_top"]
-    heat_lateral_anom = advection_terms["advection_term"] - advection_terms["flux_contribution_top"]
-
-    if "mass_flux_contribution_bottom" in advection_terms:
-        mass_lateral = mass_lateral - advection_terms["mass_flux_contribution_bottom"]
-    if "flux_contribution_bottom" in advection_terms:
-        heat_lateral_anom = heat_lateral_anom - advection_terms["flux_contribution_bottom"]
-
-    heat_lateral_full = heat_lateral_anom + T_average * mass_lateral
-    heat_lateral_full_2 = heat_lateral_anom + T_average * benchmark_mass_fluxes["benchmark_mass_flux_net"]
 
     for face in wall_faces:
         # mass panel
@@ -377,30 +373,30 @@ def fig5_benchmark_comparison(
 
     # net lines
     ax[0].plot(
-        benchmark_mass_fluxes["time"],
-        benchmark_mass_fluxes["benchmark_mass_flux_net"],
+        benchmark_diagnostic_totals["time"],
+        benchmark_diagnostic_totals["benchmark_mass_flux_net"],
         linestyle="--",
         color="k",
     )
     ax[0].plot(
-        advection_terms["time"],
-        mass_lateral,
+        benchmark_diagnostic_totals["time"],
+        benchmark_diagnostic_totals["calculated_mass_flux_net_lateral"],
         linestyle="-",
         linewidth=2,
         color="k",
     )
 
     ax[1].plot(
-        benchmark_heat_fluxes["time"],
-        benchmark_heat_fluxes["benchmark_heat_flux_net"],
+        benchmark_diagnostic_totals["time"],
+        benchmark_diagnostic_totals["benchmark_heat_flux_net"],
         linestyle="--",
         linewidth=2,
         color="k",
         label="Benchmark net",
     )
     ax[1].plot(
-        advection_terms["time"],
-        heat_lateral_full,
+        benchmark_diagnostic_totals["time"],
+        benchmark_diagnostic_totals["calculated_heat_flux_net_lateral_full"],
         linestyle="-",
         linewidth=2,
         color="k",
@@ -443,30 +439,30 @@ def fig5_benchmark_comparison(
 
     # net lines
     ax[0].plot(
-        benchmark_mass_fluxes["time"],
-        benchmark_mass_fluxes["benchmark_mass_flux_net"],
+        benchmark_diagnostic_totals["time"],
+        benchmark_diagnostic_totals["benchmark_mass_flux_net"],
         linestyle="--",
         color="k",
     )
     ax[0].plot(
-        advection_terms["time"],
-        mass_lateral,
+        benchmark_diagnostic_totals["time"],
+        benchmark_diagnostic_totals["calculated_mass_flux_net_lateral"],
         linestyle="-",
         linewidth=2,
         color="k",
     )
 
     ax[1].plot(
-        benchmark_heat_fluxes["time"],
-        benchmark_heat_fluxes["benchmark_heat_flux_net"],
+        benchmark_diagnostic_totals["time"],
+        benchmark_diagnostic_totals["benchmark_heat_flux_net"],
         linestyle="--",
         linewidth=1,
         color="k",
         label=r"$\mathcal{H}_{bench, full}$",
     )
     ax[1].plot(
-        advection_terms["time"],
-        heat_lateral_full,
+        benchmark_diagnostic_totals["time"],
+        benchmark_diagnostic_totals["calculated_heat_flux_net_lateral_full"],
         linestyle="-",
         linewidth=1,
         color="k",
@@ -474,8 +470,10 @@ def fig5_benchmark_comparison(
     )
 
     ax[1].plot(
-        advection_terms["time"],
-        heat_lateral_full_2,
+        benchmark_diagnostic_totals["time"],
+        benchmark_diagnostic_totals[
+            "calculated_heat_flux_net_lateral_full_benchmark_mass"
+        ],
         linestyle="-.",
         linewidth=1,
         color="gray",
@@ -483,8 +481,8 @@ def fig5_benchmark_comparison(
     )
 
     ax[1].plot(
-        advection_terms["time"],
-        heat_lateral_anom,
+        benchmark_diagnostic_totals["time"],
+        benchmark_diagnostic_totals["calculated_heat_flux_net_lateral"],
         linestyle="-",
         linewidth=1,
         color="red",

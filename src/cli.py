@@ -151,7 +151,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         dest="include_benchmark_variables",
         action="store_true",
         default=False,
-        help="Load ARCO benchmark vertically integrated mass and heat fluxes for benchmark diagnostic plots.",
+        help=(
+            "Load ARCO benchmark vertically integrated mass and heat fluxes for "
+            "benchmark diagnostic plots and budget output variables."
+        ),
     )
 
     diagnostic_plots_group = parser.add_mutually_exclusive_group()
