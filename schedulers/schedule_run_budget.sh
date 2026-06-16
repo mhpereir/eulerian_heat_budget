@@ -32,13 +32,14 @@ echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hos
   --time-start "${TIME_START}" \
   --time-end "${TIME_END}" \
   --zg-bottom "surface_pressure" \
-  --zg-top-pa 70000 \
+  --zg-top-pa 100 \
   --diagnostic-plots \
   --no-allow-bottom-overflow \
+  --include-benchmark-variables \
   --write-netcdf \
   --constant-temperature-test 
 echo "[info] $(date -Is) done"
 
 
   # --zg-bottom-pa 50000 \
-  # --include-benchmark-variables \
+
