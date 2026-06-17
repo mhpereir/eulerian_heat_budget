@@ -10,7 +10,8 @@ import pytest
 import xarray as xr
 
 from src.specs import DomainRequest, SurfaceBehaviour
-from src.grid import determine_domain
+from src.grid import determine_domain, get_horizontal_cell_areas
+from src.terms import compute_time_derivative, compute_true_domain_volume
 from src.weights import volume_weights, area_weights_vertical, area_weights_horizontal
 
 
@@ -111,6 +112,81 @@ def test_volume_weights_surface_and_top_intersections_exact():
     # Sanity: in non-overflow mode, weights must be within [0,1]
     assert float(W.min()) >= 0.0
     assert float(W.max()) <= 1.0
+
+
+def test_compute_true_domain_volume_surface_pressure_direct_depth():
+    bbox=(0,4,10,14)
+    ds = _make_dataset(
+        level=[950*100, 850*100, 750*100],
+        lat=[0.0, 1.0, 2.0, 3.0, 4.0],
+        lon=[10.0, 11.0, 12.0, 13.0, 14.0],
+    )
+    req = _make_request(
+        bbox=bbox,
+        zg_top_pressure=800*100,
+        zg_bottom="surface_pressure",
+        zg_bottom_pressure=None,
+        margin_n=1,
+    )
+    dom, _, spec = determine_domain(ds, req)
+    dom = _attach_sp(
+        dom,
+        sp_vals=np.full((1, dom.sizes["lat"], dom.sizes["lon"]), 925 * 100.0),
+    )
+
+    horizontal_area = get_horizontal_cell_areas(dom)
+    out = compute_true_domain_volume(dom, horizontal_area, spec)
+
+    expected = horizontal_area.sum() * ((925 - 800) * 100.0)
+    np.testing.assert_allclose(out.values, [float(expected.values)], rtol=0, atol=1e-6)
+    assert out.name == "V_true"
+
+
+def test_compute_true_domain_volume_derivative_uses_centered_time_axis():
+    bbox=(0,4,10,14)
+    ds = _make_dataset(
+        level=[950*100, 850*100, 750*100],
+        lat=[0.0, 1.0, 2.0, 3.0, 4.0],
+        lon=[10.0, 11.0, 12.0, 13.0, 14.0],
+    )
+    req = _make_request(
+        bbox=bbox,
+        zg_top_pressure=800*100,
+        zg_bottom="surface_pressure",
+        zg_bottom_pressure=None,
+        margin_n=1,
+    )
+    dom, _, spec = determine_domain(ds, req)
+
+    time = np.array(
+        ["2000-01-01T00", "2000-01-01T01", "2000-01-01T02", "2000-01-01T03"],
+        dtype="datetime64[h]",
+    )
+    sp_values = (800 * 100.0) + np.arange(time.size, dtype=float)[:, None, None] * 3600.0
+    sp_values = np.broadcast_to(
+        sp_values,
+        (time.size, dom.sizes["lat"], dom.sizes["lon"]),
+    )
+    sp = xr.DataArray(
+        sp_values,
+        dims=("time", "lat", "lon"),
+        coords={"time": time, "lat": dom["lat"], "lon": dom["lon"]},
+        name="sp",
+        attrs={"units": "Pa"},
+    )
+    dom = dom.assign(sp=sp)
+
+    horizontal_area = get_horizontal_cell_areas(dom)
+    true_volume = compute_true_domain_volume(dom, horizontal_area, spec)
+    dV_dt_true = compute_time_derivative(true_volume).rename("dV_dt_true")
+
+    np.testing.assert_array_equal(dV_dt_true["time"].values, time[1:-1])
+    np.testing.assert_allclose(
+        dV_dt_true.values,
+        np.full(time.size - 2, horizontal_area.sum().values),
+        rtol=1e-12,
+        atol=1e-6,
+    )
 
 
 def test_area_weights_horizontal_binary_top_and_bottom():

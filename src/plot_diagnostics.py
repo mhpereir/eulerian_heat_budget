@@ -58,6 +58,54 @@ def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_
     plt.close()
 
 
+def fig1_benchmark_mass_continuity(
+    dV_dt: xr.DataArray,
+    advection_terms: xr.Dataset,
+    dV_dt_true: xr.DataArray,
+    benchmark_mass_flux_net: xr.DataArray,
+    plot_dir: str,
+):
+    eulerian_x, eulerian_y = xr.align(
+        dV_dt,
+        advection_terms["net_mass_advection"],
+        join="inner",
+    )
+    benchmark_x, benchmark_y = xr.align(
+        dV_dt_true,
+        benchmark_mass_flux_net,
+        join="inner",
+    )
+
+    x_e = eulerian_x.values.ravel()
+    y_e = eulerian_y.values.ravel()
+    x_b = benchmark_x.values.ravel()
+    y_b = benchmark_y.values.ravel()
+
+    mask_e = np.isfinite(x_e) & np.isfinite(y_e)
+    mask_b = np.isfinite(x_b) & np.isfinite(y_b)
+
+    all_values = np.concatenate(
+        [x_e[mask_e], y_e[mask_e], x_b[mask_b], y_b[mask_b]]
+    )
+    L = np.nanmax(np.abs(all_values)) if all_values.size else 1.0
+    if not np.isfinite(L) or L == 0:
+        L = 1.0
+
+    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
+    ax.scatter(x_e[mask_e], y_e[mask_e], alpha=0.5, label="Eulerian")
+    ax.scatter(x_b[mask_b], y_b[mask_b], alpha=0.5, label="Benchmark")
+    ax.plot([-L, L], [-L, L], linestyle="--", color="k", label="1:1")
+
+    ax.set_xlim(-L, L)
+    ax.set_ylim(-L, L)
+    ax.set_xlabel("dV/dt")
+    ax.set_ylabel("Net mass flux")
+    ax.legend()
+
+    fig.savefig(plot_dir + "/fig1_benchmark_mass_continuity.png", dpi=300)
+    plt.close(fig)
+
+
 
 
 def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: xr.DataArray, domain_volume: xr.DataArray, plot_dir: str):

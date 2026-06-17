@@ -31,6 +31,45 @@ def compute_domain_volume(ds_domain: xr.Dataset,
     return out.rename("V")
 
 
+def compute_true_domain_volume(
+    ds_domain: xr.Dataset,
+    horizontal_cell_areas: xr.DataArray,
+    DomainSpecs: DomainSpec,
+) -> xr.DataArray:
+    """Compute pressure-coordinate volume directly from top and bottom pressures."""
+    sp = ds_domain["sp"].astype("float64")
+
+    if DomainSpecs.zg_bottom == "surface_pressure":
+        p_bottom = sp
+    elif DomainSpecs.zg_bottom == "pressure_level":
+        p_fixed = xr.DataArray(float(DomainSpecs.zg_bottom_pressure), attrs={"units": "Pa"}) #type: ignore
+        p_bottom = xr.ufuncs.minimum(p_fixed, sp)
+    else:
+        raise ValueError(f"Unsupported zg_bottom mode: {DomainSpecs.zg_bottom}")
+
+    pressure_thickness = (p_bottom - float(DomainSpecs.zg_top_pressure)).clip(min=0.0)
+    volume = (pressure_thickness * horizontal_cell_areas.astype("float64")).sum(
+        dim=("lat", "lon")
+    )
+    volume = volume.rename("V_true").reset_coords(drop=True)
+    volume.attrs.update(
+        {
+            "long_name": "True domain pressure-coordinate volume",
+            "units": "m2 Pa",
+            "formula": "integral_A max(p_bottom - zg_top_pressure, 0) dA",
+            "zg_top_pressure_pa": float(DomainSpecs.zg_top_pressure),
+            "zg_bottom_mode": str(DomainSpecs.zg_bottom),
+            "zg_bottom_pressure_pa": (
+                float(DomainSpecs.zg_bottom_pressure) #type: ignore
+                if DomainSpecs.zg_bottom == "pressure_level"
+                else None
+            ),
+        }
+    )
+
+    return volume
+
+
 def compute_time_derivative(da: xr.DataArray, method: str = "centered") -> xr.DataArray:
     '''
     For a time step t_i, the different methods represent:

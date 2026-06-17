@@ -105,6 +105,8 @@ def calculate_budget(
     print('\t Calculating domain volume and its time derivative')
     domain_volume = terms.compute_domain_volume(ds_domain, ds_cell_volumes, ds_weights_volumes, DomainSpecs)
     dV_dt         = terms.compute_time_derivative(domain_volume)
+    domain_volume_true = terms.compute_true_domain_volume(ds_domain, ds_horizontal_cell_areas, DomainSpecs)
+    dV_dt_true         = terms.compute_time_derivative(domain_volume_true).rename("dV_dt_true")
 
     print('\t Calculating domain average temperature and its time derivative')
     #extra terms:
@@ -279,12 +281,14 @@ def calculate_budget(
             'dT_dt': dT_dt.sel(time=d_dt_T['time']),
             'dT_dt_2': dT_dt_2.sel(time=d_dt_T['time']),
             'dV_dt': dV_dt.sel(time=d_dt_T['time']),
+            'dV_dt_true': dV_dt_true.sel(time=d_dt_T['time']),
             'advection_error': advection_error.sel(time=d_dt_T['time']),
             'adiabatic_term': adiabatic_term.sel(time=d_dt_T['time']),
             'diabatic_term': diabatic_term.sel(time=d_dt_T['time']),
             'residual_heat': dH.sel(time=d_dt_T['time']),
             'T_domain_avg': T_domain_avg.sel(time=d_dt_T['time']),
             'domain_volume': domain_volume.sel(time=d_dt_T['time']),
+            'domain_volume_true': domain_volume_true.sel(time=d_dt_T['time']),
             'T_scale': T_scale,
         }),
         advection_terms_out,
@@ -314,12 +318,20 @@ def calculate_budget(
     if plot_flag:
         os.makedirs(plot_diag_path, exist_ok=True)
         #plot diagnostics for advective integrals
-        plot_diagnostics.fig1_mass_continuity(out['dV_dt'], advection_terms_out, plot_diag_path)
+        if benchmark_ds is None: #fig1 comes from either this function, or benchmark_mass_continity
+            plot_diagnostics.fig1_mass_continuity(out['dV_dt'], advection_terms_out, plot_diag_path)
         plot_diagnostics.fig2_mass_advection_residual_timeseries(advection_terms_out, out['dV_dt'], out['domain_volume'], plot_diag_path)
         plot_diagnostics.fig3_advection_components_timeseries(advection_terms_out, out['dV_dt'], out['advection_error'], out['domain_volume'], plot_diag_path)
         plot_diagnostics.fig4_temperature_derivative_timeseries(out['d_dt_T'], out['dT_dt'], out['dT_dt_2'], out['domain_volume'], plot_diag_path)
 
         if benchmark_ds is not None:
+            plot_diagnostics.fig1_benchmark_mass_continuity(
+                out['dV_dt'],
+                advection_terms_out,
+                out['dV_dt_true'],
+                out['benchmark_mass_flux_net'],
+                plot_diag_path,
+            )
             plot_diagnostics.fig5_benchmark_comparison(benchmark_mass_fluxes, benchmark_heat_fluxes, out, advection_terms_out, plot_diag_path) # type: ignore
 
     return out

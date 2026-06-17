@@ -10,7 +10,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from src.terms import compute_benchmark_diagnostic_totals
-from src.plot_diagnostics import fig5_benchmark_comparison
+from src.plot_diagnostics import fig1_benchmark_mass_continuity, fig5_benchmark_comparison
 
 
 def test_compute_benchmark_diagnostic_totals_matches_figure_5_1_series():
@@ -126,6 +126,35 @@ def test_compute_benchmark_diagnostic_totals_supports_surface_bottom():
 
     npt.assert_allclose(out["calculated_mass_flux_net_lateral"], [4.0, 5.0])
     npt.assert_allclose(out["calculated_heat_flux_net_lateral"], [40.0, 50.0])
+
+
+def test_fig1_benchmark_mass_continuity_plots_benchmark_scatter(tmp_path):
+    time = np.arange(3)
+    dV_dt = xr.DataArray([-1.0, 0.0, 1.0], dims=("time",), coords={"time": time})
+    dV_dt_true = xr.DataArray(
+        [-1.5, 0.0, 1.5],
+        dims=("time",),
+        coords={"time": time},
+    )
+    advection_terms = xr.Dataset(
+        {"net_mass_advection": ("time", [-0.9, 0.1, 1.1])},
+        coords={"time": time},
+    )
+    benchmark_mass_flux_net = xr.DataArray(
+        [-1.4, -0.1, 1.6],
+        dims=("time",),
+        coords={"time": time},
+    )
+
+    fig1_benchmark_mass_continuity(
+        dV_dt,
+        advection_terms,
+        dV_dt_true,
+        benchmark_mass_flux_net,
+        str(tmp_path),
+    )
+
+    assert (tmp_path / "fig1_benchmark_mass_continuity.png").is_file()
 
 
 def test_fig5_benchmark_comparison_plots_aligned_diagnostic_totals(tmp_path):
