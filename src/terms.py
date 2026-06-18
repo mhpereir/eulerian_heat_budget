@@ -798,24 +798,28 @@ def compute_benchmark_diagnostic_totals(
         )
 
     T_average = results["T_domain_avg"].sel(time=output_time)
+    dV_dt_true = results["dV_dt_true"].sel(time=output_time)
     benchmark_mass_net = benchmark_mass_fluxes["benchmark_mass_flux_net"]
+    benchmark_heat_net = benchmark_heat_fluxes["benchmark_heat_flux_net"]
     heat_lateral_full = heat_lateral + T_average * mass_lateral
     heat_lateral_full_benchmark_mass = (
         heat_lateral + T_average * benchmark_mass_net
+    )
+    benchmark_heat_lateral_prime = (
+        benchmark_heat_net - (benchmark_mass_net) * T_average
     )
 
     out = xr.Dataset(
         {
             "benchmark_mass_flux_net": benchmark_mass_net,
             "calculated_mass_flux_net_lateral": mass_lateral,
-            "benchmark_heat_flux_net": benchmark_heat_fluxes[
-                "benchmark_heat_flux_net"
-            ],
+            "benchmark_heat_flux_net": benchmark_heat_net,
             "calculated_heat_flux_net_lateral_full": heat_lateral_full,
             "calculated_heat_flux_net_lateral_full_benchmark_mass": (
                 heat_lateral_full_benchmark_mass
             ),
             "calculated_heat_flux_net_lateral": heat_lateral,
+            "benchmark_heat_flux_net_lateral_prime": benchmark_heat_lateral_prime,
         }
     )
 
@@ -875,6 +879,17 @@ def compute_benchmark_diagnostic_totals(
             "long_name": "Calculated net lateral temperature heat flux",
             "units": heat_units,
             "diagnostic_figure": "5.1",
+        }
+    )
+    out["benchmark_heat_flux_net_lateral_prime"].attrs.update(
+        {
+            "long_name": "Benchmark net lateral temperature-anomaly heat flux",
+            "units": heat_units,
+            "diagnostic_figure": "5.1",
+            "formula": (
+                "benchmark_heat_flux_net - "
+                "(benchmark_mass_flux_net - dV_dt_true) * T_domain_avg"
+            ),
         }
     )
 

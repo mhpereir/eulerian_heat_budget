@@ -41,7 +41,12 @@ def test_compute_benchmark_diagnostic_totals_matches_figure_5_1_series():
                 [2.0, 3.0, 4.0],
                 dims=("time",),
                 coords={"time": output_time},
-            )
+            ),
+            "dV_dt_true": xr.DataArray(
+                [1.0, 2.0, 3.0],
+                dims=("time",),
+                coords={"time": output_time},
+            ),
         }
     )
     advection_terms = xr.Dataset(
@@ -70,6 +75,7 @@ def test_compute_benchmark_diagnostic_totals_matches_figure_5_1_series():
         "calculated_heat_flux_net_lateral_full",
         "calculated_heat_flux_net_lateral_full_benchmark_mass",
         "calculated_heat_flux_net_lateral",
+        "benchmark_heat_flux_net_lateral_prime",
     }
     npt.assert_array_equal(out["time"], output_time)
 
@@ -89,8 +95,18 @@ def test_compute_benchmark_diagnostic_totals_matches_figure_5_1_series():
         out["calculated_heat_flux_net_lateral_full_benchmark_mass"],
         heat_anomaly + np.array([2.0, 3.0, 4.0]) * benchmark_mass_net,
     )
+    npt.assert_allclose(
+        out["benchmark_heat_flux_net_lateral_prime"],
+        np.array([-200.0, -300.0, -400.0])
+        - (benchmark_mass_net - np.array([1.0, 2.0, 3.0]))
+        * np.array([2.0, 3.0, 4.0]),
+    )
     assert out["benchmark_mass_flux_net"].attrs["diagnostic_figure"] == "5.1"
     assert out["benchmark_heat_flux_net"].attrs["units"] == "K m2 Pa s-1"
+    assert out["benchmark_heat_flux_net_lateral_prime"].attrs["formula"] == (
+        "benchmark_heat_flux_net - "
+        "(benchmark_mass_flux_net - dV_dt_true) * T_domain_avg"
+    )
 
 
 def test_compute_benchmark_diagnostic_totals_supports_surface_bottom():
@@ -104,7 +120,10 @@ def test_compute_benchmark_diagnostic_totals_supports_surface_bottom():
         coords={"time": time},
     )
     results = xr.Dataset(
-        {"T_domain_avg": ("time", [10.0, 20.0])},
+        {
+            "T_domain_avg": ("time", [10.0, 20.0]),
+            "dV_dt_true": ("time", [0.5, 1.5]),
+        },
         coords={"time": time},
     )
     advection_terms = xr.Dataset(
@@ -126,6 +145,10 @@ def test_compute_benchmark_diagnostic_totals_supports_surface_bottom():
 
     npt.assert_allclose(out["calculated_mass_flux_net_lateral"], [4.0, 5.0])
     npt.assert_allclose(out["calculated_heat_flux_net_lateral"], [40.0, 50.0])
+    npt.assert_allclose(
+        out["benchmark_heat_flux_net_lateral_prime"],
+        [-3.0 - (-1.0 - 0.5) * 10.0, -4.0 - (-2.0 - 1.5) * 20.0],
+    )
 
 
 def test_fig1_benchmark_mass_continuity_plots_benchmark_scatter(tmp_path):
@@ -183,7 +206,10 @@ def test_fig5_benchmark_comparison_plots_aligned_diagnostic_totals(tmp_path):
         coords={"time": full_time},
     )
     results = xr.Dataset(
-        {"T_domain_avg": ("time", [280.0, 281.0, 282.0])},
+        {
+            "T_domain_avg": ("time", [280.0, 281.0, 282.0]),
+            "dV_dt_true": ("time", [0.0, 0.0, 0.0]),
+        },
         coords={"time": output_time},
     )
     advection_terms = xr.Dataset(

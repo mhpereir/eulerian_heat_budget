@@ -20,8 +20,8 @@ mamba activate dev_env
 set -euo pipefail
 
 TIME_START="1941-06-01T00:00:00"
-TIME_END="1941-09-01T00:00:00"
-REGION="${REGION:-pnw_bartusek}"
+TIME_END="1941-07-01T00:00:00"
+REGION="${REGION:-ocean_test}"
 
 cd /home/mhpereir/eulerian_heat_budget/scripts
 
@@ -34,12 +34,14 @@ echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hos
   --zg-bottom "surface_pressure" \
   --zg-top-pa 100 \
   --diagnostic-plots \
-  --no-allow-bottom-overflow \
+  --allow-bottom-overflow \
   --include-benchmark-variables \
   --write-netcdf \
   --constant-temperature-test 
 echo "[info] $(date -Is) done"
 
 
+  # --use-surface-variables \
+  # --surface-variable-mode "combined" \
   # --zg-bottom-pa 50000 \
 

@@ -362,7 +362,7 @@ def main() -> None:
 
         if diagnostic_plots:
             plot_results.plot_budget_terms_day_bin(result_test, plot_dir=constant_t_plot_dir)
-            plot_results.plot_diabatic_terms_day_bin(result_test, plot_dir=plot_dir)
+            plot_results.plot_diabatic_terms_day_bin(result_test, plot_dir=constant_t_plot_dir)
             plot_results.plot_constant_T_results(result, result_test, plot_dir=constant_t_plot_dir)
 
 if __name__ == "__main__":

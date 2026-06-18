@@ -483,7 +483,7 @@ def fig5_benchmark_comparison(
     plt.savefig(plot_dir + "/fig5_benchmark_comparison.png", dpi=300)
     plt.close()
 
-    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True, nrows=2, sharex=True)
+    fig, ax = plt.subplots(figsize=(10, 9), tight_layout=True, nrows=3, sharex=True)
 
     # net lines
     ax[0].plot(
@@ -528,20 +528,27 @@ def fig5_benchmark_comparison(
         label=r"$\mathcal{H}'_{calc} + \langle T \rangle M_{bench} $"
     )
 
-    ax[1].plot(
+    ax[2].plot(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["calculated_heat_flux_net_lateral"],
         linestyle="-",
         linewidth=1,
         color="red",
-        label=r"$\mathcal{H}'_{calc}$"
+        label=r"$\mathcal{H}'_{calc}$",
     )
-
+    ax[2].plot(
+        benchmark_diagnostic_totals["time"],
+        benchmark_diagnostic_totals["benchmark_heat_flux_net_lateral_prime"],
+        linestyle="--",
+        linewidth=1,
+        color="red",
+        label=r"$\mathcal{H}'_{bench}$",
+    )
 
     locator = mdates.AutoDateLocator()
     formatter = mdates.ConciseDateFormatter(locator)
-    ax[1].xaxis.set_major_locator(locator)
-    ax[1].xaxis.set_major_formatter(formatter)
+    ax[2].xaxis.set_major_locator(locator)
+    ax[2].xaxis.set_major_formatter(formatter)
 
     ax[0].set_ylabel(r"Mass Flux [m$^2$ Pa s$^{-1}$]")
     ax[0].set_title("Comparison of Calculated Mass Fluxes with Benchmark")
@@ -562,10 +569,13 @@ def fig5_benchmark_comparison(
     # ax[0].add_artist(leg1)
     ax[0].legend(handles=style_handles, loc="lower left", fontsize=10)
 
-    ax[1].set_xlabel("Time")
     ax[1].set_ylabel(r"Heat Flux [K m$^2$ Pa s$^{-1}$]")
     ax[1].set_title("Comparison of Calculated Heat Fluxes with Benchmark")
     ax[1].legend(fontsize=10)
+    ax[2].set_xlabel("Time")
+    ax[2].set_ylabel(r"Heat Flux [K m$^2$ Pa s$^{-1}$]")
+    ax[2].set_title(r"Temperature-Anomaly Heat Flux")
+    ax[2].legend(fontsize=10)
 
     plt.savefig(plot_dir + "/fig5.1_net_benchmark_comparison.png", dpi=300)
     plt.close()
