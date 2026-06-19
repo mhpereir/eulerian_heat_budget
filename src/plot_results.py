@@ -107,7 +107,7 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
         "advection_term": 1, # flip sign for advection term
         "adiabatic_term": 1,  
         "diabatic_term": 1,
-        "residual_heat": 1,
+        # "residual_heat": 1,
     }
 
     dT_dt = ds_budget["dT_dt"] * norm_factor * time_conversion_factor  # convert to K/s by dividing by volume and multiplying by T scale (using domain average T as scale)
@@ -145,7 +145,7 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
     # ---------------- Panel 3 ----------------
     lines = []
     
-    color_terms = {'advection_term': 'k', 'adiabatic_term': 'green', 'diabatic_term': 'red', 'residual_heat': 'brown'}
+    color_terms = {'advection_term': 'k', 'adiabatic_term': 'green', 'diabatic_term': 'red'} #, 'residual_heat': 'brown'
 
     error_var = None
     if "advection_error" in ds_budget.data_vars:
@@ -156,7 +156,7 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
         ("advection_term", "Net Heat Advection"),
         ("adiabatic_term", "Adiabatic Term"),
         ("diabatic_term", "Diabatic Term"),
-        ("residual_heat", "Mass Closure Residual")
+        # ("residual_heat", "Mass Closure Residual")
     ]:
         term = term_signs[var] * ds_budget[var] * norm_factor * time_conversion_factor
         term = term.rolling(time=smoothing_window, center=True).mean()
@@ -254,7 +254,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         "advection_term": 1, # flip sign for advection term
         "adiabatic_term": 1,  
         "diabatic_term": 1,
-        "residual_heat": 1,
+        # "residual_heat": 1,
     }
 
     #storage term
@@ -310,7 +310,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     # ---------------- Panel 3 ----------------
     lines = []
     
-    color_terms = {'advection_term': 'k', 'adiabatic_term': 'green', 'diabatic_term': 'red', 'residual_heat': 'brown'}
+    color_terms = {'advection_term': 'k', 'adiabatic_term': 'green', 'diabatic_term': 'red'} #, 'residual_heat': 'brown'
 
     error_var = None
     if "advection_error" in ds_budget.data_vars:
@@ -320,7 +320,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         ("advection_term", "Net Heat Advection"),
         ("adiabatic_term", "Adiabatic Term"),
         ("diabatic_term", "Diabatic Term"),
-        ("residual_heat", "Mass Closure Residual")
+        # ("residual_heat", "Mass Closure Residual")
     ]:
         term = term_signs[var] * ds_budget[var] * norm_factor * time_conversion_factor
         term = term.resample(time="1D").sum() # sum over 24 hours, data is hourly -> daily
@@ -368,7 +368,6 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         "Net Heat Advection",
         "Adiabatic Term",
         "Diabatic Term",
-        "Mass Residual"
     ], fontsize=10)
 
     ax[2].axhline(0, color='k', linestyle='-', linewidth=1)
@@ -393,148 +392,148 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
 
 
 
-def plot_diabatic_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
+# def plot_diabatic_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     
-    norm_factor            = 1 / ds_budget["domain_volume"]
-    time_conversion_factor = 3600
+#     norm_factor            = 1 / ds_budget["domain_volume"]
+#     time_conversion_factor = 3600
 
-    #alternative to smooth, sum over the rolling time window instead of averaging, to preserve the total budget over the window
-    domain_volume = ds_budget["domain_volume"].resample(time="1D").mean()  
-    units = "[K/day]"  # since we are summing over 24 hours, the units  are K/day
-    # not all terms within ds_budget are time-rate-of-change, so I need to apply the unit conversion from s->hr in the individual terms.
+#     #alternative to smooth, sum over the rolling time window instead of averaging, to preserve the total budget over the window
+#     domain_volume = ds_budget["domain_volume"].resample(time="1D").mean()  
+#     units = "[K/day]"  # since we are summing over 24 hours, the units  are K/day
+#     # not all terms within ds_budget are time-rate-of-change, so I need to apply the unit conversion from s->hr in the individual terms.
 
-    fig, ax = plt.subplots(
-        figsize=(10, 8),
-        nrows=2,
-        tight_layout=True,
-        sharex=True
-    )
+#     fig, ax = plt.subplots(
+#         figsize=(10, 8),
+#         nrows=2,
+#         tight_layout=True,
+#         sharex=True
+#     )
 
-    term_signs = {
-        "advection_term": 1, # flip sign for advection term
-        "adiabatic_term": 1,  
-        "diabatic_term": 1,
-        "residual_heat": 1,
-    }
+#     term_signs = {
+#         "advection_term": 1, # flip sign for advection term
+#         "adiabatic_term": 1,  
+#         "diabatic_term": 1,
+#         "residual_heat": 1,
+#     }
 
-    color_terms = {'advection_term': 'k', 'adiabatic_term': 'green', 'diabatic_term': 'red', 'residual_heat': 'brown'}
+#     color_terms = {'advection_term': 'k', 'adiabatic_term': 'green', 'diabatic_term': 'red', 'residual_heat': 'brown'}
 
-    error_var = None
-    if "advection_error" in ds_budget.data_vars:
-        error_var = "advection_error"
+#     error_var = None
+#     if "advection_error" in ds_budget.data_vars:
+#         error_var = "advection_error"
 
-    daily_terms = {}
-    for var in term_signs:
-        term = term_signs[var] * ds_budget[var] * norm_factor * time_conversion_factor
-        daily_terms[var] = term.resample(time="1D").sum() # sum over 24 hours, data is hourly -> daily
+#     daily_terms = {}
+#     for var in term_signs:
+#         term = term_signs[var] * ds_budget[var] * norm_factor * time_conversion_factor
+#         daily_terms[var] = term.resample(time="1D").sum() # sum over 24 hours, data is hourly -> daily
 
-    # ---------------- Panel 1 ----------------
-    lines = []
-    for var, label in [
-        ("advection_term", "Net Heat Advection"),
-        ("adiabatic_term", "Adiabatic Term"),
-        ("diabatic_term", "Diabatic Term"),
-        ("residual_heat", "Mass Closure Residual")
-    ]:
-        term = daily_terms[var]
-        line = term.plot.line(
-            ax=ax[0],
-            add_legend=False,
-            color=color_terms[var],
-            drawstyle="steps-post"
-        )
-
-
-        if error_var is not None and var in {"advection_term", "diabatic_term"}:
-            error = np.abs(ds_budget[error_var]) * norm_factor  * time_conversion_factor
-            error = error.resample(time="1D").sum() # type:ignore 
-            ax[0].fill_between(
-                term["time"].values,
-                (term - error).values,
-                (term + error).values,
-                color=color_terms[var],
-                alpha=0.2,
-                linewidth=0,
-                step="post"
-            )
-
-        lines.append(line[0])
-
-    ax[0].set_ylabel(f" {units}")
-    ax[0].set_title("Budget Terms (normalized by volume)")
-    ax[0].legend(lines, [
-        "Net Heat Advection",
-        "Adiabatic Term",
-        "Diabatic Term",
-        "Mass Residual"
-    ], fontsize=10)
-    ax[0].axhline(0, color='k', linestyle='-', linewidth=1)
-
-    # ---------------- Panel 2 ----------------
-    residual_raw = daily_terms["diabatic_term"] + daily_terms["residual_heat"]
-    residual_raw.name = "raw_residual"
-
-    lines_residual = []
-    line_diabatic = daily_terms["diabatic_term"].plot.line(
-        ax=ax[1],
-        add_legend=False,
-        color=color_terms["diabatic_term"],
-        drawstyle="steps-post"
-    )
-    lines_residual.append(line_diabatic[0])
-
-    line_mass_residual = daily_terms["residual_heat"].plot.line(
-        ax=ax[1],
-        add_legend=False,
-        color=color_terms["residual_heat"],
-        drawstyle="steps-post"
-    )
-    lines_residual.append(line_mass_residual[0])
-
-    line_raw_residual = residual_raw.plot.line(
-        ax=ax[1],
-        add_legend=False,
-        color='C4',
-        linestyle='--',
-        drawstyle="steps-post"
-    )
-    lines_residual.append(line_raw_residual[0])
-
-    ax[1].set_ylabel(f" {units}")
-    ax[1].set_title("Diabatic Residual Partition")
-    ax[1].legend(lines_residual, [
-        "Diabatic Term",
-        "Mass Residual",
-        "Raw Eulerian Heat Budget Residual"
-    ], fontsize=10)
-    ax[1].axhline(0, color='k', linestyle='-', linewidth=1)
-
-    # add faint vertical lines
-    day_boundaries = domain_volume.time.values
-    for a in ax:
-        for t in day_boundaries:
-            a.axvline(
-                t,
-                color="k",
-                linewidth=0.3,
-                alpha=0.2,
-                zorder=0
-            )
-
-    # Remove duplicate x-labels from upper panels
-    ax[0].set_xlabel("")
-
-    ymax = max(
-        abs(ax[0].get_ylim()[0]), abs(ax[0].get_ylim()[1]),
-        abs(ax[1].get_ylim()[0]), abs(ax[1].get_ylim()[1]),
-    )
-    ax[0].set_ylim(-ymax, ymax)
-    ax[1].set_ylim(-ymax, ymax)
+#     # ---------------- Panel 1 ----------------
+#     lines = []
+#     for var, label in [
+#         ("advection_term", "Net Heat Advection"),
+#         ("adiabatic_term", "Adiabatic Term"),
+#         ("diabatic_term", "Diabatic Term"),
+#         ("residual_heat", "Mass Closure Residual")
+#     ]:
+#         term = daily_terms[var]
+#         line = term.plot.line(
+#             ax=ax[0],
+#             add_legend=False,
+#             color=color_terms[var],
+#             drawstyle="steps-post"
+#         )
 
 
-    out_path = os.path.join(plot_dir, "diabatic_residual_terms_daily.png")
-    plt.savefig(out_path, bbox_inches="tight")
-    plt.close(fig)
+#         if error_var is not None and var in {"advection_term", "diabatic_term"}:
+#             error = np.abs(ds_budget[error_var]) * norm_factor  * time_conversion_factor
+#             error = error.resample(time="1D").sum() # type:ignore 
+#             ax[0].fill_between(
+#                 term["time"].values,
+#                 (term - error).values,
+#                 (term + error).values,
+#                 color=color_terms[var],
+#                 alpha=0.2,
+#                 linewidth=0,
+#                 step="post"
+#             )
+
+#         lines.append(line[0])
+
+#     ax[0].set_ylabel(f" {units}")
+#     ax[0].set_title("Budget Terms (normalized by volume)")
+#     ax[0].legend(lines, [
+#         "Net Heat Advection",
+#         "Adiabatic Term",
+#         "Diabatic Term",
+#         "Mass Residual"
+#     ], fontsize=10)
+#     ax[0].axhline(0, color='k', linestyle='-', linewidth=1)
+
+#     # ---------------- Panel 2 ----------------
+#     residual_raw = daily_terms["diabatic_term"] + daily_terms["residual_heat"]
+#     residual_raw.name = "raw_residual"
+
+#     lines_residual = []
+#     line_diabatic = daily_terms["diabatic_term"].plot.line(
+#         ax=ax[1],
+#         add_legend=False,
+#         color=color_terms["diabatic_term"],
+#         drawstyle="steps-post"
+#     )
+#     lines_residual.append(line_diabatic[0])
+
+#     line_mass_residual = daily_terms["residual_heat"].plot.line(
+#         ax=ax[1],
+#         add_legend=False,
+#         color=color_terms["residual_heat"],
+#         drawstyle="steps-post"
+#     )
+#     lines_residual.append(line_mass_residual[0])
+
+#     line_raw_residual = residual_raw.plot.line(
+#         ax=ax[1],
+#         add_legend=False,
+#         color='C4',
+#         linestyle='--',
+#         drawstyle="steps-post"
+#     )
+#     lines_residual.append(line_raw_residual[0])
+
+#     ax[1].set_ylabel(f" {units}")
+#     ax[1].set_title("Diabatic Residual Partition")
+#     ax[1].legend(lines_residual, [
+#         "Diabatic Term",
+#         "Mass Residual",
+#         "Raw Eulerian Heat Budget Residual"
+#     ], fontsize=10)
+#     ax[1].axhline(0, color='k', linestyle='-', linewidth=1)
+
+#     # add faint vertical lines
+#     day_boundaries = domain_volume.time.values
+#     for a in ax:
+#         for t in day_boundaries:
+#             a.axvline(
+#                 t,
+#                 color="k",
+#                 linewidth=0.3,
+#                 alpha=0.2,
+#                 zorder=0
+#             )
+
+#     # Remove duplicate x-labels from upper panels
+#     ax[0].set_xlabel("")
+
+#     ymax = max(
+#         abs(ax[0].get_ylim()[0]), abs(ax[0].get_ylim()[1]),
+#         abs(ax[1].get_ylim()[0]), abs(ax[1].get_ylim()[1]),
+#     )
+#     ax[0].set_ylim(-ymax, ymax)
+#     ax[1].set_ylim(-ymax, ymax)
+
+
+#     out_path = os.path.join(plot_dir, "diabatic_residual_terms_daily.png")
+#     plt.savefig(out_path, bbox_inches="tight")
+#     plt.close(fig)
 
 
 

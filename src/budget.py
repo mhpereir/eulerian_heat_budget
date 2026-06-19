@@ -267,8 +267,7 @@ def calculate_budget(
     diabatic_term = terms.compute_diabatic_term(
         dT_dt,
         advection_terms["net_heat_advection"],
-        adiabatic_term,
-        dH
+        adiabatic_term
     )
 
     print('Combining terms into output dataset')
