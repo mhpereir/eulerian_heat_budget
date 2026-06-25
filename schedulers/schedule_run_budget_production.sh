@@ -1,6 +1,6 @@
 #!/bin/bash
 #PBS -N eulerian_heat_budget_prod
-#PBS -J 0-85%7
+#PBS -J 0-85%5
 #PBS -l select=1:ncpus=8:mem=25gb
 #PBS -j oe
 #PBS -o /dev/null
@@ -26,13 +26,14 @@ END_YEAR=2025
 DATA_SOURCE="${DATA_SOURCE:-arco_era5}"
 PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_full_run_700_500_hPa}"
 REGION="${REGION:-pnw_bartusek}"
-ZG_TOP_PA="${ZG_TOP_PA:-50000}"
-ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-70000}"
-USE_SURFACE_AS_BOTTOM="${USE_SURFACE_AS_BOTTOM:-0}"
+ZG_TOP_PA="${ZG_TOP_PA:-70000}"
+# ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-70000}"
+USE_SURFACE_AS_BOTTOM="${USE_SURFACE_AS_BOTTOM:-1}"
+ALLOW_BOTTOM_OVERFLOW="${ALLOW_BOTTOM_OVERFLOW:-1}"
 INIT_MANIFEST_ONLY="${INIT_MANIFEST_ONLY:-0}"
 ENABLE_DIAGNOSTIC_PLOTS="${ENABLE_DIAGNOSTIC_PLOTS:-1}"
 ENABLE_CONSTANT_TEMPERATURE_TEST="${ENABLE_CONSTANT_TEMPERATURE_TEST:-0}"
-ENABLE_BENCHMARK_VARIABLES="${ENABLE_BENCHMARK_VARIABLES:-0}"
+ENABLE_BENCHMARK_VARIABLES="${ENABLE_BENCHMARK_VARIABLES:-0}" #use only with full atmosphere
 RUN_START_MONTH_DAY="${RUN_START_MONTH_DAY:-05-01}"
 RUN_END_MONTH_DAY="${RUN_END_MONTH_DAY:-10-31}"
 MANIFEST_PATH="${PRODUCTION_OUTPUT_DIR}/production_run.json"
@@ -59,6 +60,12 @@ else
     --zg-bottom pressure_level
     --zg-bottom-pa "${ZG_BOTTOM_PA}"
   )
+fi
+
+if [[ "${ALLOW_BOTTOM_OVERFLOW}" == "1" ]]; then
+  COMMON_RUN_ARGS+=(--allow-bottom-overflow)
+else
+  COMMON_RUN_ARGS+=(--no-allow-bottom-overflow)
 fi
 
 if [[ "${ENABLE_DIAGNOSTIC_PLOTS}" == "1" ]]; then
