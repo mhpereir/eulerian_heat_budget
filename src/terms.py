@@ -886,8 +886,7 @@ def compute_benchmark_diagnostic_totals(
             "units": heat_units,
             "diagnostic_figure": "5.1",
             "formula": (
-                "benchmark_heat_flux_net - "
-                "(benchmark_mass_flux_net - dV_dt_true) * T_domain_avg"
+                "benchmark_heat_flux_net - benchmark_mass_flux_net * T_domain_avg"
             ),
         }
     )

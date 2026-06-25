@@ -360,7 +360,6 @@ def test_main_with_diagnostic_plots_restores_main_plot_generation(monkeypatch):
         ("hourly", 1, "/tmp/test-plots"),
         ("hourly", 24, "/tmp/test-plots"),
         ("daily", "/tmp/test-plots"),
-        ("diabatic", "/tmp/test-plots"),
     ]
 
 
@@ -435,7 +434,6 @@ def test_main_with_both_flags_restores_current_behavior(monkeypatch):
         ("hourly", 1, "/tmp/test-plots"),
         ("hourly", 24, "/tmp/test-plots"),
         ("daily", "/tmp/test-plots"),
-        ("diabatic", "/tmp/test-plots"),
         ("daily", "/tmp/test-plots/constant_T"),
         ("constant_T", "/tmp/test-plots/constant_T"),
     ]
@@ -612,7 +610,6 @@ def test_main_production_plots_use_year_specific_directory(monkeypatch, tmp_path
         ("hourly", 1, str(production_dir / "plots" / "1940")),
         ("hourly", 24, str(production_dir / "plots" / "1940")),
         ("daily", str(production_dir / "plots" / "1940")),
-        ("diabatic", str(production_dir / "plots" / "1940")),
     ]
 
 
@@ -744,11 +741,6 @@ def _patch_plot_recorders(monkeypatch, plot_calls):
         run_budget.plot_results,
         "plot_budget_terms_day_bin",
         lambda ds_budget, plot_dir: plot_calls.append(("daily", plot_dir)),
-    )
-    monkeypatch.setattr(
-        run_budget.plot_results,
-        "plot_diabatic_terms_day_bin",
-        lambda ds_budget, plot_dir: plot_calls.append(("diabatic", plot_dir)),
     )
     monkeypatch.setattr(
         run_budget.plot_results,

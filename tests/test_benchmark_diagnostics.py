@@ -98,14 +98,12 @@ def test_compute_benchmark_diagnostic_totals_matches_figure_5_1_series():
     npt.assert_allclose(
         out["benchmark_heat_flux_net_lateral_prime"],
         np.array([-200.0, -300.0, -400.0])
-        - (benchmark_mass_net - np.array([1.0, 2.0, 3.0]))
-        * np.array([2.0, 3.0, 4.0]),
+        - benchmark_mass_net * np.array([2.0, 3.0, 4.0]),
     )
     assert out["benchmark_mass_flux_net"].attrs["diagnostic_figure"] == "5.1"
     assert out["benchmark_heat_flux_net"].attrs["units"] == "K m2 Pa s-1"
     assert out["benchmark_heat_flux_net_lateral_prime"].attrs["formula"] == (
-        "benchmark_heat_flux_net - "
-        "(benchmark_mass_flux_net - dV_dt_true) * T_domain_avg"
+        "benchmark_heat_flux_net - benchmark_mass_flux_net * T_domain_avg"
     )
 
 
@@ -147,7 +145,7 @@ def test_compute_benchmark_diagnostic_totals_supports_surface_bottom():
     npt.assert_allclose(out["calculated_heat_flux_net_lateral"], [40.0, 50.0])
     npt.assert_allclose(
         out["benchmark_heat_flux_net_lateral_prime"],
-        [-3.0 - (-1.0 - 0.5) * 10.0, -4.0 - (-2.0 - 1.5) * 20.0],
+        [-3.0 - (-1.0) * 10.0, -4.0 - (-2.0) * 20.0],
     )
 
 
