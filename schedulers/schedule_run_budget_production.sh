@@ -24,7 +24,7 @@ set -euo pipefail
 START_YEAR=1940
 END_YEAR=2025
 DATA_SOURCE="${DATA_SOURCE:-arco_era5}"
-PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_full_run_700_500_hPa}"
+PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_bartusek_surface_700hPa_1940_2025_second_attempt}"
 REGION="${REGION:-pnw_bartusek}"
 ZG_TOP_PA="${ZG_TOP_PA:-70000}"
 # ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-70000}"
