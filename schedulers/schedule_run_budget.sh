@@ -1,6 +1,6 @@
 #!/bin/bash
-#PBS -N eulerian_head_budget
-#PBS -l select=1:ncpus=12:mem=32gb
+#PBS -N eulerian_heat_budget
+#PBS -l select=1:ncpus=8:mem=25gb
 #PBS -j oe
 #PBS -o /dev/null
 # PBS -o /home/mhpereir/eulerian_heat_budget/logs/
@@ -20,8 +20,8 @@ mamba activate dev_env
 set -euo pipefail
 
 TIME_START="1941-06-01T00:00:00"
-TIME_END="1941-09-01T00:00:00"
-REGION="${REGION:-pnw_hotz}"
+TIME_END="1941-07-01T00:00:00"
+REGION="${REGION:-ocean_test}"
 
 cd /home/mhpereir/eulerian_heat_budget/scripts
 

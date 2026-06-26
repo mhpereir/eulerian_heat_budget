@@ -65,6 +65,74 @@ def fig1_benchmark_mass_continuity(
     benchmark_mass_flux_net: xr.DataArray,
     plot_dir: str,
 ):
+    def _finite_pair(x: xr.DataArray, y: xr.DataArray):
+        x_values = x.values.ravel()
+        y_values = y.values.ravel()
+        mask = np.isfinite(x_values) & np.isfinite(y_values)
+        return x_values[mask], y_values[mask]
+
+    def _axis_limits(x: np.ndarray, y: np.ndarray):
+        all_values = np.concatenate([x, y])
+        if all_values.size == 0:
+            return -1.0, 1.0
+
+        lower = np.nanmin(all_values)
+        upper = np.nanmax(all_values)
+        if not np.isfinite(lower) or not np.isfinite(upper):
+            return -1.0, 1.0
+
+        if lower == upper:
+            pad = max(np.abs(lower) * 0.05, 1.0)
+        else:
+            pad = (upper - lower) * 0.05
+        return lower - pad, upper + pad
+
+    def _correlation_text(x: np.ndarray, y: np.ndarray):
+        if x.size < 2 or np.std(x) == 0 or np.std(y) == 0:
+            return f"Pearson r: n/a\nn = {x.size}"
+        r = np.corrcoef(x, y)[0, 1]
+        return f"Pearson r: {r:.3f}\nn = {x.size}"
+
+    def _plot_benchmark_vs_calculated(
+        benchmark: xr.DataArray,
+        calculated: xr.DataArray,
+        xlabel: str,
+        ylabel: str,
+        title: str,
+        filename: str,
+    ):
+        benchmark_aligned, calculated_aligned = xr.align(
+            benchmark,
+            calculated,
+            join="inner",
+        )
+        x, y = _finite_pair(benchmark_aligned, calculated_aligned)
+        lower, upper = _axis_limits(x, y)
+
+        fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
+        ax.scatter(x, y, alpha=0.5)
+        ax.plot([lower, upper], [lower, upper], linestyle="--", color="k", label="1:1")
+
+        ax.set_xlim(lower, upper)
+        ax.set_ylim(lower, upper)
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.text(
+            0.02,
+            0.98,
+            _correlation_text(x, y),
+            transform=ax.transAxes,
+            va="top",
+            ha="left",
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.8},
+        )
+        ax.legend()
+
+        fig.savefig(plot_dir + "/" + filename, dpi=300)
+        plt.close(fig)
+
     eulerian_x, eulerian_y = xr.align(
         dV_dt,
         advection_terms["net_mass_advection"],
@@ -104,6 +172,33 @@ def fig1_benchmark_mass_continuity(
 
     fig.savefig(plot_dir + "/fig1_benchmark_mass_continuity.png", dpi=300)
     plt.close(fig)
+
+    calculated_mass_flux_lateral = advection_terms["net_mass_advection"]
+    for vertical_flux in (
+        "mass_flux_contribution_top",
+        "mass_flux_contribution_bottom",
+    ):
+        if vertical_flux in advection_terms:
+            calculated_mass_flux_lateral = (
+                calculated_mass_flux_lateral - advection_terms[vertical_flux]
+            )
+
+    _plot_benchmark_vs_calculated(
+        benchmark_mass_flux_net,
+        calculated_mass_flux_lateral,
+        r"Benchmark mass flux [m$^2$ Pa s$^{-1}$]",
+        r"Calculated mass flux [m$^2$ Pa s$^{-1}$]",
+        "Benchmark vs Calculated Net Lateral Mass Flux",
+        "fig1.1_benchmark_vs_calculated_mass_flux.png",
+    )
+    _plot_benchmark_vs_calculated(
+        dV_dt_true,
+        dV_dt,
+        r"Benchmark dV/dt [m$^2$ Pa s$^{-1}$]",
+        r"Calculated dV/dt [m$^2$ Pa s$^{-1}$]",
+        "Benchmark vs Calculated dV/dt",
+        "fig1.2_benchmark_vs_calculated_dV_dt.png",
+    )
 
 
 
@@ -578,4 +673,68 @@ def fig5_benchmark_comparison(
     ax[2].legend(fontsize=10)
 
     plt.savefig(plot_dir + "/fig5.1_net_benchmark_comparison.png", dpi=300)
+    plt.close()
+
+    benchmark_prime = benchmark_diagnostic_totals[
+        "benchmark_heat_flux_net_lateral_prime"
+    ]
+    calculated_prime = benchmark_diagnostic_totals[
+        "calculated_heat_flux_net_lateral"
+    ]
+    benchmark_prime, calculated_prime = xr.align(
+        benchmark_prime,
+        calculated_prime,
+        join="inner",
+    )
+    x = benchmark_prime.values.ravel()
+    y = calculated_prime.values.ravel()
+    mask = np.isfinite(x) & np.isfinite(y)
+    x = x[mask]
+    y = y[mask]
+
+    all_values = np.concatenate([x, y])
+    if all_values.size:
+        lower = np.nanmin(all_values)
+        upper = np.nanmax(all_values)
+        if not np.isfinite(lower) or not np.isfinite(upper):
+            lower, upper = -1.0, 1.0
+    else:
+        lower, upper = -1.0, 1.0
+
+    if lower == upper:
+        pad = max(np.abs(lower) * 0.05, 1.0)
+    else:
+        pad = (upper - lower) * 0.05
+    lower -= pad
+    upper += pad
+
+    if x.size < 2 or np.std(x) == 0 or np.std(y) == 0:
+        correlation_label = f"Pearson r: n/a\nn = {x.size}"
+    else:
+        correlation_label = f"Pearson r: {np.corrcoef(x, y)[0, 1]:.3f}\nn = {x.size}"
+
+    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
+    ax.scatter(x, y, alpha=0.5)
+    ax.plot([lower, upper], [lower, upper], linestyle="--", color="k", label="1:1")
+    ax.set_xlim(lower, upper)
+    ax.set_ylim(lower, upper)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel(r"Benchmark $\mathcal{H}'$ [K m$^2$ Pa s$^{-1}$]")
+    ax.set_ylabel(r"Calculated $\mathcal{H}'$ [K m$^2$ Pa s$^{-1}$]")
+    ax.set_title("Benchmark vs Calculated Temperature-Anomaly Heat Flux")
+    ax.text(
+        0.02,
+        0.98,
+        correlation_label,
+        transform=ax.transAxes,
+        va="top",
+        ha="left",
+        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.8},
+    )
+    ax.legend()
+
+    plt.savefig(
+        plot_dir + "/fig5.2_benchmark_vs_calculated_heat_flux_lateral_prime.png",
+        dpi=300,
+    )
     plt.close()

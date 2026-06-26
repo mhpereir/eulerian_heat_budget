@@ -176,6 +176,8 @@ def test_fig1_benchmark_mass_continuity_plots_benchmark_scatter(tmp_path):
     )
 
     assert (tmp_path / "fig1_benchmark_mass_continuity.png").is_file()
+    assert (tmp_path / "fig1.1_benchmark_vs_calculated_mass_flux.png").is_file()
+    assert (tmp_path / "fig1.2_benchmark_vs_calculated_dV_dt.png").is_file()
 
 
 def test_fig5_benchmark_comparison_plots_aligned_diagnostic_totals(tmp_path):
@@ -238,3 +240,6 @@ def test_fig5_benchmark_comparison_plots_aligned_diagnostic_totals(tmp_path):
 
     assert (tmp_path / "fig5_benchmark_comparison.png").is_file()
     assert (tmp_path / "fig5.1_net_benchmark_comparison.png").is_file()
+    assert (
+        tmp_path / "fig5.2_benchmark_vs_calculated_heat_flux_lateral_prime.png"
+    ).is_file()
