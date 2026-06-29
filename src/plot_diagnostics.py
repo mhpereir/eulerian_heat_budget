@@ -9,16 +9,108 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 from matplotlib.lines import Line2D
+from matplotlib.offsetbox import AnchoredText
 
 from . import terms
 
-#set label sizes 16
-plt.rcParams.update({'font.size': 16})
+SINGLE_COLUMN_WIDTH_IN = 3.155
+FULL_TWO_COLUMN_WIDTH_IN = 6.476
+
+PAPER_FONT_SIZE_PT = 8
+LEGEND_FONT_SIZE_PT = 6
+
+SINGLE_PANEL_ASPECT = 0.62
+TWO_PANEL_STACK_ASPECT = 1.425
+THREE_PANEL_STACK_ASPECT = 1.875
+SQUARE_PANEL_ASPECT = 1.0
+MASS_FLUX_UNITS = r"m$^2$ Pa s$^{-1}$"
+HEAT_FLUX_UNITS = r"K m$^2$ Pa s$^{-1}$"
+STACKED_FIGURE_LAYOUTS = {
+    2: {"left": 0.26, "right": 0.97, "bottom": 0.12, "top": 0.94, "hspace": 0.26},
+    3: {"left": 0.26, "right": 0.97, "bottom": 0.10, "top": 0.95, "hspace": 0.32},
+}
+
+plt.rcParams.update(
+    {
+        "font.size": PAPER_FONT_SIZE_PT,
+        "axes.labelsize": PAPER_FONT_SIZE_PT,
+        "axes.titlesize": PAPER_FONT_SIZE_PT,
+        "xtick.labelsize": PAPER_FONT_SIZE_PT,
+        "ytick.labelsize": PAPER_FONT_SIZE_PT,
+        "legend.fontsize": LEGEND_FONT_SIZE_PT,
+        "legend.title_fontsize": LEGEND_FONT_SIZE_PT,
+        "figure.titlesize": PAPER_FONT_SIZE_PT,
+    }
+)
+
+
+def _publication_figsize(width: str = "single", aspect: float = SINGLE_PANEL_ASPECT):
+    widths = {
+        "single": SINGLE_COLUMN_WIDTH_IN,
+        "full": FULL_TWO_COLUMN_WIDTH_IN,
+    }
+    figure_width = widths[width]
+    return figure_width, figure_width * aspect
+
+
+def _date_locator_formatter():
+    locator = mdates.AutoDateLocator(minticks=3, maxticks=5)
+    formatter = mdates.ConciseDateFormatter(locator)
+    return locator, formatter
+
+
+def _apply_stacked_figure_layout(fig, nrows: int):
+    fig.subplots_adjust(**STACKED_FIGURE_LAYOUTS[nrows])
+
+
+def _set_square_1_to_1_axis(ax):
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_box_aspect(1)
+    ax.xaxis.get_offset_text().set_fontsize(PAPER_FONT_SIZE_PT)
+    ax.yaxis.get_offset_text().set_fontsize(PAPER_FONT_SIZE_PT)
+
+
+def _set_square_xlabel(ax, label: str):
+    ax.set_xlabel(label)
+
+
+def _add_correlation_text(ax, text: str):
+    anchored_text = AnchoredText(
+        text,
+        loc="upper left",
+        prop={"size": LEGEND_FONT_SIZE_PT},
+        frameon=True,
+        borderpad=0.6,
+        pad=0.2,
+    )
+    anchored_text.patch.set_facecolor("white")
+    anchored_text.patch.set_edgecolor("none")
+    anchored_text.patch.set_alpha(0.8)
+    ax.add_artist(anchored_text)
+
+
+def _prepare_square_figure_for_save(fig):
+    fig.canvas.draw()
+
+
+def _save_square_figure(fig, path: str):
+    _prepare_square_figure_for_save(fig)
+    fig.savefig(path, dpi=300, bbox_inches="tight", pad_inches=0.10)
+
+
+def _mass_flux_wall_label(var_name: str) -> str:
+    prefix = "mass_flux_contribution_"
+    if var_name.startswith(prefix):
+        return var_name[len(prefix):].replace("_", " ").title()
+    return var_name
 
 
 def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_dir: str):
     #test how mass advection terms compare to volume changes (should be y=-x)
-    fig,ax = plt.subplots(figsize=(10, 6), tight_layout=True)
+    fig,ax = plt.subplots(
+        figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
+        tight_layout=True,
+    )
     x= dV_dt.values
     y= advection_terms['net_mass_advection'].values
     ax.scatter(x, y)
@@ -30,11 +122,13 @@ def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_
 
     ax.set_xlim(-L, L)
     ax.set_ylim(-L, L)
+    _set_square_1_to_1_axis(ax)
 
-    ax.set_xlabel("dV/dt")
-    ax.set_ylabel("Net mass advection")
+    _set_square_xlabel(ax, f"dV/dt [{MASS_FLUX_UNITS}]")
+    ax.set_ylabel(f"Net mass flux [{MASS_FLUX_UNITS}]")
 
-    plt.savefig(plot_dir + '/fig1_mass_continuity.png', dpi=300)
+    _save_square_figure(fig, plot_dir + '/fig1_mass_continuity.png')
+    plt.close(fig)
 
     x = dV_dt.values
     y = advection_terms['net_mass_advection'].values
@@ -48,12 +142,16 @@ def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_
     xb = np.array([np.nanmean(x[bin_id==i]) for i in range(nbin)])
     rb = np.array([np.nanmean(r[bin_id==i]) for i in range(nbin)])
 
-    plt.figure(figsize=(10, 6), tight_layout=True)
+    plt.figure(
+        figsize=_publication_figsize("single", SINGLE_PANEL_ASPECT),
+        tight_layout=True,
+    )
     plt.plot(xb, rb, marker='o')
     plt.axhline(0, linestyle='--', color='k')
     plt.xlabel("dV/dt")
-    plt.ylabel("mean residual (net_mass_advection - dV/dt)")
-    plt.savefig(plot_dir + "/fig1.1_mass_continuity_binned_residual.png", dpi=300)
+    plt.ylabel(rf"[{MASS_FLUX_UNITS}]")
+    plt.title("Net mass flux residual")
+    plt.savefig(plot_dir + "/fig1.3_mass_continuity_binned_residual.png", dpi=300)
 
     plt.close()
 
@@ -109,28 +207,23 @@ def fig1_benchmark_mass_continuity(
         x, y = _finite_pair(benchmark_aligned, calculated_aligned)
         lower, upper = _axis_limits(x, y)
 
-        fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
+        fig, ax = plt.subplots(
+            figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
+            tight_layout=True,
+        )
         ax.scatter(x, y, alpha=0.5)
         ax.plot([lower, upper], [lower, upper], linestyle="--", color="k", label="1:1")
 
         ax.set_xlim(lower, upper)
         ax.set_ylim(lower, upper)
-        ax.set_aspect("equal", adjustable="box")
-        ax.set_xlabel(xlabel)
+        _set_square_1_to_1_axis(ax)
+        _set_square_xlabel(ax, xlabel)
         ax.set_ylabel(ylabel)
         ax.set_title(title)
-        ax.text(
-            0.02,
-            0.98,
-            _correlation_text(x, y),
-            transform=ax.transAxes,
-            va="top",
-            ha="left",
-            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.8},
-        )
-        ax.legend()
+        _add_correlation_text(ax, _correlation_text(x, y))
+        ax.legend(loc="lower right", fontsize=LEGEND_FONT_SIZE_PT)
 
-        fig.savefig(plot_dir + "/" + filename, dpi=300)
+        _save_square_figure(fig, plot_dir + "/" + filename)
         plt.close(fig)
 
     eulerian_x, eulerian_y = xr.align(
@@ -159,18 +252,22 @@ def fig1_benchmark_mass_continuity(
     if not np.isfinite(L) or L == 0:
         L = 1.0
 
-    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
+    fig, ax = plt.subplots(
+        figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
+        tight_layout=True,
+    )
     ax.scatter(x_e[mask_e], y_e[mask_e], alpha=0.5, label="Eulerian")
     ax.scatter(x_b[mask_b], y_b[mask_b], alpha=0.5, label="Benchmark")
     ax.plot([-L, L], [-L, L], linestyle="--", color="k", label="1:1")
 
     ax.set_xlim(-L, L)
     ax.set_ylim(-L, L)
-    ax.set_xlabel("dV/dt")
-    ax.set_ylabel("Net mass flux")
-    ax.legend()
+    _set_square_1_to_1_axis(ax)
+    _set_square_xlabel(ax, f"dV/dt [{MASS_FLUX_UNITS}]")
+    ax.set_ylabel(f"Net mass flux [{MASS_FLUX_UNITS}]")
+    ax.legend(loc="upper left", fontsize=LEGEND_FONT_SIZE_PT)
 
-    fig.savefig(plot_dir + "/fig1_benchmark_mass_continuity.png", dpi=300)
+    _save_square_figure(fig, plot_dir + "/fig1_benchmark_mass_continuity.png")
     plt.close(fig)
 
     calculated_mass_flux_lateral = advection_terms["net_mass_advection"]
@@ -186,17 +283,17 @@ def fig1_benchmark_mass_continuity(
     _plot_benchmark_vs_calculated(
         benchmark_mass_flux_net,
         calculated_mass_flux_lateral,
-        r"Benchmark mass flux [m$^2$ Pa s$^{-1}$]",
-        r"Calculated mass flux [m$^2$ Pa s$^{-1}$]",
-        "Benchmark vs Calculated Net Lateral Mass Flux",
+        f"Benchmark [{MASS_FLUX_UNITS}]",
+        f"Calculated [{MASS_FLUX_UNITS}]",
+        "Net Mass Flux",
         "fig1.1_benchmark_vs_calculated_mass_flux.png",
     )
     _plot_benchmark_vs_calculated(
         dV_dt_true,
         dV_dt,
-        r"Benchmark dV/dt [m$^2$ Pa s$^{-1}$]",
-        r"Calculated dV/dt [m$^2$ Pa s$^{-1}$]",
-        "Benchmark vs Calculated dV/dt",
+        f"Benchmark [{MASS_FLUX_UNITS}]",
+        f"Calculated [{MASS_FLUX_UNITS}]",
+        "dV/dt",
         "fig1.2_benchmark_vs_calculated_dV_dt.png",
     )
 
@@ -212,7 +309,11 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
 
     neg_dV_dt = - dV_dt
 
-    fig, ax = plt.subplots(figsize=(10, 10), nrows=2, tight_layout=True, sharex=True)
+    fig, ax = plt.subplots(
+        figsize=_publication_figsize("single", TWO_PANEL_STACK_ASPECT),
+        nrows=2,
+        sharex=True,
+    )
 
     delta_mass = advection_terms['net_mass_advection'] - dV_dt
 
@@ -223,10 +324,10 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
     ax[0].plot(delta_mass['time'], neg_dV_dt * mean_norm_factor * time_rate_conversion, 
                label='-dV/dt', alpha=0.5, color='C1')
 
-    ax[0].legend()
+    ax[0].legend(fontsize=LEGEND_FONT_SIZE_PT)
     # ax[0].set_xlabel("Time")
-    ax[0].set_ylabel("Mass Terms (normalized) [1/hr]")
-    ax[0].set_title(r"Mass Advection Residual Time Series (normalized by $\bar V$)")
+    ax[0].set_ylabel("[1/hr]")
+    ax[0].set_title("Mass residual")
     
     #check advection_terms['time'] is in the correct format:
     if np.issubdtype(advection_terms['time'].dtype, np.datetime64):
@@ -245,15 +346,15 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
     ax[1].plot(advection_terms['time'], cumulative_net_adv * mean_norm_factor, color='C0')
     ax[1].plot(advection_terms['time'], cumulative_dvdt * mean_norm_factor, color='C1')
 
-    locator   = mdates.AutoDateLocator()
-    formatter = mdates.ConciseDateFormatter(locator)
+    locator, formatter = _date_locator_formatter()
 
     ax[1].xaxis.set_major_locator(locator)
     ax[1].xaxis.set_major_formatter(formatter)
 
     ax[1].set_xlabel("Time")
-    ax[1].set_ylabel(r"$\int \delta$ Mass dt/ $\bar V$(t) [unitless]")
-    ax[1].set_title(r"Cumulative $\delta$ Mass / $\bar V$(t) Time Series")
+    ax[1].set_ylabel("[unitless]")
+    ax[1].set_title("Cumulative mass residual")
+    _apply_stacked_figure_layout(fig, 2)
     plt.savefig(plot_dir + '/fig2_mass_residual_time_series.png', dpi=300)
     plt.close()
 
@@ -271,11 +372,13 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
     # epsilon_mass_advection = abs(net) / sum (abs ( advection_per_surface ))
     eps_mass = np.abs( delta_mass) / np.sum(np.abs([advection_terms[mass] for mass in mass_vars]))
 
-    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
+    fig, ax = plt.subplots(
+        figsize=_publication_figsize("single", SINGLE_PANEL_ASPECT),
+        tight_layout=True,
+    )
     ax.plot(advection_terms['time'], eps_mass)
 
-    locator = mdates.AutoDateLocator()
-    formatter = mdates.ConciseDateFormatter(locator)
+    locator, formatter = _date_locator_formatter()
 
     ax.xaxis.set_major_locator(locator)
     ax.xaxis.set_major_formatter(formatter)
@@ -302,32 +405,30 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
     net_zonal_mass_advection = np.zeros_like(advection_terms['net_mass_advection'].values)
     net_meridional_mass_advection = np.zeros_like(advection_terms['net_mass_advection'].values)
     net_vertical_mass_advection   = np.zeros_like(advection_terms['net_mass_advection'].values)
-    
 
-    net_cum_zonal_mass_advection = np.zeros_like(advection_terms['net_mass_advection'].values)
-    net_cum_meridional_mass_advection = np.zeros_like(advection_terms['net_mass_advection'].values)
-    net_cum_vertical_mass_advection   = np.zeros_like(advection_terms['net_mass_advection'].values)
-    
-    
-    fig,ax = plt.subplots(figsize=(10, 10), tight_layout=True, nrows=3, sharex=True)
+    fig,ax = plt.subplots(
+        figsize=_publication_figsize("single", TWO_PANEL_STACK_ASPECT),
+        nrows=2,
+        sharex=True,
+    )
 
     advection_terms_smoothed = advection_terms.rolling(time=24, center=True).mean()
 
     for var in mass_vars:
-        ax[0].plot(advection_terms_smoothed['time'], advection_terms_smoothed[var] * mean_norm_factor * time_rate_conversion, label=var)
+        ax[0].plot(
+            advection_terms_smoothed['time'],
+            advection_terms_smoothed[var] * mean_norm_factor * time_rate_conversion,
+            label=_mass_flux_wall_label(var),
+        )
 
         if var.split('_')[-1] in ['east', 'west']:
             net_zonal_mass_advection += advection_terms_smoothed[var].values* mean_norm_factor * time_rate_conversion
-            net_cum_zonal_mass_advection += np.cumsum(advection_terms[var].values * dt) * mean_norm_factor
         elif var.split('_')[-1] in ['north', 'south']:
             net_meridional_mass_advection += advection_terms_smoothed[var].values* mean_norm_factor * time_rate_conversion
-            net_cum_meridional_mass_advection += np.cumsum(advection_terms[var].values * dt) * mean_norm_factor
         elif var.split('_')[-1] in ['top', 'bottom']:
             net_vertical_mass_advection += advection_terms_smoothed[var].values* mean_norm_factor * time_rate_conversion
-            net_cum_vertical_mass_advection += np.cumsum(advection_terms[var].values * dt) * mean_norm_factor
 
     net_horizontal_mass_advection     = net_zonal_mass_advection + net_meridional_mass_advection
-    net_cum_horizontal_mass_advection = net_cum_zonal_mass_advection + net_cum_meridional_mass_advection
 
     ax[1].plot(advection_terms_smoothed['time'], delta_mass * mean_norm_factor * time_rate_conversion, label=r'$\delta M$', color='k', linewidth=2)
 
@@ -336,32 +437,25 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
     ax[1].plot(advection_terms_smoothed['time'], net_horizontal_mass_advection, label='Horizontal')
     ax[1].plot(advection_terms_smoothed['time'], net_vertical_mass_advection, label='Vertical')
 
-
-    ax[2].plot(advection_terms_smoothed['time'], cumulative_residual * mean_norm_factor, label='Cumulative Residual', color='k', linewidth=2)
-
-    ax[2].plot(advection_terms_smoothed['time'], net_cum_zonal_mass_advection, label='Zonal', linestyle='--')
-    ax[2].plot(advection_terms_smoothed['time'], net_cum_meridional_mass_advection, label='Meridional', linestyle='--')
-    ax[2].plot(advection_terms_smoothed['time'], net_cum_horizontal_mass_advection, label='Horizontal')
-    ax[2].plot(advection_terms_smoothed['time'], net_cum_vertical_mass_advection, label='Vertical')
-
     ax[0].set_title('Mass Advection Terms (normalized)')
     ax[1].set_title('Net Mass Advection (normalized)')
-    ax[2].set_title(r"Cumulative Mass Advection / $\bar V$(t)")
 
-    locator = mdates.AutoDateLocator()
-    formatter = mdates.ConciseDateFormatter(locator)
+    locator, formatter = _date_locator_formatter()
 
-    ax[2].xaxis.set_major_locator(locator)
-    ax[2].xaxis.set_major_formatter(formatter)
+    ax[1].xaxis.set_major_locator(locator)
+    ax[1].xaxis.set_major_formatter(formatter)
 
-    ax[2].set_xlabel("Time")
+    ax[1].set_xlabel("Time")
     ax[0].set_ylabel("[1/hr]")
     ax[1].set_ylabel("[1/hr]")
-    ax[2].set_ylabel("[unitless]")
 
-    ax[0].legend(fontsize=10)
-    ax[1].legend(fontsize=10)
-    ax[2].legend(fontsize=10)
+    ax[0].legend(
+        fontsize=LEGEND_FONT_SIZE_PT,
+        ncol=min(3, max(1, len(mass_vars))),
+        loc="upper center",
+    )
+    ax[1].legend(fontsize=LEGEND_FONT_SIZE_PT)
+    _apply_stacked_figure_layout(fig, 2)
     plt.savefig(plot_dir + '/fig2.2_mass_advection_terms_timeseries.png', dpi=300)
     plt.close()
     
@@ -376,7 +470,11 @@ def fig3_advection_components_timeseries(advection_terms: xr.Dataset, dV_dt: xr.
     # delta_mass = dV_dt + advection_terms['net_mass_advection']
 
 
-    fig, ax = plt.subplots(figsize=(10, 10), nrows=2, tight_layout=True, sharex=True)
+    fig, ax = plt.subplots(
+        figsize=_publication_figsize("single", TWO_PANEL_STACK_ASPECT),
+        nrows=2,
+        sharex=True,
+    )
 
     mass_vars = []
     heat_vars = []
@@ -392,23 +490,23 @@ def fig3_advection_components_timeseries(advection_terms: xr.Dataset, dV_dt: xr.
     ax[0].plot(advection_terms['time'], advection_terms['advection_term'] * norm_factor * time_rate_conversion, label='Net Heat Advection', linewidth=2, color='k')
 
     ax[0].set_ylabel("[K / hr]")
-    ax[0].set_title("Advection Components Time Series")
+    ax[0].set_title("Heat advection components")
 
     ax[1].plot(advection_terms['time'], advection_terms['advection_term'] * norm_factor * time_rate_conversion, label='Net Heat Advection', linewidth=2, color='k')
     ax[1].plot(advection_terms['time'], delta_heat * norm_factor * time_rate_conversion, label='Expected Residual', linewidth=1, color='red')
 
-    ax[1].set_title(r"Net Heat Advection and $\delta M T_{scale}$ Time Series")
+    ax[1].set_title("Net heat advection")
     ax[1].set_ylabel('[K / hr]')
 
-    locator = mdates.AutoDateLocator()
-    formatter = mdates.ConciseDateFormatter(locator)
+    locator, formatter = _date_locator_formatter()
 
     ax[1].xaxis.set_major_locator(locator)
     ax[1].xaxis.set_major_formatter(formatter)
 
-    ax[0].legend(fontsize=10)
-    ax[1].legend(fontsize=10)
+    ax[0].legend(fontsize=LEGEND_FONT_SIZE_PT)
+    ax[1].legend(fontsize=LEGEND_FONT_SIZE_PT)
     ax[1].set_xlabel("Time")
+    _apply_stacked_figure_layout(fig, 2)
     plt.savefig(plot_dir + '/fig3_advection_components_timeseries.png', dpi=300)
     plt.close()
 
@@ -422,28 +520,32 @@ def fig4_temperature_derivative_timeseries(d_dt_T: xr.DataArray, dT_dt_1:xr.Data
 
     # delta_mass = dV_dt + advection_terms['net_mass_advection']
 
-    fig, ax = plt.subplots(figsize=(10, 10), nrows=2, tight_layout=True, sharex=True)
+    fig, ax = plt.subplots(
+        figsize=_publication_figsize("single", TWO_PANEL_STACK_ASPECT),
+        nrows=2,
+        sharex=True,
+    )
 
     ax[0].plot(d_dt_T['time'], d_dt_T * norm_factor * time_rate_conversion, label=r'd/dt $\int TdV$', linewidth=2, color='k')
 
     ax[0].set_ylabel("[K / hr]")
-    ax[0].set_title("Storage term: d/dt of domain integrated T")
+    ax[0].set_title("Storage term")
 
     ax[1].plot(dT_dt_2['time'], dT_dt_2 * norm_factor * time_rate_conversion, label=r'd/dt$\int TdV$-$\langle T \rangle $dV/dt', linewidth=2, color='b')
     ax[1].plot(dT_dt_1['time'], dT_dt_1 * norm_factor * time_rate_conversion, label=r'd$\langle T \rangle $/dt', linewidth=2, color='k')
     
-    ax[1].set_title(r"Domain Average Temperature Tendency Time Series")
+    ax[1].set_title("Temperature tendency")
     ax[1].set_ylabel('[K / hr]')
 
-    locator = mdates.AutoDateLocator()
-    formatter = mdates.ConciseDateFormatter(locator)
+    locator, formatter = _date_locator_formatter()
 
     ax[1].xaxis.set_major_locator(locator)
     ax[1].xaxis.set_major_formatter(formatter)
 
-    ax[0].legend(fontsize=10)
-    ax[1].legend(fontsize=10)
+    ax[0].legend(fontsize=LEGEND_FONT_SIZE_PT)
+    ax[1].legend(fontsize=LEGEND_FONT_SIZE_PT)
     ax[1].set_xlabel("Time")
+    _apply_stacked_figure_layout(fig, 2)
     plt.savefig(plot_dir + '/fig4_temperature_derivative_timeseries.png', dpi=300)
     plt.close()
 
@@ -466,7 +568,11 @@ def fig5_benchmark_comparison(
     benchmark_mass_fluxes = - benchmark_mass_fluxes
     benchmark_heat_fluxes = - benchmark_heat_fluxes
     
-    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True, nrows=2, sharex=True)
+    fig, ax = plt.subplots(
+        figsize=_publication_figsize("single", TWO_PANEL_STACK_ASPECT),
+        nrows=2,
+        sharex=True,
+    )
 
     wall_faces = ["north", "south", "east", "west"]
     colors = {
@@ -519,6 +625,7 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["benchmark_mass_flux_net"],
         linestyle="--",
+        linewidth=2,
         color="k",
     )
     ax[0].plot(
@@ -546,13 +653,12 @@ def fig5_benchmark_comparison(
         label="Calculated net",
     )
 
-    locator = mdates.AutoDateLocator()
-    formatter = mdates.ConciseDateFormatter(locator)
+    locator, formatter = _date_locator_formatter()
     ax[1].xaxis.set_major_locator(locator)
     ax[1].xaxis.set_major_formatter(formatter)
 
-    ax[0].set_ylabel(r"Mass Flux [m$^2$ Pa s$^{-1}$]")
-    ax[0].set_title("Comparison of Calculated Mass Fluxes with Benchmark")
+    ax[0].set_ylabel(rf"[{MASS_FLUX_UNITS}]")
+    ax[0].set_title("Mass flux comparison")
 
     face_handles = [
         Line2D([0], [0], color=colors["north"], lw=2, label="North"),
@@ -566,19 +672,32 @@ def fig5_benchmark_comparison(
         Line2D([0], [0], color="0.3", lw=2, linestyle="-",  label="Calculated"),
     ]
 
-    leg1 = ax[0].legend(handles=face_handles, loc="upper left", fontsize=10)
+    leg1 = ax[0].legend(
+        handles=face_handles,
+        loc="upper left",
+        fontsize=LEGEND_FONT_SIZE_PT,
+    )
     ax[0].add_artist(leg1)
-    ax[0].legend(handles=style_handles, loc="lower left", fontsize=10)
+    ax[0].legend(
+        handles=style_handles,
+        loc="lower left",
+        fontsize=LEGEND_FONT_SIZE_PT,
+    )
 
     ax[1].set_xlabel("Time")
-    ax[1].set_ylabel(r"Heat Flux [K m$^2$ Pa s$^{-1}$]")
-    ax[1].set_title("Comparison of Calculated Heat Fluxes with Benchmark")
-    ax[1].legend(fontsize=10)
+    ax[1].set_ylabel(rf"[{HEAT_FLUX_UNITS}]")
+    ax[1].set_title("Heat-flux comparison")
+    ax[1].legend(fontsize=LEGEND_FONT_SIZE_PT)
 
+    _apply_stacked_figure_layout(fig, 2)
     plt.savefig(plot_dir + "/fig5_benchmark_comparison.png", dpi=300)
     plt.close()
 
-    fig, ax = plt.subplots(figsize=(10, 9), tight_layout=True, nrows=3, sharex=True)
+    fig, ax = plt.subplots(
+        figsize=_publication_figsize("single", THREE_PANEL_STACK_ASPECT),
+        nrows=3,
+        sharex=True,
+    )
 
     # net lines
     ax[0].plot(
@@ -599,7 +718,7 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["benchmark_heat_flux_net"],
         linestyle="--",
-        linewidth=1,
+        linewidth=2,
         color="k",
         label=r"$\mathcal{H}_{bench, full}$",
     )
@@ -607,7 +726,7 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["calculated_heat_flux_net_lateral_full"],
         linestyle="-",
-        linewidth=1,
+        linewidth=2,
         color="k",
         label=r"$\mathcal{H}'_{calc} + \langle T \rangle M_{calc} $"
     )
@@ -618,7 +737,7 @@ def fig5_benchmark_comparison(
             "calculated_heat_flux_net_lateral_full_benchmark_mass"
         ],
         linestyle="-.",
-        linewidth=1,
+        linewidth=2,
         color="gray",
         label=r"$\mathcal{H}'_{calc} + \langle T \rangle M_{bench} $"
     )
@@ -627,7 +746,7 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["calculated_heat_flux_net_lateral"],
         linestyle="-",
-        linewidth=1,
+        linewidth=2,
         color="red",
         label=r"$\mathcal{H}'_{calc}$",
     )
@@ -635,18 +754,17 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["benchmark_heat_flux_net_lateral_prime"],
         linestyle="--",
-        linewidth=1,
+        linewidth=2,
         color="red",
         label=r"$\mathcal{H}'_{bench}$",
     )
 
-    locator = mdates.AutoDateLocator()
-    formatter = mdates.ConciseDateFormatter(locator)
+    locator, formatter = _date_locator_formatter()
     ax[2].xaxis.set_major_locator(locator)
     ax[2].xaxis.set_major_formatter(formatter)
 
-    ax[0].set_ylabel(r"Mass Flux [m$^2$ Pa s$^{-1}$]")
-    ax[0].set_title("Comparison of Calculated Mass Fluxes with Benchmark")
+    ax[0].set_ylabel(rf"[{MASS_FLUX_UNITS}]")
+    ax[0].set_title("Mass flux comparison")
 
     # face_handles = [
     #     Line2D([0], [0], color=colors["north"], lw=2, label="North"),
@@ -660,18 +778,27 @@ def fig5_benchmark_comparison(
         Line2D([0], [0], color="0.3", lw=2, linestyle="-",  label="Calculated"),
     ]
 
-    # leg1 = ax[0].legend(handles=face_handles, loc="upper left", fontsize=10)
+    # leg1 = ax[0].legend(
+    #     handles=face_handles,
+    #     loc="upper left",
+    #     fontsize=LEGEND_FONT_SIZE_PT,
+    # )
     # ax[0].add_artist(leg1)
-    ax[0].legend(handles=style_handles, loc="lower left", fontsize=10)
+    ax[0].legend(
+        handles=style_handles,
+        loc="lower left",
+        fontsize=LEGEND_FONT_SIZE_PT,
+    )
 
-    ax[1].set_ylabel(r"Heat Flux [K m$^2$ Pa s$^{-1}$]")
-    ax[1].set_title("Comparison of Calculated Heat Fluxes with Benchmark")
-    ax[1].legend(fontsize=10)
+    ax[1].set_ylabel(r"[K m$^2$ Pa s$^{-1}$]")
+    ax[1].set_title("Total Heat-flux comparison")
+    ax[1].legend(fontsize=LEGEND_FONT_SIZE_PT)
     ax[2].set_xlabel("Time")
-    ax[2].set_ylabel(r"Heat Flux [K m$^2$ Pa s$^{-1}$]")
-    ax[2].set_title(r"Temperature-Anomaly Heat Flux")
-    ax[2].legend(fontsize=10)
+    ax[2].set_ylabel(r"[K m$^2$ Pa s$^{-1}$]")
+    ax[2].set_title("T' Heat-flux comparison")
+    ax[2].legend(fontsize=LEGEND_FONT_SIZE_PT)
 
+    _apply_stacked_figure_layout(fig, 3)
     plt.savefig(plot_dir + "/fig5.1_net_benchmark_comparison.png", dpi=300)
     plt.close()
 
@@ -713,28 +840,23 @@ def fig5_benchmark_comparison(
     else:
         correlation_label = f"Pearson r: {np.corrcoef(x, y)[0, 1]:.3f}\nn = {x.size}"
 
-    fig, ax = plt.subplots(figsize=(10, 6), tight_layout=True)
-    ax.scatter(x, y, alpha=0.5)
+    fig, ax = plt.subplots(
+        figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
+        tight_layout=True,
+    )
+    ax.scatter(x, y, alpha=0.5, color="red")
     ax.plot([lower, upper], [lower, upper], linestyle="--", color="k", label="1:1")
     ax.set_xlim(lower, upper)
     ax.set_ylim(lower, upper)
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_xlabel(r"Benchmark $\mathcal{H}'$ [K m$^2$ Pa s$^{-1}$]")
-    ax.set_ylabel(r"Calculated $\mathcal{H}'$ [K m$^2$ Pa s$^{-1}$]")
-    ax.set_title("Benchmark vs Calculated Temperature-Anomaly Heat Flux")
-    ax.text(
-        0.02,
-        0.98,
-        correlation_label,
-        transform=ax.transAxes,
-        va="top",
-        ha="left",
-        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.8},
-    )
-    ax.legend()
+    _set_square_1_to_1_axis(ax)
+    _set_square_xlabel(ax, f"Benchmark [{HEAT_FLUX_UNITS}]")
+    ax.set_ylabel(f"Calculated [{HEAT_FLUX_UNITS}]")
+    ax.set_title(r"T' Heat-flux ($\mathcal{H}'$)")
+    _add_correlation_text(ax, correlation_label)
+    ax.legend(loc="lower right", fontsize=LEGEND_FONT_SIZE_PT)
 
-    plt.savefig(
+    _save_square_figure(
+        fig,
         plot_dir + "/fig5.2_benchmark_vs_calculated_heat_flux_lateral_prime.png",
-        dpi=300,
     )
     plt.close()

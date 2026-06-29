@@ -3,6 +3,7 @@
 #PBS -l select=1:ncpus=8:mem=25gb
 #PBS -j oe
 #PBS -o /dev/null
+#PBS -l walltime=24:00:00
 # PBS -o /home/mhpereir/eulerian_heat_budget/logs/
 
 LOGFILE="/home/mhpereir/eulerian_heat_budget/logs/${PBS_JOBID}_EHB_single.log"
@@ -34,14 +35,14 @@ echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hos
   --zg-bottom "surface_pressure" \
   --zg-top-pa 100 \
   --diagnostic-plots \
-  --allow-bottom-overflow \
   --include-benchmark-variables \
+  --allow-bottom-overflow \
   --write-netcdf \
   --constant-temperature-test 
 echo "[info] $(date -Is) done"
 
 
+
   # --use-surface-variables \
   # --surface-variable-mode "combined" \
   # --zg-bottom-pa 50000 \
-
