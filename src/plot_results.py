@@ -7,9 +7,52 @@ import os
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 
-plt.rcParams.update({'font.size': 16})
+SINGLE_COLUMN_WIDTH_IN = 3.155
+PAPER_FONT_SIZE_PT = 8
+LEGEND_FONT_SIZE_PT = 6
+TWO_PANEL_STACK_ASPECT = 1.425
+THREE_PANEL_STACK_ASPECT = 1.875
+
+STACKED_FIGURE_LAYOUTS = {
+    2: {"left": 0.24, "right": 0.96, "bottom": 0.12, "top": 0.92, "hspace": 0.28},
+    3: {"left": 0.22, "right": 0.82, "bottom": 0.10, "top": 0.93, "hspace": 0.34},
+}
+
+plt.rcParams.update(
+    {
+        "font.size": PAPER_FONT_SIZE_PT,
+        "axes.labelsize": PAPER_FONT_SIZE_PT,
+        "axes.titlesize": PAPER_FONT_SIZE_PT,
+        "xtick.labelsize": PAPER_FONT_SIZE_PT,
+        "ytick.labelsize": PAPER_FONT_SIZE_PT,
+        "legend.fontsize": LEGEND_FONT_SIZE_PT,
+        "legend.title_fontsize": LEGEND_FONT_SIZE_PT,
+        "figure.titlesize": PAPER_FONT_SIZE_PT,
+    }
+)
+
+
+def _publication_figsize(aspect: float):
+    return SINGLE_COLUMN_WIDTH_IN, SINGLE_COLUMN_WIDTH_IN * aspect
+
+
+def _date_locator_formatter():
+    locator = mdates.AutoDateLocator(minticks=3, maxticks=5)
+    formatter = mdates.ConciseDateFormatter(locator)
+    return locator, formatter
+
+
+def _apply_stacked_figure_layout(fig, nrows: int):
+    fig.subplots_adjust(**STACKED_FIGURE_LAYOUTS[nrows])
+
+
+def _format_time_axis(ax):
+    locator, formatter = _date_locator_formatter()
+    ax.xaxis.set_major_locator(locator)
+    ax.xaxis.set_major_formatter(formatter)
 
 
 # def plot_budget_terms(ds_budget: xr.Dataset, plot_dir: str) -> None:
@@ -69,9 +112,8 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
     units = "[K/hr]"  # since we are averaging over 24 hours, the units are K/hr
 
     fig, ax = plt.subplots(
-        figsize=(10, 12),
+        figsize=_publication_figsize(THREE_PANEL_STACK_ASPECT),
         nrows=3,
-        tight_layout=True,
         sharex=True
     )
 
@@ -99,7 +141,7 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
     ax[0].legend(
         [line_vol[0], line_T[0]],
         ["Volume", r"$\langle T \rangle$"],
-        loc="best", fontsize=10
+        loc="best", fontsize=LEGEND_FONT_SIZE_PT
     )
 
     # ---------------- Panel 2 ---------------
@@ -110,36 +152,49 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
         # "residual_heat": 1,
     }
 
-    dT_dt = ds_budget["dT_dt"] * norm_factor * time_conversion_factor  # convert to K/s by dividing by volume and multiplying by T scale (using domain average T as scale)
-    dT_dt = dT_dt.rolling(time=smoothing_window, center=True).mean() # smoothing to reduce noise, data is hourly
+    ddt_TV = ds_budget["d_dt_T"] * norm_factor * time_conversion_factor
+    ddt_TV = ddt_TV.rolling(time=smoothing_window, center=True).mean()
 
-    dT_dt_2 = (term_signs["advection_term"] * ds_budget["advection_term"] + \
-               term_signs["adiabatic_term"] * ds_budget["adiabatic_term"] + \
-               term_signs["diabatic_term"] * ds_budget["diabatic_term"] ) * norm_factor * time_conversion_factor
-    dT_dt_2 = dT_dt_2.rolling(time=smoothing_window, center=True).mean() # smoothing to reduce noise, data is hourly
+    dT_from_dV = (
+        ds_budget["T_domain_avg"] * norm_factor
+    ) * ds_budget["dV_dt"] * time_conversion_factor
+    dT_from_dV = dT_from_dV.rolling(time=smoothing_window, center=True).mean()
 
+    dTT_dt = ds_budget["dT_dt"] * norm_factor * time_conversion_factor
+    dTT_dt = dTT_dt.rolling(time=smoothing_window, center=True).mean()
 
-    line_dT = dT_dt.plot.line(
+    lines_dT = []
+
+    line_ddt_TV = ddt_TV.plot.line(
         ax=ax[1],
         add_legend=False,
-        color='C3'
+        color='C1',
     )
+    lines_dT.append(line_ddt_TV[0])
 
-    line_dT_2 = dT_dt_2.plot.line(
+    line_dT_from_dV = dT_from_dV.plot.line(
         ax=ax[1],
         add_legend=False,
         color='C0',
-        linestyle='--'
     )
+    lines_dT.append(line_dT_from_dV[0])
 
-    ax[1].legend(
-        handles=[line_dT[0], line_dT_2[0]],
-        labels=["d<T>/dt", "d<T>/dt w/o residual"],
+    line_dTT_dt = dTT_dt.plot.line(
+        ax=ax[1],
+        add_legend=False,
+        color='C2',
     )
+    lines_dT.append(line_dTT_dt[0])
+
+    ax[1].legend(lines_dT, [
+        r"d/dt$\int T dV$",
+        r"$\langle T \rangle$/V dV/dt",
+        r"d$\langle T \rangle$/dt"
+    ], fontsize=LEGEND_FONT_SIZE_PT)
 
     ax[1].axhline(0, color='k', linestyle='-', linewidth=1)
 
-    ax[1].set_ylabel(rf"dT/dt {units}")
+    ax[1].set_ylabel(rf"{units}")
     ax[1].set_title("Storage Term (normalized by volume)")
 
     # ---------------- Panel 3 ----------------
@@ -189,16 +244,19 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
         "Adiabatic Term",
         "Diabatic Term",
         "Mass Residual"
-    ], fontsize=10)
+    ], fontsize=LEGEND_FONT_SIZE_PT)
 
     ax[2].axhline(0, color='k', linestyle='-', linewidth=1)
 
     # Remove duplicate x-labels from upper panels
     ax[0].set_xlabel("")
     ax[1].set_xlabel("")
+    _format_time_axis(ax[2])
+    ax[2].set_xlabel("Time")
+    _apply_stacked_figure_layout(fig, 3)
 
     out_path = os.path.join(plot_dir, f"budget_terms_timeseries_hourly_smoothwindow_{smoothing_window}.png")
-    plt.savefig(out_path, bbox_inches="tight")
+    plt.savefig(out_path, dpi=300)
     plt.close(fig)
 
 
@@ -214,9 +272,8 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     # not all terms within ds_budget are time-rate-of-change, so I need to apply the unit conversion from s->hr in the individual terms.
 
     fig, ax = plt.subplots(
-        figsize=(10, 12),
+        figsize=_publication_figsize(THREE_PANEL_STACK_ASPECT),
         nrows=3,
-        tight_layout=True,
         sharex=True
     )
 
@@ -246,7 +303,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     ax[0].legend(
         [line_vol[0], line_T[0]],
         ["Volume", r"$\langle T \rangle$"],
-        loc="best", fontsize=10
+        loc="best", fontsize=LEGEND_FONT_SIZE_PT
     )
 
     # ---------------- Panel 2 ---------------
@@ -300,7 +357,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         r"d/dt$\int T dV$",
         r"$\langle T \rangle$/V dV/dt",
         r"d$\langle T \rangle$/dt"
-    ], fontsize=10)
+    ], fontsize=LEGEND_FONT_SIZE_PT)
 
     ax[1].axhline(0, color='k', linestyle='-', linewidth=1)
 
@@ -368,13 +425,15 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         "Net Heat Advection",
         "Adiabatic Term",
         "Diabatic Term",
-    ], fontsize=10)
+    ], fontsize=LEGEND_FONT_SIZE_PT)
 
     ax[2].axhline(0, color='k', linestyle='-', linewidth=1)
 
     # Remove duplicate x-labels from upper panels
     ax[0].set_xlabel("")
     ax[1].set_xlabel("")
+    _format_time_axis(ax[2])
+    ax[2].set_xlabel("Time")
 
     ymax = max(
         abs(ax[1].get_ylim()[0]), abs(ax[1].get_ylim()[1]),
@@ -385,7 +444,8 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
 
 
     out_path = os.path.join(plot_dir, "budget_terms_timeseries_daily.png")
-    plt.savefig(out_path, bbox_inches="tight")
+    _apply_stacked_figure_layout(fig, 3)
+    plt.savefig(out_path, dpi=300)
     plt.close(fig)
 
 
@@ -545,12 +605,16 @@ def plot_constant_T_results(ds_budget: xr.Dataset, ds_test:xr.Dataset, plot_dir:
     norm_factor            = 1 / ds_budget["domain_volume"]
     time_conversion_factor = 3600
 
-    fig, ax = plt.subplots(figsize=(10, 10), tight_layout=True, nrows=2, sharex=True)
+    fig, ax = plt.subplots(
+        figsize=_publication_figsize(TWO_PANEL_STACK_ASPECT),
+        nrows=2,
+        sharex=True,
+    )
 
     ax[0].plot(ds_budget["time"], ds_budget["advection_error"] * norm_factor * time_conversion_factor, label=r"$\delta M T_{scale}$", color='red')
     ax[0].plot(ds_test["time"], ds_test["advection_term"] * norm_factor * time_conversion_factor, label=r"$\mathcal{F}_{advection}$", color='k')
 
-    ax[0].legend(fontsize=10)
+    ax[0].legend(fontsize=LEGEND_FONT_SIZE_PT)
 
     #integrated quantities
     dt = (ds_budget["time"][1] - ds_budget["time"][0]).values / np.timedelta64(1, 's')  # time step in seconds
@@ -560,11 +624,13 @@ def plot_constant_T_results(ds_budget: xr.Dataset, ds_test:xr.Dataset, plot_dir:
     ax[1].plot(ds_budget["time"], integrated_advection_error, label=r"$T_{scale} \int \delta M dt$", color='red')
     ax[1].plot(ds_test["time"], integrated_net_heat_advection, label=r"$\int \mathcal{F}_{advection} dt$", color='k')
 
-    ax[1].legend(fontsize=10)
+    ax[1].legend(fontsize=LEGEND_FONT_SIZE_PT)
 
     ax[1].set_xlabel("Time")
     ax[0].set_ylabel("Advection (K/hr)")
     ax[1].set_ylabel("Integrated Advection (K)")
-    fig.suptitle("Comparison of Advection Error and Net Heat Advection (Constant T Test)")
-    plt.savefig(os.path.join(plot_dir, "constant_T_advection_comparison.png"), bbox_inches="tight")
+    fig.suptitle("Constant-T advection comparison")
+    _format_time_axis(ax[1])
+    _apply_stacked_figure_layout(fig, 2)
+    plt.savefig(os.path.join(plot_dir, "constant_T_advection_comparison.png"), dpi=300)
     plt.close(fig)
