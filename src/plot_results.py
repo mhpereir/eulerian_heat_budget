@@ -13,6 +13,7 @@ import matplotlib.dates as mdates
 SINGLE_COLUMN_WIDTH_IN = 3.155
 PAPER_FONT_SIZE_PT = 8
 LEGEND_FONT_SIZE_PT = 6
+LINE_WIDTH_PT = 1
 TWO_PANEL_STACK_ASPECT = 1.425
 THREE_PANEL_STACK_ASPECT = 1.875
 
@@ -31,6 +32,7 @@ plt.rcParams.update(
         "legend.fontsize": LEGEND_FONT_SIZE_PT,
         "legend.title_fontsize": LEGEND_FONT_SIZE_PT,
         "figure.titlesize": PAPER_FONT_SIZE_PT,
+        "lines.linewidth": LINE_WIDTH_PT,
     }
 )
 
@@ -53,6 +55,15 @@ def _format_time_axis(ax):
     locator, formatter = _date_locator_formatter()
     ax.xaxis.set_major_locator(locator)
     ax.xaxis.set_major_formatter(formatter)
+
+
+def _pad_y_limits(ax, fraction: float = 0.12):
+    lower, upper = ax.get_ylim()
+    span = upper - lower
+    if not np.isfinite(span) or span <= 0:
+        return
+    pad = span * fraction
+    ax.set_ylim(lower - pad, upper + pad)
 
 
 # def plot_budget_terms(ds_budget: xr.Dataset, plot_dir: str) -> None:
@@ -136,12 +147,16 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
     ax2.set_ylabel(r"$\langle T \rangle$ (K)")
 
     ax[0].set_title("Domain Volume and Average Temperature")
+    _pad_y_limits(ax[0], fraction=0.25)
+    _pad_y_limits(ax2, fraction=0.25)
 
     # Manual legend control
     ax[0].legend(
         [line_vol[0], line_T[0]],
         ["Volume", r"$\langle T \rangle$"],
-        loc="best", fontsize=LEGEND_FONT_SIZE_PT
+        loc="upper center",
+        ncol=2,
+        fontsize=LEGEND_FONT_SIZE_PT,
     )
 
     # ---------------- Panel 2 ---------------
@@ -192,7 +207,7 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
         r"d$\langle T \rangle$/dt"
     ], fontsize=LEGEND_FONT_SIZE_PT)
 
-    ax[1].axhline(0, color='k', linestyle='-', linewidth=1)
+    ax[1].axhline(0, color='k', linestyle='-', linewidth=LINE_WIDTH_PT)
 
     ax[1].set_ylabel(rf"{units}")
     ax[1].set_title("Storage Term (normalized by volume)")
@@ -239,14 +254,14 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
 
     ax[2].set_ylabel(f" {units}")
     ax[2].set_title("Budget Terms (normalized by volume)")
+    _pad_y_limits(ax[2], fraction=0.15)
     ax[2].legend(lines, [
-        "Net Heat Advection",
-        "Adiabatic Term",
-        "Diabatic Term",
-        "Mass Residual"
-    ], fontsize=LEGEND_FONT_SIZE_PT)
+        "Adv.",
+        "Adiab.",
+        "Diab.",
+    ], loc="upper center", ncol=3, fontsize=LEGEND_FONT_SIZE_PT)
 
-    ax[2].axhline(0, color='k', linestyle='-', linewidth=1)
+    ax[2].axhline(0, color='k', linestyle='-', linewidth=LINE_WIDTH_PT)
 
     # Remove duplicate x-labels from upper panels
     ax[0].set_xlabel("")
@@ -298,12 +313,16 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     ax2.set_ylabel(r"$\langle T \rangle$ (K)")
 
     ax[0].set_title("Domain Volume and Average Temperature")
+    _pad_y_limits(ax[0], fraction=0.25)
+    _pad_y_limits(ax2, fraction=0.25)
 
     # Manual legend control
     ax[0].legend(
         [line_vol[0], line_T[0]],
         ["Volume", r"$\langle T \rangle$"],
-        loc="best", fontsize=LEGEND_FONT_SIZE_PT
+        loc="upper center",
+        ncol=2,
+        fontsize=LEGEND_FONT_SIZE_PT,
     )
 
     # ---------------- Panel 2 ---------------
@@ -359,7 +378,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         r"d$\langle T \rangle$/dt"
     ], fontsize=LEGEND_FONT_SIZE_PT)
 
-    ax[1].axhline(0, color='k', linestyle='-', linewidth=1)
+    ax[1].axhline(0, color='k', linestyle='-', linewidth=LINE_WIDTH_PT)
 
     ax[1].set_ylabel(rf"{units}")
     ax[1].set_title("Storage Term (normalized by volume)")
@@ -412,7 +431,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
             a.axvline(
                 t,
                 color="k",
-                linewidth=0.3,
+                linewidth=LINE_WIDTH_PT,
                 alpha=0.2,
                 zorder=0
             )
@@ -422,12 +441,12 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     ax[2].set_ylabel(f" {units}")
     ax[2].set_title("Budget Terms (normalized by volume)")
     ax[2].legend(lines, [
-        "Net Heat Advection",
-        "Adiabatic Term",
-        "Diabatic Term",
-    ], fontsize=LEGEND_FONT_SIZE_PT)
+        "Adv.",
+        "Adiab.",
+        "Diab.",
+    ], loc="upper center", ncol=3, fontsize=LEGEND_FONT_SIZE_PT)
 
-    ax[2].axhline(0, color='k', linestyle='-', linewidth=1)
+    ax[2].axhline(0, color='k', linestyle='-', linewidth=LINE_WIDTH_PT)
 
     # Remove duplicate x-labels from upper panels
     ax[0].set_xlabel("")
@@ -438,7 +457,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     ymax = max(
         abs(ax[1].get_ylim()[0]), abs(ax[1].get_ylim()[1]),
         abs(ax[2].get_ylim()[0]), abs(ax[2].get_ylim()[1]),
-    )
+    ) * 1.15
     ax[1].set_ylim(-ymax, ymax)
     ax[2].set_ylim(-ymax, ymax)
 

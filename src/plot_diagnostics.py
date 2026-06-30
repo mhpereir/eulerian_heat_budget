@@ -18,6 +18,7 @@ FULL_TWO_COLUMN_WIDTH_IN = 6.476
 
 PAPER_FONT_SIZE_PT = 8
 LEGEND_FONT_SIZE_PT = 6
+LINE_WIDTH_PT = 1
 SCATTER_SIZE_PT2 = 18
 SCATTER_ALPHA = 0.3
 
@@ -42,6 +43,7 @@ plt.rcParams.update(
         "legend.fontsize": LEGEND_FONT_SIZE_PT,
         "legend.title_fontsize": LEGEND_FONT_SIZE_PT,
         "figure.titlesize": PAPER_FONT_SIZE_PT,
+        "lines.linewidth": LINE_WIDTH_PT,
     }
 )
 
@@ -444,7 +446,7 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
 
     net_horizontal_mass_advection     = net_zonal_mass_advection + net_meridional_mass_advection
 
-    ax[1].plot(advection_terms_smoothed['time'], delta_mass * mean_norm_factor * time_rate_conversion, label=r'$\delta M$', color='k', linewidth=2)
+    ax[1].plot(advection_terms_smoothed['time'], delta_mass * mean_norm_factor * time_rate_conversion, label=r'$\delta M$', color='k', linewidth=LINE_WIDTH_PT)
 
     # ax[1].plot(advection_terms_smoothed['time'], net_zonal_mass_advection, label='Zonal', linestyle='--')
     # ax[1].plot(advection_terms_smoothed['time'], net_meridional_mass_advection, label='Meridional', linestyle='--')
@@ -501,13 +503,13 @@ def fig3_advection_components_timeseries(advection_terms: xr.Dataset, dV_dt: xr.
             heat_vars.append(str(component))
             ax[0].plot(advection_terms['time'], advection_terms[component] * norm_factor * time_rate_conversion, label=component)
 
-    ax[0].plot(advection_terms['time'], advection_terms['advection_term'] * norm_factor * time_rate_conversion, label='Net Heat Advection', linewidth=2, color='k')
+    ax[0].plot(advection_terms['time'], advection_terms['advection_term'] * norm_factor * time_rate_conversion, label='Net Heat Advection', linewidth=LINE_WIDTH_PT, color='k')
 
     ax[0].set_ylabel("[K / hr]")
     ax[0].set_title("Heat advection components")
 
-    ax[1].plot(advection_terms['time'], advection_terms['advection_term'] * norm_factor * time_rate_conversion, label='Net Heat Advection', linewidth=2, color='k')
-    ax[1].plot(advection_terms['time'], delta_heat * norm_factor * time_rate_conversion, label='Expected Residual', linewidth=1, color='red')
+    ax[1].plot(advection_terms['time'], advection_terms['advection_term'] * norm_factor * time_rate_conversion, label='Net Heat Advection', linewidth=LINE_WIDTH_PT, color='k')
+    ax[1].plot(advection_terms['time'], delta_heat * norm_factor * time_rate_conversion, label='Expected Residual', linewidth=LINE_WIDTH_PT, color='red')
 
     ax[1].set_title("Net heat advection")
     ax[1].set_ylabel('[K / hr]')
@@ -540,13 +542,13 @@ def fig4_temperature_derivative_timeseries(d_dt_T: xr.DataArray, dT_dt_1:xr.Data
         sharex=True,
     )
 
-    ax[0].plot(d_dt_T['time'], d_dt_T * norm_factor * time_rate_conversion, label=r'd/dt $\int TdV$', linewidth=2, color='k')
+    ax[0].plot(d_dt_T['time'], d_dt_T * norm_factor * time_rate_conversion, label=r'd/dt $\int TdV$', linewidth=LINE_WIDTH_PT, color='k')
 
     ax[0].set_ylabel("[K / hr]")
     ax[0].set_title("Storage term")
 
-    ax[1].plot(dT_dt_2['time'], dT_dt_2 * norm_factor * time_rate_conversion, label=r'd/dt$\int TdV$-$\langle T \rangle $dV/dt', linewidth=2, color='b')
-    ax[1].plot(dT_dt_1['time'], dT_dt_1 * norm_factor * time_rate_conversion, label=r'd$\langle T \rangle $/dt', linewidth=2, color='k')
+    ax[1].plot(dT_dt_2['time'], dT_dt_2 * norm_factor * time_rate_conversion, label=r'd/dt$\int TdV$-$\langle T \rangle $dV/dt', linewidth=LINE_WIDTH_PT, color='b')
+    ax[1].plot(dT_dt_1['time'], dT_dt_1 * norm_factor * time_rate_conversion, label=r'd$\langle T \rangle $/dt', linewidth=LINE_WIDTH_PT, color='k')
     
     ax[1].set_title("Temperature tendency")
     ax[1].set_ylabel('[K / hr]')
@@ -639,14 +641,14 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["benchmark_mass_flux_net"],
         linestyle="--",
-        linewidth=2,
+        linewidth=LINE_WIDTH_PT,
         color="k",
     )
     ax[0].plot(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["calculated_mass_flux_net_lateral"],
         linestyle="-",
-        linewidth=2,
+        linewidth=LINE_WIDTH_PT,
         color="k",
     )
 
@@ -654,7 +656,7 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["benchmark_heat_flux_net"],
         linestyle="--",
-        linewidth=2,
+        linewidth=LINE_WIDTH_PT,
         color="k",
         label="Benchmark net",
     )
@@ -662,7 +664,7 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["calculated_heat_flux_net_lateral_full"],
         linestyle="-",
-        linewidth=2,
+        linewidth=LINE_WIDTH_PT,
         color="k",
         label="Calculated net",
     )
@@ -675,15 +677,15 @@ def fig5_benchmark_comparison(
     ax[0].set_title("Mass flux comparison")
 
     face_handles = [
-        Line2D([0], [0], color=colors["north"], lw=2, label="North"),
-        Line2D([0], [0], color=colors["south"], lw=2, label="South"),
-        Line2D([0], [0], color=colors["east"],  lw=2, label="East"),
-        Line2D([0], [0], color=colors["west"],  lw=2, label="West"),
-        Line2D([0], [0], color="k", lw=2, label="Net"),
+        Line2D([0], [0], color=colors["north"], lw=LINE_WIDTH_PT, label="North"),
+        Line2D([0], [0], color=colors["south"], lw=LINE_WIDTH_PT, label="South"),
+        Line2D([0], [0], color=colors["east"],  lw=LINE_WIDTH_PT, label="East"),
+        Line2D([0], [0], color=colors["west"],  lw=LINE_WIDTH_PT, label="West"),
+        Line2D([0], [0], color="k", lw=LINE_WIDTH_PT, label="Net"),
     ]
     style_handles = [
-        Line2D([0], [0], color="0.3", lw=2, linestyle="--", label="Benchmark"),
-        Line2D([0], [0], color="0.3", lw=2, linestyle="-",  label="Calculated"),
+        Line2D([0], [0], color="0.3", lw=LINE_WIDTH_PT, linestyle="--", label="Benchmark"),
+        Line2D([0], [0], color="0.3", lw=LINE_WIDTH_PT, linestyle="-",  label="Calculated"),
     ]
 
     leg1 = ax[0].legend(
@@ -724,7 +726,7 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["calculated_mass_flux_net_lateral"],
         linestyle="-",
-        linewidth=2,
+        linewidth=LINE_WIDTH_PT,
         color="k",
     )
 
@@ -732,7 +734,7 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["benchmark_heat_flux_net"],
         linestyle="--",
-        linewidth=2,
+        linewidth=LINE_WIDTH_PT,
         color="k",
         label=r"$\mathcal{H}_{bench, full}$",
     )
@@ -740,7 +742,7 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["calculated_heat_flux_net_lateral_full"],
         linestyle="-",
-        linewidth=2,
+        linewidth=LINE_WIDTH_PT,
         color="k",
         label=r"$\mathcal{H}'_{calc} + \langle T \rangle M_{calc} $"
     )
@@ -749,7 +751,7 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["calculated_heat_flux_net_lateral"],
         linestyle="-",
-        linewidth=2,
+        linewidth=LINE_WIDTH_PT,
         color="red",
         label=r"$\mathcal{H}'_{calc}$",
     )
@@ -757,7 +759,7 @@ def fig5_benchmark_comparison(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["benchmark_heat_flux_net_lateral_prime"],
         linestyle="--",
-        linewidth=2,
+        linewidth=LINE_WIDTH_PT,
         color="red",
         label=r"$\mathcal{H}'_{bench}$",
     )
@@ -770,15 +772,15 @@ def fig5_benchmark_comparison(
     ax[0].set_title("Mass flux comparison")
 
     # face_handles = [
-    #     Line2D([0], [0], color=colors["north"], lw=2, label="North"),
-    #     Line2D([0], [0], color=colors["south"], lw=2, label="South"),
-    #     Line2D([0], [0], color=colors["east"],  lw=2, label="East"),
-    #     Line2D([0], [0], color=colors["west"],  lw=2, label="West"),
-    #     Line2D([0], [0], color="k", lw=2, label="Net"),
+    #     Line2D([0], [0], color=colors["north"], lw=LINE_WIDTH_PT, label="North"),
+    #     Line2D([0], [0], color=colors["south"], lw=LINE_WIDTH_PT, label="South"),
+    #     Line2D([0], [0], color=colors["east"],  lw=LINE_WIDTH_PT, label="East"),
+    #     Line2D([0], [0], color=colors["west"],  lw=LINE_WIDTH_PT, label="West"),
+    #     Line2D([0], [0], color="k", lw=LINE_WIDTH_PT, label="Net"),
     # ]
     style_handles = [
-        Line2D([0], [0], color="0.3", lw=2, linestyle="--", label="Benchmark"),
-        Line2D([0], [0], color="0.3", lw=2, linestyle="-",  label="Calculated"),
+        Line2D([0], [0], color="0.3", lw=LINE_WIDTH_PT, linestyle="--", label="Benchmark"),
+        Line2D([0], [0], color="0.3", lw=LINE_WIDTH_PT, linestyle="-",  label="Calculated"),
     ]
 
     # leg1 = ax[0].legend(
