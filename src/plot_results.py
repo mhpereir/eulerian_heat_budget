@@ -11,15 +11,15 @@ import matplotlib.dates as mdates
 
 
 SINGLE_COLUMN_WIDTH_IN = 3.155
-PAPER_FONT_SIZE_PT = 8
-LEGEND_FONT_SIZE_PT = 6
+PAPER_FONT_SIZE_PT = 7
+LEGEND_FONT_SIZE_PT = 5
 LINE_WIDTH_PT = 1
-TWO_PANEL_STACK_ASPECT = 1.425
-THREE_PANEL_STACK_ASPECT = 1.875
+TWO_PANEL_STACK_ASPECT = 0.78
+THREE_PANEL_STACK_ASPECT = 1.2
 
 STACKED_FIGURE_LAYOUTS = {
-    2: {"left": 0.24, "right": 0.96, "bottom": 0.12, "top": 0.92, "hspace": 0.28},
-    3: {"left": 0.22, "right": 0.82, "bottom": 0.10, "top": 0.93, "hspace": 0.34},
+    2: {"left": 0.24, "right": 0.96, "bottom": 0.17, "top": 0.88, "hspace": 0.30},
+    3: {"left": 0.24, "right": 0.84, "bottom": 0.13, "top": 0.94, "hspace": 0.20},
 }
 
 plt.rcParams.update(
@@ -135,7 +135,7 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
         add_legend=False,
         color='C0'
     )
-    ax[0].set_ylabel("Domain Volume (m$^2$ Pa)")
+    ax[0].set_ylabel("V (m$^2$ Pa)")
 
     # Temperature (RHS)
     ax2 = ax[0].twinx()
@@ -146,7 +146,6 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
     )
     ax2.set_ylabel(r"$\langle T \rangle$ (K)")
 
-    ax[0].set_title("Domain Volume and Average Temperature")
     _pad_y_limits(ax[0], fraction=0.25)
     _pad_y_limits(ax2, fraction=0.25)
 
@@ -205,12 +204,11 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
         r"d/dt$\int T dV$",
         r"$\langle T \rangle$/V dV/dt",
         r"d$\langle T \rangle$/dt"
-    ], fontsize=LEGEND_FONT_SIZE_PT)
+    ], loc="upper center", ncol=3, fontsize=LEGEND_FONT_SIZE_PT)
 
     ax[1].axhline(0, color='k', linestyle='-', linewidth=LINE_WIDTH_PT)
 
     ax[1].set_ylabel(rf"{units}")
-    ax[1].set_title("Storage Term (normalized by volume)")
 
     # ---------------- Panel 3 ----------------
     lines = []
@@ -253,7 +251,6 @@ def plot_budget_terms_hourly(ds_budget: xr.Dataset, smoothing_window: int, plot_
         lines.append(line[0])
 
     ax[2].set_ylabel(f" {units}")
-    ax[2].set_title("Budget Terms (normalized by volume)")
     _pad_y_limits(ax[2], fraction=0.15)
     ax[2].legend(lines, [
         "Adv.",
@@ -300,7 +297,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         color='C0',
         drawstyle="steps-post"
     )
-    ax[0].set_ylabel("Domain Volume (m$^2$ Pa)")
+    ax[0].set_ylabel("V (m$^2$ Pa)")
 
     # Temperature (RHS)
     ax2 = ax[0].twinx()
@@ -312,7 +309,6 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     )
     ax2.set_ylabel(r"$\langle T \rangle$ (K)")
 
-    ax[0].set_title("Domain Volume and Average Temperature")
     _pad_y_limits(ax[0], fraction=0.25)
     _pad_y_limits(ax2, fraction=0.25)
 
@@ -376,12 +372,11 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         r"d/dt$\int T dV$",
         r"$\langle T \rangle$/V dV/dt",
         r"d$\langle T \rangle$/dt"
-    ], fontsize=LEGEND_FONT_SIZE_PT)
+    ], loc="upper center", ncol=3, fontsize=LEGEND_FONT_SIZE_PT)
 
     ax[1].axhline(0, color='k', linestyle='-', linewidth=LINE_WIDTH_PT)
 
     ax[1].set_ylabel(rf"{units}")
-    ax[1].set_title("Storage Term (normalized by volume)")
 
     # ---------------- Panel 3 ----------------
     lines = []
@@ -439,7 +434,6 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
 
 
     ax[2].set_ylabel(f" {units}")
-    ax[2].set_title("Budget Terms (normalized by volume)")
     ax[2].legend(lines, [
         "Adv.",
         "Adiab.",

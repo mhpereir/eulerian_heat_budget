@@ -16,21 +16,28 @@ from . import terms
 SINGLE_COLUMN_WIDTH_IN = 3.155
 FULL_TWO_COLUMN_WIDTH_IN = 6.476
 
-PAPER_FONT_SIZE_PT = 8
-LEGEND_FONT_SIZE_PT = 6
+PAPER_FONT_SIZE_PT = 7
+LEGEND_FONT_SIZE_PT = 5
 LINE_WIDTH_PT = 1
 SCATTER_SIZE_PT2 = 18
 SCATTER_ALPHA = 0.3
 
 SINGLE_PANEL_ASPECT = 0.62
-TWO_PANEL_STACK_ASPECT = 1.425
-THREE_PANEL_STACK_ASPECT = 1.875
-SQUARE_PANEL_ASPECT = 1.0
+TWO_PANEL_STACK_ASPECT = 0.78
+THREE_PANEL_STACK_ASPECT = 1.0
+SQUARE_PANEL_ASPECT = TWO_PANEL_STACK_ASPECT
 MASS_FLUX_UNITS = r"m$^2$ Pa s$^{-1}$"
 HEAT_FLUX_UNITS = r"K m$^2$ Pa s$^{-1}$"
+ONE_TO_ONE_XLABEL_X = 0.43
+ONE_TO_ONE_FIGURE_LAYOUT = {
+    "left": 0.23,
+    "right": 0.97,
+    "bottom": 0.20,
+    "top": 0.88,
+}
 STACKED_FIGURE_LAYOUTS = {
-    2: {"left": 0.26, "right": 0.97, "bottom": 0.12, "top": 0.94, "hspace": 0.26},
-    3: {"left": 0.26, "right": 0.97, "bottom": 0.10, "top": 0.95, "hspace": 0.32},
+    2: {"left": 0.26, "right": 0.97, "bottom": 0.17, "top": 0.88, "hspace": 0.30},
+    3: {"left": 0.234, "right": 0.97, "bottom": 0.15, "top": 0.89, "hspace": 0.40},
 }
 
 plt.rcParams.update(
@@ -67,6 +74,14 @@ def _apply_stacked_figure_layout(fig, nrows: int):
     fig.subplots_adjust(**STACKED_FIGURE_LAYOUTS[nrows])
 
 
+def _pad_upper_ylim(ax, fraction: float = 0.15):
+    lower, upper = ax.get_ylim()
+    span = upper - lower
+    if not np.isfinite(span) or span <= 0:
+        return
+    ax.set_ylim(lower, upper + span * fraction)
+
+
 def _set_square_1_to_1_axis(ax):
     ax.set_aspect("equal", adjustable="box")
     ax.set_box_aspect(1)
@@ -76,6 +91,7 @@ def _set_square_1_to_1_axis(ax):
 
 def _set_square_xlabel(ax, label: str):
     ax.set_xlabel(label)
+    ax.xaxis.set_label_coords(ONE_TO_ONE_XLABEL_X, -0.14)
 
 
 def _add_correlation_text(ax, text: str):
@@ -94,12 +110,13 @@ def _add_correlation_text(ax, text: str):
 
 
 def _prepare_square_figure_for_save(fig):
+    fig.subplots_adjust(**ONE_TO_ONE_FIGURE_LAYOUT)
     fig.canvas.draw()
 
 
 def _save_square_figure(fig, path: str):
     _prepare_square_figure_for_save(fig)
-    fig.savefig(path, dpi=300, bbox_inches="tight", pad_inches=0.10)
+    fig.savefig(path, dpi=300)
 
 
 def _mass_flux_wall_label(var_name: str) -> str:
@@ -113,7 +130,6 @@ def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_
     #test how mass advection terms compare to volume changes (should be y=-x)
     fig,ax = plt.subplots(
         figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
-        tight_layout=True,
     )
     x= dV_dt.values
     y= advection_terms['net_mass_advection'].values
@@ -213,7 +229,6 @@ def fig1_benchmark_mass_continuity(
 
         fig, ax = plt.subplots(
             figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
-            tight_layout=True,
         )
         ax.scatter(x, y, alpha=SCATTER_ALPHA, s=SCATTER_SIZE_PT2)
         ax.plot([lower, upper], [lower, upper], linestyle="--", color="k", label="1:1")
@@ -258,7 +273,6 @@ def fig1_benchmark_mass_continuity(
 
     fig, ax = plt.subplots(
         figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
-        tight_layout=True,
     )
     ax.scatter(
         x_e[mask_e],
@@ -343,7 +357,7 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
     ax[0].legend(fontsize=LEGEND_FONT_SIZE_PT)
     # ax[0].set_xlabel("Time")
     ax[0].set_ylabel("[1/hr]")
-    ax[0].set_title("Mass residual")
+    ax[0].set_title("Mass residual (normalized)")
     
     #check advection_terms['time'] is in the correct format:
     if np.issubdtype(advection_terms['time'].dtype, np.datetime64):
@@ -369,7 +383,7 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
 
     ax[1].set_xlabel("Time")
     ax[1].set_ylabel("[unitless]")
-    ax[1].set_title("Cumulative mass residual")
+    ax[1].set_title("Cumulative mass residual (normalized)")
     _apply_stacked_figure_layout(fig, 2)
     plt.savefig(plot_dir + '/fig2_mass_residual_time_series.png', dpi=300)
     plt.close()
@@ -465,6 +479,7 @@ def fig2_mass_advection_residual_timeseries(advection_terms: xr.Dataset, dV_dt: 
     ax[0].set_ylabel("[1/hr]")
     ax[1].set_ylabel("[1/hr]")
 
+    _pad_upper_ylim(ax[0], fraction=0.15)
     ax[0].legend(
         fontsize=LEGEND_FONT_SIZE_PT,
         ncol=min(3, max(1, len(mass_vars))),
@@ -849,7 +864,6 @@ def fig5_benchmark_comparison(
 
         fig, ax = plt.subplots(
             figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
-            tight_layout=True,
         )
         ax.scatter(x, y, alpha=SCATTER_ALPHA, color="red", s=SCATTER_SIZE_PT2)
         ax.plot([lower, upper], [lower, upper], linestyle="--", color="k", label="1:1")
