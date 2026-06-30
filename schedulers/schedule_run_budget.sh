@@ -21,8 +21,8 @@ mamba activate dev_env
 set -euo pipefail
 
 TIME_START="1941-06-01T00:00:00"
-TIME_END="1941-07-01T00:00:00"
-REGION="${REGION:-ocean_test}"
+TIME_END="1941-09-01T00:00:00"
+REGION="${REGION:-pnw_bartusek}"
 
 cd /home/mhpereir/eulerian_heat_budget/scripts
 

@@ -18,6 +18,8 @@ FULL_TWO_COLUMN_WIDTH_IN = 6.476
 
 PAPER_FONT_SIZE_PT = 8
 LEGEND_FONT_SIZE_PT = 6
+SCATTER_SIZE_PT2 = 18
+SCATTER_ALPHA = 0.3
 
 SINGLE_PANEL_ASPECT = 0.62
 TWO_PANEL_STACK_ASPECT = 1.425
@@ -113,7 +115,7 @@ def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_
     )
     x= dV_dt.values
     y= advection_terms['net_mass_advection'].values
-    ax.scatter(x, y)
+    ax.scatter(x, y, s=SCATTER_SIZE_PT2)
     #plot 1:-1 line
     # symmetric limits
     L = np.nanmax(np.abs(np.concatenate([x, y])))
@@ -211,7 +213,7 @@ def fig1_benchmark_mass_continuity(
             figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
             tight_layout=True,
         )
-        ax.scatter(x, y, alpha=0.5)
+        ax.scatter(x, y, alpha=SCATTER_ALPHA, s=SCATTER_SIZE_PT2)
         ax.plot([lower, upper], [lower, upper], linestyle="--", color="k", label="1:1")
 
         ax.set_xlim(lower, upper)
@@ -256,8 +258,20 @@ def fig1_benchmark_mass_continuity(
         figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
         tight_layout=True,
     )
-    ax.scatter(x_e[mask_e], y_e[mask_e], alpha=0.5, label="Eulerian")
-    ax.scatter(x_b[mask_b], y_b[mask_b], alpha=0.5, label="Benchmark")
+    ax.scatter(
+        x_e[mask_e],
+        y_e[mask_e],
+        alpha=SCATTER_ALPHA,
+        label="Eulerian",
+        s=SCATTER_SIZE_PT2,
+    )
+    ax.scatter(
+        x_b[mask_b],
+        y_b[mask_b],
+        alpha=SCATTER_ALPHA,
+        label="Benchmark",
+        s=SCATTER_SIZE_PT2,
+    )
     ax.plot([-L, L], [-L, L], linestyle="--", color="k", label="1:1")
 
     ax.set_xlim(-L, L)
@@ -731,17 +745,6 @@ def fig5_benchmark_comparison(
         label=r"$\mathcal{H}'_{calc} + \langle T \rangle M_{calc} $"
     )
 
-    ax[1].plot(
-        benchmark_diagnostic_totals["time"],
-        benchmark_diagnostic_totals[
-            "calculated_heat_flux_net_lateral_full_benchmark_mass"
-        ],
-        linestyle="-.",
-        linewidth=2,
-        color="gray",
-        label=r"$\mathcal{H}'_{calc} + \langle T \rangle M_{bench} $"
-    )
-
     ax[2].plot(
         benchmark_diagnostic_totals["time"],
         benchmark_diagnostic_totals["calculated_heat_flux_net_lateral"],
@@ -791,72 +794,84 @@ def fig5_benchmark_comparison(
     )
 
     ax[1].set_ylabel(r"[K m$^2$ Pa s$^{-1}$]")
-    ax[1].set_title("Total Heat-flux comparison")
+    ax[1].set_title(r"Total Heat-flux ($\mathcal{H}$) comparison")
     ax[1].legend(fontsize=LEGEND_FONT_SIZE_PT)
     ax[2].set_xlabel("Time")
     ax[2].set_ylabel(r"[K m$^2$ Pa s$^{-1}$]")
-    ax[2].set_title("T' Heat-flux comparison")
+    ax[2].set_title(r"T' Heat-flux ($\mathcal{H}'$) comparison")
     ax[2].legend(fontsize=LEGEND_FONT_SIZE_PT)
 
     _apply_stacked_figure_layout(fig, 3)
     plt.savefig(plot_dir + "/fig5.1_net_benchmark_comparison.png", dpi=300)
     plt.close()
 
-    benchmark_prime = benchmark_diagnostic_totals[
-        "benchmark_heat_flux_net_lateral_prime"
-    ]
-    calculated_prime = benchmark_diagnostic_totals[
-        "calculated_heat_flux_net_lateral"
-    ]
-    benchmark_prime, calculated_prime = xr.align(
-        benchmark_prime,
-        calculated_prime,
-        join="inner",
-    )
-    x = benchmark_prime.values.ravel()
-    y = calculated_prime.values.ravel()
-    mask = np.isfinite(x) & np.isfinite(y)
-    x = x[mask]
-    y = y[mask]
+    def _plot_heat_flux_correlation(
+        benchmark: xr.DataArray,
+        calculated: xr.DataArray,
+        title: str,
+        filename: str,
+    ):
+        benchmark_aligned, calculated_aligned = xr.align(
+            benchmark,
+            calculated,
+            join="inner",
+        )
+        x = benchmark_aligned.values.ravel()
+        y = calculated_aligned.values.ravel()
+        mask = np.isfinite(x) & np.isfinite(y)
+        x = x[mask]
+        y = y[mask]
 
-    all_values = np.concatenate([x, y])
-    if all_values.size:
-        lower = np.nanmin(all_values)
-        upper = np.nanmax(all_values)
-        if not np.isfinite(lower) or not np.isfinite(upper):
+        all_values = np.concatenate([x, y])
+        if all_values.size:
+            lower = np.nanmin(all_values)
+            upper = np.nanmax(all_values)
+            if not np.isfinite(lower) or not np.isfinite(upper):
+                lower, upper = -1.0, 1.0
+        else:
             lower, upper = -1.0, 1.0
-    else:
-        lower, upper = -1.0, 1.0
 
-    if lower == upper:
-        pad = max(np.abs(lower) * 0.05, 1.0)
-    else:
-        pad = (upper - lower) * 0.05
-    lower -= pad
-    upper += pad
+        if lower == upper:
+            pad = max(np.abs(lower) * 0.05, 1.0)
+        else:
+            pad = (upper - lower) * 0.05
+        lower -= pad
+        upper += pad
 
-    if x.size < 2 or np.std(x) == 0 or np.std(y) == 0:
-        correlation_label = f"Pearson r: n/a\nn = {x.size}"
-    else:
-        correlation_label = f"Pearson r: {np.corrcoef(x, y)[0, 1]:.3f}\nn = {x.size}"
+        if x.size < 2 or np.std(x) == 0 or np.std(y) == 0:
+            correlation_label = f"Pearson r: n/a\nn = {x.size}"
+        else:
+            correlation_label = (
+                f"Pearson r: {np.corrcoef(x, y)[0, 1]:.3f}\nn = {x.size}"
+            )
 
-    fig, ax = plt.subplots(
-        figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
-        tight_layout=True,
+        fig, ax = plt.subplots(
+            figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
+            tight_layout=True,
+        )
+        ax.scatter(x, y, alpha=SCATTER_ALPHA, color="red", s=SCATTER_SIZE_PT2)
+        ax.plot([lower, upper], [lower, upper], linestyle="--", color="k", label="1:1")
+        ax.set_xlim(lower, upper)
+        ax.set_ylim(lower, upper)
+        _set_square_1_to_1_axis(ax)
+        _set_square_xlabel(ax, f"Benchmark [{HEAT_FLUX_UNITS}]")
+        ax.set_ylabel(f"Calculated [{HEAT_FLUX_UNITS}]")
+        ax.set_title(title)
+        _add_correlation_text(ax, correlation_label)
+        ax.legend(loc="lower right", fontsize=LEGEND_FONT_SIZE_PT)
+
+        _save_square_figure(fig, plot_dir + "/" + filename)
+        plt.close()
+
+    _plot_heat_flux_correlation(
+        benchmark_diagnostic_totals["benchmark_heat_flux_net_lateral_prime"],
+        benchmark_diagnostic_totals["calculated_heat_flux_net_lateral"],
+        r"T' Heat-flux ($\mathcal{H}'$)",
+        "fig5.2_benchmark_vs_calculated_heat_flux_lateral_prime.png",
     )
-    ax.scatter(x, y, alpha=0.5, color="red")
-    ax.plot([lower, upper], [lower, upper], linestyle="--", color="k", label="1:1")
-    ax.set_xlim(lower, upper)
-    ax.set_ylim(lower, upper)
-    _set_square_1_to_1_axis(ax)
-    _set_square_xlabel(ax, f"Benchmark [{HEAT_FLUX_UNITS}]")
-    ax.set_ylabel(f"Calculated [{HEAT_FLUX_UNITS}]")
-    ax.set_title(r"T' Heat-flux ($\mathcal{H}'$)")
-    _add_correlation_text(ax, correlation_label)
-    ax.legend(loc="lower right", fontsize=LEGEND_FONT_SIZE_PT)
-
-    _save_square_figure(
-        fig,
-        plot_dir + "/fig5.2_benchmark_vs_calculated_heat_flux_lateral_prime.png",
+    _plot_heat_flux_correlation(
+        benchmark_diagnostic_totals["benchmark_heat_flux_net"],
+        benchmark_diagnostic_totals["calculated_heat_flux_net_lateral_full"],
+        r"Total Heat-flux ($\mathcal{H}$)",
+        "fig5.3_benchmark_vs_calculated_heat_flux_total.png",
     )
-    plt.close()
