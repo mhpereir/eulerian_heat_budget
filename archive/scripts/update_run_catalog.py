@@ -23,8 +23,8 @@ OPERATIONAL_COLUMNS = ("pbs_id", "run_info_file", "log_file", "exit_status")
 FILE_NOT_FOUND = "file not found"
 EXIT_STATUS_NOT_FOUND = "exit status not found"
 
-RUN_DIR_PATTERN = re.compile(r"^(?P<pbs_id>\d+\.venus)$")
-SINGLE_LOG_PATTERN = re.compile(r"^(?P<pbs_id>\d+\.venus)_EHB_single\.log$")
+RUN_DIR_PATTERN = re.compile(r"^(?P<run_id>\d+(?:\.venus)?)$")
+SINGLE_LOG_PATTERN = re.compile(r"^(?P<run_id>\d+(?:\.venus)?)_EHB_single\.log$")
 EXIT_STATUS_PATTERN = re.compile(r"^\s*Exit status:\s*(\d+)\s*$", re.MULTILINE)
 
 
@@ -38,17 +38,17 @@ def _require_directory(path: Path, label: str) -> None:
 
 
 def discover_run_ids(plots_dir: Path, logs_dir: Path) -> list[str]:
-    """Return sorted PBS IDs present in either supported single-run source."""
+    """Return sorted scheduler run IDs present in supported single-run sources."""
     _require_directory(plots_dir, "Plots")
     _require_directory(logs_dir, "Logs")
 
     run_ids = {
-        match.group("pbs_id")
+        match.group("run_id")
         for path in plots_dir.iterdir()
         if path.is_dir() and (match := RUN_DIR_PATTERN.fullmatch(path.name))
     }
     run_ids.update(
-        match.group("pbs_id")
+        match.group("run_id")
         for path in logs_dir.iterdir()
         if path.is_file() and (match := SINGLE_LOG_PATTERN.fullmatch(path.name))
     )

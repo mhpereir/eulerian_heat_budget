@@ -54,6 +54,10 @@ def resolve_run_id(
     pid: int | None = None,
 ) -> str:
     active_env = os.environ if env is None else env
+    slurm_job_id = active_env.get("SLURM_JOB_ID")
+    if slurm_job_id:
+        return _sanitize_run_id(slurm_job_id)
+
     pbs_job_id = active_env.get("PBS_JOBID")
     if pbs_job_id:
         return _sanitize_run_id(pbs_job_id)
@@ -84,6 +88,34 @@ def prepare_run_paths(
         output_path=str(run_root / "heat_budget.nc"),
         constant_t_output_path=str(run_root / "heat_budget_constant_T.nc"),
     )
+
+
+def resolve_scheduler_metadata(
+    *,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, str | None]:
+    active_env = os.environ if env is None else env
+    slurm_job_id = active_env.get("SLURM_JOB_ID")
+    pbs_job_id = active_env.get("PBS_JOBID")
+
+    if slurm_job_id:
+        scheduler = "slurm"
+        scheduler_job_id = slurm_job_id
+    elif pbs_job_id:
+        scheduler = "pbs"
+        scheduler_job_id = pbs_job_id
+    else:
+        scheduler = "manual"
+        scheduler_job_id = None
+
+    return {
+        "scheduler": scheduler,
+        "scheduler_job_id": scheduler_job_id,
+        "pbs_job_id": pbs_job_id,
+        "slurm_job_id": slurm_job_id,
+        "slurm_array_job_id": active_env.get("SLURM_ARRAY_JOB_ID"),
+        "slurm_array_task_id": active_env.get("SLURM_ARRAY_TASK_ID"),
+    }
 
 
 def prepare_production_paths(
@@ -132,7 +164,7 @@ def write_run_info(
 
     payload = {
         "run_id": paths.run_id,
-        "pbs_job_id": active_env.get("PBS_JOBID"),
+        **resolve_scheduler_metadata(env=active_env),
         "generated_at": timestamp.isoformat(),
         "run_root": paths.run_root,
         "plot_dir": paths.plot_dir,
@@ -204,7 +236,7 @@ def write_production_manifest(
 
     payload = {
         "generated_at": timestamp.isoformat(),
-        "pbs_job_id": active_env.get("PBS_JOBID"),
+        **resolve_scheduler_metadata(env=active_env),
         "production_start_year": production_start_year,
         "production_end_year": production_end_year,
         "root_dir": paths.root_dir,

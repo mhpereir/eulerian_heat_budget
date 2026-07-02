@@ -76,6 +76,19 @@ def test_prepare_run_paths_uses_pbs_jobid(tmp_path):
     assert Path(paths.constant_t_output_path) == tmp_path / "2586030.venus" / "heat_budget_constant_T.nc"
 
 
+def test_prepare_run_paths_prefers_slurm_jobid(tmp_path):
+    paths = prepare_run_paths(
+        str(tmp_path),
+        env={"SLURM_JOB_ID": "123456", "PBS_JOBID": "2586030.venus"},
+        now=datetime(2026, 3, 17, 12, 0, 0),
+        pid=99,
+    )
+
+    assert paths.run_id == "123456"
+    assert Path(paths.run_root) == tmp_path / "123456"
+    assert Path(paths.plot_dir) == tmp_path / "123456" / "plots"
+
+
 def test_write_run_info_serializes_specs_to_json(tmp_path):
     paths = prepare_run_paths(
         str(tmp_path),
@@ -132,7 +145,12 @@ def test_write_run_info_serializes_specs_to_json(tmp_path):
     payload = json.loads(Path(metadata_path).read_text())
 
     assert payload["run_id"] == "2586030.venus"
+    assert payload["scheduler"] == "pbs"
+    assert payload["scheduler_job_id"] == "2586030.venus"
     assert payload["pbs_job_id"] == "2586030.venus"
+    assert payload["slurm_job_id"] is None
+    assert payload["slurm_array_job_id"] is None
+    assert payload["slurm_array_task_id"] is None
     assert payload["plot_dir"] == str(tmp_path / "2586030.venus" / "plots")
     assert payload["request"]["bbox"] == [40.0, 60.0, -130.0, -110.0]
     assert payload["source_spec"]["kind"] == "arco_era5"
@@ -142,6 +160,72 @@ def test_write_run_info_serializes_specs_to_json(tmp_path):
     assert payload["git"]["commit"] == "1234567890abcdef1234567890abcdef12345678"
     assert payload["git"]["dirty"] is True
     assert payload["cli_args"]["in_surface_variables"] is False
+
+
+def test_write_run_info_serializes_slurm_metadata(tmp_path):
+    paths = prepare_run_paths(
+        str(tmp_path),
+        env={
+            "SLURM_JOB_ID": "123456",
+            "SLURM_ARRAY_JOB_ID": "123450",
+            "SLURM_ARRAY_TASK_ID": "6",
+        },
+        now=datetime(2026, 3, 17, 12, 0, 0),
+        pid=99,
+    )
+
+    metadata_path = write_run_info(
+        paths,
+        request=DomainRequest(
+            bbox=(40.0, 60.0, -130.0, -110.0),
+            margin_n=1,
+            zg_top_pressure=60000.0,
+            zg_bottom="surface_pressure",
+            zg_bottom_pressure=None,
+        ),
+        source_spec=DataSourceConfig(
+            kind="arco_era5",
+            arco_path="gs://example-dataset.zarr",
+            time_start="1961-06-01T00:00:00",
+            time_end="1961-06-07T00:00:00",
+        ),
+        domain_spec=DomainSpec(
+            lat_min=40.25,
+            lat_max=59.75,
+            lon_min=-129.75,
+            lon_max=-110.25,
+            zg_top_pressure=60000.0,
+            zg_bottom="surface_pressure",
+            zg_bottom_pressure=None,
+        ),
+        surface_behaviour=SurfaceBehaviour(
+            allow_bottom_overflow=False,
+            use_surface_variables=False,
+            surface_variable_mode="none",
+        ),
+        git_provenance=GitProvenance(
+            branch="test-branch",
+            commit="1234567890abcdef1234567890abcdef12345678",
+            dirty=False,
+        ),
+        cli_args={"region": "pnw_bartusek"},
+        env={
+            "SLURM_JOB_ID": "123456",
+            "SLURM_ARRAY_JOB_ID": "123450",
+            "SLURM_ARRAY_TASK_ID": "6",
+        },
+        now=datetime(2026, 3, 17, 12, 30, 0),
+    )
+
+    payload = json.loads(Path(metadata_path).read_text())
+
+    assert payload["run_id"] == "123456"
+    assert payload["scheduler"] == "slurm"
+    assert payload["scheduler_job_id"] == "123456"
+    assert payload["pbs_job_id"] is None
+    assert payload["slurm_job_id"] == "123456"
+    assert payload["slurm_array_job_id"] == "123450"
+    assert payload["slurm_array_task_id"] == "6"
 
 
 def test_prepare_production_paths_creates_shared_layout(tmp_path):
@@ -201,6 +285,11 @@ def test_write_production_manifest_serializes_shared_campaign_metadata(tmp_path)
         surface_behaviour=surface_behaviour,
         git_provenance=git_provenance,
         cli_args={"production_output_dir": str(tmp_path / "production")},
+        env={
+            "SLURM_JOB_ID": "123456",
+            "SLURM_ARRAY_JOB_ID": "123450",
+            "SLURM_ARRAY_TASK_ID": "4",
+        },
         now=datetime(2026, 4, 6, 10, 0, 0),
     )
 
@@ -213,6 +302,12 @@ def test_write_production_manifest_serializes_shared_campaign_metadata(tmp_path)
     assert payload["plot_root"] == str(tmp_path / "production" / "plots")
     assert payload["source_spec"]["time_start"] is None
     assert payload["source_spec"]["time_end"] is None
+    assert payload["scheduler"] == "slurm"
+    assert payload["scheduler_job_id"] == "123456"
+    assert payload["pbs_job_id"] is None
+    assert payload["slurm_job_id"] == "123456"
+    assert payload["slurm_array_job_id"] == "123450"
+    assert payload["slurm_array_task_id"] == "4"
     assert payload["git"]["dirty"] is False
 
 

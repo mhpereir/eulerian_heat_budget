@@ -106,6 +106,34 @@ def test_build_runtime_controls_use_config_defaults():
     assert constant_temperature_test is config.DEFAULT_CONSTANT_TEMPERATURE_TEST
 
 
+def test_build_dask_client_kwargs_preserves_current_defaults():
+    kwargs = run_budget.build_dask_client_kwargs(env={})
+
+    assert kwargs == {
+        "n_workers": 4,
+        "threads_per_worker": 1,
+        "processes": True,
+        "memory_limit": "8GB",
+    }
+
+
+def test_build_dask_client_kwargs_reads_env_overrides():
+    kwargs = run_budget.build_dask_client_kwargs(
+        env={
+            "EHB_DASK_N_WORKERS": "6",
+            "EHB_DASK_THREADS_PER_WORKER": "2",
+            "EHB_DASK_MEMORY_LIMIT": "5GB",
+        }
+    )
+
+    assert kwargs == {
+        "n_workers": 6,
+        "threads_per_worker": 2,
+        "processes": True,
+        "memory_limit": "5GB",
+    }
+
+
 def test_cli_runtime_flags_parse_explicit_values():
     args = cli.parse_args(
         [

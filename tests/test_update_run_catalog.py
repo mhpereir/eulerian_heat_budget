@@ -75,6 +75,42 @@ def test_catalog_uses_supported_source_union_and_missing_markers(tmp_path):
     assert rows_by_id["300.venus"]["exit_status"] == "exit status not found"
 
 
+def test_catalog_discovers_slurm_numeric_single_run_ids(tmp_path):
+    plots_dir, logs_dir, output = _make_input_dirs(tmp_path)
+    _write_run_info(
+        plots_dir,
+        "123456",
+        {
+            "run_id": "123456",
+            "scheduler": "slurm",
+            "slurm_job_id": "123456",
+        },
+    )
+    (logs_dir / "123457_EHB_single.log").write_text("Exit status: 0\n", encoding="utf-8")
+    (logs_dir / "123458_0_EHB_prod.log").write_text("Exit status: 0\n", encoding="utf-8")
+
+    update_run_catalog.update_catalog(
+        plots_dir,
+        logs_dir,
+        output,
+        repo_root=tmp_path,
+    )
+
+    fieldnames, rows = _read_catalog(output)
+    rows_by_id = {row["pbs_id"]: row for row in rows}
+
+    assert list(rows_by_id) == ["123456", "123457"]
+    assert fieldnames[:4] == ["pbs_id", "run_info_file", "log_file", "exit_status"]
+    assert rows_by_id["123456"]["run_info_file"] == "results/plots/123456/run_info.json"
+    assert rows_by_id["123456"]["scheduler"] == "slurm"
+    assert rows_by_id["123456"]["slurm_job_id"] == "123456"
+    assert rows_by_id["123456"]["log_file"] == "file not found"
+    assert rows_by_id["123457"]["run_info_file"] == "file not found"
+    assert rows_by_id["123457"]["log_file"] == "logs/123457_EHB_single.log"
+    assert rows_by_id["123457"]["exit_status"] == "0"
+    assert "123458" not in rows_by_id
+
+
 def test_catalog_flattens_evolving_metadata_schema(tmp_path):
     plots_dir, logs_dir, output = _make_input_dirs(tmp_path)
     _write_run_info(

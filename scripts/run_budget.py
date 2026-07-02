@@ -2,6 +2,7 @@ import sys
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
 
 PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
 if PROJECT_ROOT not in sys.path:
@@ -169,6 +170,26 @@ def build_production_options_from_cli(args) -> ProductionOptions | None:
         ),
         overwrite_output=args.overwrite_output,
     )
+
+
+def _env_int(env: Mapping[str, str], name: str, default: int) -> int:
+    value = env.get(name)
+    if value is None or value == "":
+        return default
+    return int(value)
+
+
+def build_dask_client_kwargs(
+    env: Mapping[str, str] | None = None,
+) -> dict[str, object]:
+    active_env = os.environ if env is None else env
+    return {
+        "n_workers": _env_int(active_env, "EHB_DASK_N_WORKERS", 4),
+        "threads_per_worker": _env_int(active_env, "EHB_DASK_THREADS_PER_WORKER", 1),
+        "processes": True,
+        "memory_limit": active_env.get("EHB_DASK_MEMORY_LIMIT", "8GB") or "8GB",
+    }
+
 
 def main() -> None:
     args = cli.parse_args()
@@ -370,12 +391,7 @@ if __name__ == "__main__":
     logging.getLogger("distributed.shuffle._scheduler_plugin").setLevel(logging.ERROR)
     logging.getLogger("distributed.shuffle._core").setLevel(logging.ERROR)  
 
-    client = Client(
-        n_workers=4,
-        threads_per_worker=1,
-        processes=True,
-        memory_limit="8GB",
-    )
+    client = Client(**build_dask_client_kwargs()) # type: ignore
 
     # print(client)
     # print("Dashboard:", client.dashboard_link)
