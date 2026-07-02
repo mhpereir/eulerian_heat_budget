@@ -36,8 +36,8 @@ ONE_TO_ONE_FIGURE_LAYOUT = {
     "top": 0.88,
 }
 STACKED_FIGURE_LAYOUTS = {
-    2: {"left": 0.15, "right": 0.97, "bottom": 0.17, "top": 0.88, "hspace": 0.30},
-    3: {"left": 0.15, "right": 0.97, "bottom": 0.15, "top": 0.89, "hspace": 0.40},
+    2: {"left": 0.2, "right": 0.97, "bottom": 0.17, "top": 0.88, "hspace": 0.30},
+    3: {"left": 0.18, "right": 0.97, "bottom": 0.15, "top": 0.89, "hspace": 0.40},
 }
 
 plt.rcParams.update(

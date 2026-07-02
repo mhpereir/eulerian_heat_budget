@@ -19,7 +19,7 @@ THREE_PANEL_STACK_ASPECT = 1.2
 
 STACKED_FIGURE_LAYOUTS = {
     2: {"left": 0.15, "right": 0.96, "bottom": 0.17, "top": 0.88, "hspace": 0.30},
-    3: {"left": 0.15, "right": 0.84, "bottom": 0.13, "top": 0.94, "hspace": 0.15},
+    3: {"left": 0.18, "right": 0.84, "bottom": 0.13, "top": 0.94, "hspace": 0.15},
 }
 
 plt.rcParams.update(
