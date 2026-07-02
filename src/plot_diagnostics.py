@@ -13,31 +13,31 @@ from matplotlib.offsetbox import AnchoredText
 
 from . import terms
 
-SINGLE_COLUMN_WIDTH_IN = 3.155
-FULL_TWO_COLUMN_WIDTH_IN = 6.476
+SINGLE_COLUMN_WIDTH_IN = 6
+FULL_TWO_COLUMN_WIDTH_IN = 12
 
-PAPER_FONT_SIZE_PT = 7
-LEGEND_FONT_SIZE_PT = 5
+PAPER_FONT_SIZE_PT = 14
+LEGEND_FONT_SIZE_PT = 10
 LINE_WIDTH_PT = 1
-SCATTER_SIZE_PT2 = 18
+SCATTER_SIZE_PT2 = 16
 SCATTER_ALPHA = 0.3
 
-SINGLE_PANEL_ASPECT = 0.62
-TWO_PANEL_STACK_ASPECT = 0.78
-THREE_PANEL_STACK_ASPECT = 1.0
+SINGLE_PANEL_ASPECT = 0.6
+TWO_PANEL_STACK_ASPECT = 0.95
+THREE_PANEL_STACK_ASPECT = 1.2
 SQUARE_PANEL_ASPECT = TWO_PANEL_STACK_ASPECT
 MASS_FLUX_UNITS = r"m$^2$ Pa s$^{-1}$"
 HEAT_FLUX_UNITS = r"K m$^2$ Pa s$^{-1}$"
 ONE_TO_ONE_XLABEL_X = 0.43
 ONE_TO_ONE_FIGURE_LAYOUT = {
-    "left": 0.23,
+    "left": 0.15,
     "right": 0.97,
     "bottom": 0.20,
     "top": 0.88,
 }
 STACKED_FIGURE_LAYOUTS = {
-    2: {"left": 0.26, "right": 0.97, "bottom": 0.17, "top": 0.88, "hspace": 0.30},
-    3: {"left": 0.234, "right": 0.97, "bottom": 0.15, "top": 0.89, "hspace": 0.40},
+    2: {"left": 0.15, "right": 0.97, "bottom": 0.17, "top": 0.88, "hspace": 0.30},
+    3: {"left": 0.15, "right": 0.97, "bottom": 0.15, "top": 0.89, "hspace": 0.40},
 }
 
 plt.rcParams.update(

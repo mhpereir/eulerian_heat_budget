@@ -10,16 +10,16 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 
-SINGLE_COLUMN_WIDTH_IN = 3.155
-PAPER_FONT_SIZE_PT = 7
-LEGEND_FONT_SIZE_PT = 5
+SINGLE_COLUMN_WIDTH_IN = 6
+PAPER_FONT_SIZE_PT = 14
+LEGEND_FONT_SIZE_PT = 10
 LINE_WIDTH_PT = 1
 TWO_PANEL_STACK_ASPECT = 0.78
 THREE_PANEL_STACK_ASPECT = 1.2
 
 STACKED_FIGURE_LAYOUTS = {
-    2: {"left": 0.24, "right": 0.96, "bottom": 0.17, "top": 0.88, "hspace": 0.30},
-    3: {"left": 0.24, "right": 0.84, "bottom": 0.13, "top": 0.94, "hspace": 0.20},
+    2: {"left": 0.15, "right": 0.96, "bottom": 0.17, "top": 0.88, "hspace": 0.30},
+    3: {"left": 0.15, "right": 0.84, "bottom": 0.13, "top": 0.94, "hspace": 0.15},
 }
 
 plt.rcParams.update(
