@@ -63,12 +63,12 @@ export EHB_CONDA_ENV="${EHB_CONDA_ENV:-dev_env}"
 # source "${MAMBA_ROOT_PREFIX}/etc/profile.d/mamba.sh"
 # mamba activate "${EHB_CONDA_ENV}"
 
-module load python/3.11                                                   
-virtualenv --no-download $SLURM_TMPDIR/env                                
-source $SLURM_TMPDIR/env/bin/activate                                     
-pip install --no-index --upgrade pip                                      
+# module load python/3.11                                                   
+# virtualenv --no-download $SLURM_TMPDIR/env                                
+source /home/mhpereir/conda_envs/ENV/bin/activate                                     
+# pip install --no-index --upgrade pip                                      
 
-pip install --no-index -r /home/mhpereir/conda_envs/dev_env_nostats_requirements.txt       
+# pip install --no-index -r /home/mhpereir/conda_envs/dev_env_nostats_requirements.txt       
 
 TIME_START="${TIME_START:-1941-06-01T00:00:00}"
 TIME_END="${TIME_END:-1941-06-07T00:00:00}"
