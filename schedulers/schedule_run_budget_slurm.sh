@@ -70,7 +70,7 @@ virtualenv --no-download $SLURM_TMPDIR/env
 source $SLURM_TMPDIR/env/bin/activate                                     
 pip install --no-index --upgrade pip                                      
 
-pip install --no-index -r /home/mhpereir/conda_envs/dev_env_requirements.txt       
+pip install --no-index -r /home/mhpereir/conda_envs/dev_env_nostats_requirements.txt       
 
 TIME_START="${TIME_START:-1941-06-01T00:00:00}"
 TIME_END="${TIME_END:-1941-06-07T00:00:00}"
