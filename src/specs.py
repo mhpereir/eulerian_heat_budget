@@ -15,7 +15,7 @@ from typing import Literal, Optional, Dict, Any, Tuple
 from . import config
 
 BotMode    = Literal["surface_pressure", "pressure_level"]
-SourceKind = Literal["local_era5", "arco_era5"]
+SourceKind = Literal["local_era5", "arco_era5", "staged_arco_cache"]
 
 @dataclass(frozen=True)
 class DataSourceConfig:
@@ -28,6 +28,9 @@ class DataSourceConfig:
     arco_path: Optional[str] = None
     arco_storage_token: str = config.DEFAULT_ARCO_TOKEN
     chunks_time: int = config.n_time # number of time steps per chunk in ARCO dataset; used to optimize chunking for loading time slices
+
+    # staged ARCO cache
+    staged_cache_root: Optional[str] = None
 
     # common selection
     time_start: Optional[str] = None
@@ -73,4 +76,3 @@ class DomainSpec:
             raise ValueError("zg_bottom_pressure must be set when zg_bottom='pressure_level'")
         if self.zg_bottom == "surface_pressure" and self.zg_bottom_pressure is not None:
             raise ValueError("zg_bottom_pressure must be None when zg_bottom='surface_pressure'")
-    

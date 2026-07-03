@@ -126,9 +126,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data-source",
         dest="data_source",
-        choices=("local_era5", "arco_era5"),
+        choices=("local_era5", "arco_era5", "staged_arco_cache"),
         default=None,
         help="Data source to load input dataset from.",
+    )
+
+    parser.add_argument(
+        "--staged-cache-root",
+        dest="staged_cache_root",
+        type=str,
+        default=None,
+        help="Indexed local staged ARCO cache root used with --data-source staged_arco_cache.",
     )
 
     parser.add_argument(

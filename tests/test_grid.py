@@ -109,6 +109,36 @@ def test_determine_domain_crops_to_cells_and_sets_bounds():
         determine_domain(ds, _make_request(bbox=bbox, margin_n=3))
 
 
+def test_determine_domain_preserves_staged_pressure_bounds():
+    bbox = (0.0, 6.0, 10.0, 15.0)
+    ds = _make_dataset(
+        level=[90000.0, 80000.0],
+        lat=np.linspace(0, 6, 7, endpoint=True),
+        lon=np.linspace(10, 15, 6, endpoint=True),
+    )
+    ds = ds.assign_coords(
+        {
+            "p_start": ("level", [95000.0, 85000.0]),
+            "p_end": ("level", [85000.0, 75000.0]),
+        }
+    )
+
+    dom, halo, _ = determine_domain(
+        ds,
+        DomainRequest(
+            bbox=bbox,
+            margin_n=1,
+            zg_top_pressure=80000.0,
+            zg_bottom="pressure_level",
+            zg_bottom_pressure=90000.0,
+        ),
+    )
+
+    np.testing.assert_allclose(dom["p_start"].values, [95000.0, 85000.0])
+    np.testing.assert_allclose(dom["p_end"].values, [85000.0, 75000.0])
+    np.testing.assert_allclose(halo["p_start"].values, [95000.0, 85000.0])
+
+
 def test_horizontal_cell_areas_shape_and_positive():
     bbox=(0,40,100,130)
     ds = _make_dataset(

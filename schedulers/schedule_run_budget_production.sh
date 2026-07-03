@@ -23,7 +23,7 @@ set -euo pipefail
 
 START_YEAR=1940
 END_YEAR=2025
-DATA_SOURCE="${DATA_SOURCE:-arco_era5}"
+DATA_SOURCE="${DATA_SOURCE:-staged_arco_cache}"
 PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_bartusek_surface_700hPa_1940_2025_second_attempt}"
 REGION="${REGION:-pnw_bartusek}"
 ZG_TOP_PA="${ZG_TOP_PA:-70000}"
@@ -40,6 +40,12 @@ MANIFEST_PATH="${PRODUCTION_OUTPUT_DIR}/production_run.json"
 MANIFEST_LOCK_DIR="${PRODUCTION_OUTPUT_DIR}/.manifest_init.lock"
 MANIFEST_WAIT_SECONDS="${MANIFEST_WAIT_SECONDS:-300}"
 
+if [[ "${DATA_SOURCE}" == "staged_arco_cache" && -z "${STAGED_CACHE_ROOT:-}" ]]; then
+  echo "[error] DATA_SOURCE=staged_arco_cache requires STAGED_CACHE_ROOT to point to a local indexed cache root." >&2
+  echo "[error] Populate it first with scripts/staged_arco_retrieval.py from an internet-capable session." >&2
+  exit 1
+fi
+
 mkdir -p "${PRODUCTION_OUTPUT_DIR}"
 
 cd /home/mhpereir/eulerian_heat_budget/scripts
@@ -52,6 +58,10 @@ COMMON_RUN_ARGS=(
   --region "${REGION}"
   --zg-top-pa "${ZG_TOP_PA}"
 )
+
+if [[ "${DATA_SOURCE}" == "staged_arco_cache" ]]; then
+  COMMON_RUN_ARGS+=(--staged-cache-root "${STAGED_CACHE_ROOT}")
+fi
 
 if [[ "${USE_SURFACE_AS_BOTTOM}" == "1" ]]; then
   COMMON_RUN_ARGS+=(--zg-bottom surface_pressure)

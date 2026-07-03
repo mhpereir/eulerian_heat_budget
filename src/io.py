@@ -20,14 +20,25 @@ import time
 from collections.abc import Mapping
 
 from . import config, specs
+from src_arco import cache as arco_cache
+from src_arco import variables as arco_variables
 
 
 
-def load_dataset(source_cfg: specs.DataSourceConfig, SurfaceSpecs: specs.SurfaceBehaviour) -> xr.Dataset:
+def load_dataset(
+    source_cfg: specs.DataSourceConfig,
+    SurfaceSpecs: specs.SurfaceBehaviour,
+    request: specs.DomainRequest | None = None,
+) -> xr.Dataset:
     if source_cfg.kind == "local_era5":
         ds = _load_local_era5(source_cfg, SurfaceSpecs)
     elif source_cfg.kind == "arco_era5":
         ds = _load_arco_era5(source_cfg, SurfaceSpecs)
+    elif source_cfg.kind == "staged_arco_cache":
+        arco_variables.require_no_surface_variables(SurfaceSpecs)
+        if request is None:
+            raise ValueError("staged_arco_cache data source requires a DomainRequest.")
+        ds = _load_staged_arco_cache(source_cfg, request)
     else:
         raise ValueError(f"Unsupported data source: {source_cfg.kind}")
     ds = standardize_era5_dataset(ds, source_cfg)
@@ -67,13 +78,7 @@ def _load_local_era5(cfg: specs.DataSourceConfig, SurfaceSpecs: specs.SurfaceBeh
 def _load_arco_era5(cfg: specs.DataSourceConfig, SurfaceSpecs: specs.SurfaceBehaviour) -> xr.Dataset:
     ds = _open_arco_zarr_with_retry(cfg)
 
-    var_map = {
-        "temperature": "T",
-        "u_component_of_wind": "u",
-        "v_component_of_wind": "v",
-        "vertical_velocity": "w",
-        "surface_pressure": "sp",
-    }
+    var_map = dict(arco_variables.ARCO_CORE_VAR_MAP)
     if SurfaceSpecs.use_surface_variables:
         var_map.update({
             "2m_temperature": "T2m",
@@ -89,6 +94,34 @@ def _load_arco_era5(cfg: specs.DataSourceConfig, SurfaceSpecs: specs.SurfaceBeha
     ds = ds.rename(var_map)
 
     return ds
+
+
+def _load_staged_arco_cache(
+    cfg: specs.DataSourceConfig,
+    request: specs.DomainRequest,
+) -> xr.Dataset:
+    if cfg.staged_cache_root is None:
+        raise ValueError("staged_arco_cache data source requires staged_cache_root.")
+    return arco_cache.load_cache_dataset(
+        cfg.staged_cache_root,
+        cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+
+
+def load_staged_arco_benchmark_fluxes(
+    cfg: specs.DataSourceConfig,
+    request: specs.DomainRequest,
+) -> xr.Dataset:
+    if cfg.staged_cache_root is None:
+        raise ValueError("staged_arco_cache data source requires staged_cache_root.")
+    return arco_cache.load_cache_dataset(
+        cfg.staged_cache_root,
+        cfg,
+        request,
+        include_benchmark_variables=True,
+    )
 
 
 def standardize_era5_dataset(ds: xr.Dataset, cfg: specs.DataSourceConfig) -> xr.Dataset:
@@ -252,7 +285,7 @@ def standardize_era5_dataset(ds: xr.Dataset, cfg: specs.DataSourceConfig) -> xr.
     # 11) Chunk for dask workflows
     # ------------------------------------------------------------------
     chunk_map = dict(config.DEFAULT_CHUNKS_3D1)
-    if cfg.kind == "arco_era5":
+    if cfg.kind in {"arco_era5", "staged_arco_cache"}:
         chunk_map["time"] = cfg.chunks_time
 
     ds = ds.chunk(chunk_map)

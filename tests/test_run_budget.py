@@ -43,6 +43,22 @@ def test_cli_runtime_flags_default_to_none():
     assert args.write_netcdf is False
 
 
+def test_cli_parses_staged_arco_cache_source():
+    args = cli.parse_args(
+        [
+            "--data-source",
+            "staged_arco_cache",
+            "--staged-cache-root",
+            "/tmp/ehb-cache",
+            "--region",
+            "pnw_bartusek",
+        ]
+    )
+
+    assert args.data_source == "staged_arco_cache"
+    assert args.staged_cache_root == "/tmp/ehb-cache"
+
+
 def test_cli_parses_region():
     args = cli.parse_args(["--region", "pnw_bartusek"])
 
@@ -104,6 +120,50 @@ def test_build_runtime_controls_use_config_defaults():
 
     assert diagnostic_plots is config.DEFAULT_DIAGNOSTIC_PLOTS
     assert constant_temperature_test is config.DEFAULT_CONSTANT_TEMPERATURE_TEST
+
+
+def test_build_data_source_accepts_staged_arco_cache():
+    args = cli.parse_args(
+        [
+            "--data-source",
+            "staged_arco_cache",
+            "--staged-cache-root",
+            "/tmp/ehb-cache",
+            "--time-start",
+            "1940-06-01T00:00:00",
+            "--time-end",
+            "1940-06-02T00:00:00",
+        ]
+    )
+
+    source = run_budget.build_data_source_from_cli(args)
+
+    assert source.kind == "staged_arco_cache"
+    assert source.staged_cache_root == "/tmp/ehb-cache"
+    assert source.time_start == "1940-06-01T00:00:00"
+    assert source.time_end == "1940-06-02T00:00:00"
+
+
+def test_build_data_source_requires_staged_cache_root():
+    args = cli.parse_args(["--data-source", "staged_arco_cache"])
+
+    with pytest.raises(ValueError, match="--staged-cache-root"):
+        run_budget.build_data_source_from_cli(args)
+
+
+def test_staged_arco_cache_rejects_surface_variables():
+    args = cli.parse_args(
+        [
+            "--data-source",
+            "staged_arco_cache",
+            "--staged-cache-root",
+            "/tmp/ehb-cache",
+            "--use-surface-variables",
+        ]
+    )
+
+    with pytest.raises(NotImplementedError, match="T2m, u10, and v10"):
+        run_budget.build_surface_behaviour_from_cli(args)
 
 
 def test_cli_runtime_flags_parse_explicit_values():
@@ -683,6 +743,61 @@ def test_main_arco_run_loads_benchmark_with_flag(monkeypatch):
     assert calculate_calls[0]["benchmark_ds"] is benchmark_ds
 
 
+def test_main_staged_cache_loads_local_benchmark_with_flag(monkeypatch):
+    benchmark_ds = xr.Dataset({"Fx_heat": xr.DataArray([1.0], dims=("time",))})
+    _configure_main_stubs(
+        monkeypatch,
+        cli.parse_args(
+            [
+                "--data-source",
+                "staged_arco_cache",
+                "--staged-cache-root",
+                "/tmp/ehb-cache",
+                "--region",
+                "pnw_bartusek",
+                "--include-benchmark-variables",
+            ]
+        ),
+    )
+
+    calculate_calls = []
+    benchmark_load_calls = []
+
+    monkeypatch.setattr(
+        run_budget.io,
+        "load_staged_arco_benchmark_fluxes",
+        lambda *args, **kwargs: benchmark_load_calls.append((args, kwargs)) or benchmark_ds,
+    )
+    monkeypatch.setattr(
+        run_budget.budget,
+        "calculate_budget",
+        lambda *args, **kwargs: calculate_calls.append(kwargs) or _make_stub_budget_result(),
+    )
+    _patch_plot_recorders(monkeypatch, [])
+
+    run_budget.main()
+
+    assert len(benchmark_load_calls) == 1
+    assert benchmark_load_calls[0][0][0].kind == "staged_arco_cache"
+    assert calculate_calls[0]["benchmark_ds"] is benchmark_ds
+
+
+def test_single_run_schedulers_share_cli_settings():
+    scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
+    settings = (scheduler_dir / "single_run_cli_settings").read_text()
+    run_scheduler = (scheduler_dir / "schedule_run_budget.sh").read_text()
+    retrieval_scheduler = (scheduler_dir / "schedule_staged_arco_retrieval.sh").read_text()
+
+    assert "STAGED_CACHE_ROOT=" in settings
+    assert "TIME_START=" in settings
+    assert "ehb_build_run_budget_args" in settings
+    assert "ehb_build_staged_arco_retrieval_args" in settings
+    assert "source \"${SCHEDULER_DIR}/single_run_cli_settings\"" in run_scheduler
+    assert "source \"${SCHEDULER_DIR}/single_run_cli_settings\"" in retrieval_scheduler
+    assert "python run_budget.py \"${RUN_ARGS[@]}\"" in run_scheduler
+    assert "python staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in retrieval_scheduler
+
+
 def _configure_main_stubs(monkeypatch, args):
     _configure_core_stubs(monkeypatch, args)
     monkeypatch.setattr(
@@ -713,7 +828,7 @@ def _configure_core_stubs(monkeypatch, args):
     ds_domain = _make_stub_domain_dataset()
 
     monkeypatch.setattr(run_budget.cli, "parse_args", lambda: args)
-    monkeypatch.setattr(run_budget.io, "load_dataset", lambda source_cfg, surface_specs: xr.Dataset())
+    monkeypatch.setattr(run_budget.io, "load_dataset", lambda *args, **kwargs: xr.Dataset())
     monkeypatch.setattr(run_budget.validate, "validate_schema", lambda ds: None)
     monkeypatch.setattr(
         run_budget.grid,
