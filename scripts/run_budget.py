@@ -102,6 +102,15 @@ def build_data_source_from_cli(
             time_start=time_start,
             time_end=time_end,
         )
+    elif args.data_source == "staged_zarr":
+        if args.staged_data_path is None:
+            raise ValueError("--data-source staged_zarr requires --staged-data-path.")
+        return specs.DataSourceConfig(
+            kind="staged_zarr",
+            staged_data_path=args.staged_data_path,
+            time_start=time_start,
+            time_end=time_end,
+        )
     else:
         raise ValueError(f"Unsupported data source: {args.data_source}")
 
@@ -270,14 +279,11 @@ def main() -> None:
     validate.validate_schema(ds_merged)
 
     ds_bench = None
-    if args.include_benchmark_variables and SourceCfg.kind == "arco_era5": #only available for arco era5 for now.
-        benchmark_var_map = {
-            "vertical_integral_of_eastward_heat_flux":  "Fx_heat",
-            "vertical_integral_of_northward_heat_flux": "Fy_heat",
-            "vertical_integral_of_eastward_mass_flux":  "Fx_mass",
-            "vertical_integral_of_northward_mass_flux": "Fy_mass",
-        }
-        ds_bench = io.load_arco_benchmark_fluxes(SourceCfg, benchmark_var_map)
+    if args.include_benchmark_variables:
+        if SourceCfg.kind == "arco_era5":
+            ds_bench = io.load_arco_benchmark_fluxes(SourceCfg, io.ARCO_BENCHMARK_VAR_MAP)
+        elif SourceCfg.kind == "staged_zarr":
+            ds_bench = io.extract_staged_benchmark_fluxes(ds_merged)
 
 
 

@@ -53,6 +53,13 @@ export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
 export EHB_DASK_N_WORKERS="${EHB_DASK_N_WORKERS:-4}"
 
+DATA_SOURCE="${DATA_SOURCE:-staged_zarr}"
+if [[ "${DATA_SOURCE}" == "staged_zarr" && -z "${STAGED_DATA_PATH:-}" ]]; then
+  echo "[error] DATA_SOURCE=staged_zarr requires STAGED_DATA_PATH to point to a local staged Zarr store." >&2
+  echo "[error] Create one with scripts/stage_arco_subset.py from an internet-capable session first." >&2
+  exit 1
+fi
+
 if [[ -z "${HOME:-}" ]]; then
   HOME=$(getent passwd "$(id -un)" | cut -d: -f6)
   export HOME
@@ -73,6 +80,27 @@ source /home/mhpereir/conda_envs/ENV/bin/activate
 TIME_START="${TIME_START:-1941-06-01T00:00:00}"
 TIME_END="${TIME_END:-1941-06-07T00:00:00}"
 REGION="${REGION:-ocean_test}"
+ENABLE_BENCHMARK_VARIABLES="${ENABLE_BENCHMARK_VARIABLES:-1}"
+
+RUN_ARGS=(
+  --data-source "${DATA_SOURCE}"
+  --region "${REGION}"
+  --time-start "${TIME_START}"
+  --time-end "${TIME_END}"
+  --zg-bottom "pressure_level"
+  --zg-bottom-pa 50000
+  --zg-top-pa 30000
+  --diagnostic-plots
+  --allow-bottom-overflow
+)
+
+if [[ "${DATA_SOURCE}" == "staged_zarr" ]]; then
+  RUN_ARGS+=(--staged-data-path "${STAGED_DATA_PATH}")
+fi
+
+if [[ "${ENABLE_BENCHMARK_VARIABLES}" == "1" ]]; then
+  RUN_ARGS+=(--include-benchmark-variables)
+fi
 
 cd "${SCRIPT_DIR}"
 
@@ -80,15 +108,9 @@ echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hos
 echo "[info] repo root: ${REPO_ROOT}"
 echo "[info] slurm job id: ${SLURM_JOB_ID:-not-set}"
 echo "[info] dask: threaded scheduler, workers=${EHB_DASK_N_WORKERS}"
-python run_budget.py \
-  --data-source arco_era5 \
-  --region "${REGION}" \
-  --time-start "${TIME_START}" \
-  --time-end "${TIME_END}" \
-  --zg-bottom "pressure_level" \
-  --zg-bottom-pa 50000 \
-  --zg-top-pa 30000 \
-  --diagnostic-plots \
-  --allow-bottom-overflow \
-  --include-benchmark-variables
+echo "[info] data source: ${DATA_SOURCE}"
+if [[ "${DATA_SOURCE}" == "staged_zarr" ]]; then
+  echo "[info] staged data path: ${STAGED_DATA_PATH}"
+fi
+python run_budget.py "${RUN_ARGS[@]}"
 echo "[info] $(date -Is) done"

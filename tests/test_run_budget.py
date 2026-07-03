@@ -1,4 +1,6 @@
 import importlib
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -104,6 +106,35 @@ def test_build_runtime_controls_use_config_defaults():
 
     assert diagnostic_plots is config.DEFAULT_DIAGNOSTIC_PLOTS
     assert constant_temperature_test is config.DEFAULT_CONSTANT_TEMPERATURE_TEST
+
+
+def test_build_data_source_accepts_staged_zarr_path():
+    args = cli.parse_args(
+        [
+            "--data-source",
+            "staged_zarr",
+            "--staged-data-path",
+            "/tmp/staged/subset.zarr",
+            "--time-start",
+            "1940-06-01T00:00:00",
+            "--time-end",
+            "1940-06-07T00:00:00",
+        ]
+    )
+
+    source_cfg = run_budget.build_data_source_from_cli(args)
+
+    assert source_cfg.kind == "staged_zarr"
+    assert source_cfg.staged_data_path == "/tmp/staged/subset.zarr"
+    assert source_cfg.time_start == "1940-06-01T00:00:00"
+    assert source_cfg.time_end == "1940-06-07T00:00:00"
+
+
+def test_build_data_source_requires_staged_zarr_path():
+    args = cli.parse_args(["--data-source", "staged_zarr"])
+
+    with pytest.raises(ValueError, match="requires --staged-data-path"):
+        run_budget.build_data_source_from_cli(args)
 
 
 def test_build_dask_threaded_config_uses_defaults():
@@ -711,6 +742,74 @@ def test_main_arco_run_loads_benchmark_with_flag(monkeypatch):
         "Fy_mass",
     }
     assert calculate_calls[0]["benchmark_ds"] is benchmark_ds
+
+
+def test_main_staged_run_loads_benchmark_from_staged_dataset(monkeypatch):
+    benchmark_ds = xr.Dataset({"Fx_heat": xr.DataArray([1.0], dims=("time",))})
+    _configure_main_stubs(
+        monkeypatch,
+        cli.parse_args(
+            [
+                "--data-source",
+                "staged_zarr",
+                "--staged-data-path",
+                "/tmp/subset.zarr",
+                "--region",
+                "pnw_bartusek",
+                "--include-benchmark-variables",
+            ]
+        ),
+    )
+
+    extract_calls = []
+    calculate_calls = []
+
+    monkeypatch.setattr(
+        run_budget.io,
+        "load_arco_benchmark_fluxes",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("ARCO benchmark loader should not be called")),
+    )
+    monkeypatch.setattr(
+        run_budget.io,
+        "extract_staged_benchmark_fluxes",
+        lambda ds: extract_calls.append(ds) or benchmark_ds,
+    )
+    monkeypatch.setattr(
+        run_budget.budget,
+        "calculate_budget",
+        lambda *args, **kwargs: calculate_calls.append(kwargs) or _make_stub_budget_result(),
+    )
+    _patch_plot_recorders(monkeypatch, [])
+
+    run_budget.main()
+
+    assert len(extract_calls) == 1
+    assert calculate_calls[0]["benchmark_ds"] is benchmark_ds
+
+
+def test_slurm_script_requires_staged_data_path(tmp_path):
+    script_path = Path(PROJECT_ROOT) / "schedulers" / "schedule_run_budget_slurm.sh"
+    env = os.environ.copy()
+    env.update(
+        {
+            "PROJECT_ROOT": PROJECT_ROOT,
+            "LOG_DIR": str(tmp_path / "logs"),
+            "DATA_SOURCE": "staged_zarr",
+        }
+    )
+    env.pop("STAGED_DATA_PATH", None)
+
+    result = subprocess.run(
+        ["bash", str(script_path)],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "requires STAGED_DATA_PATH" in result.stdout + result.stderr
 
 
 def _configure_main_stubs(monkeypatch, args):

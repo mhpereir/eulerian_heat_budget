@@ -179,8 +179,17 @@ def determine_domain(
             lon_name,
         )
 
-        # Vertical bounds from level centers
-        p_edges = _cell_edges_from_centers(level, level_name)
+        # Vertical bounds from level centers, unless a staged subset already
+        # carries full-source bounds for a vertically cropped level axis.
+        if "p_start" in ds and "p_end" in ds:
+            p_start = np.asarray(ds["p_start"].values, dtype=float)
+            p_end = np.asarray(ds["p_end"].values, dtype=float)
+            if p_start.shape != p_end.shape or p_start.shape != level.shape:
+                raise ValueError("Staged pressure bounds must be 1D over the level coordinate.")
+        else:
+            p_edges = _cell_edges_from_centers(level, level_name)
+            p_start = p_edges[:-1]
+            p_end = p_edges[1:]
         p_mid = np.asarray(level.values, dtype=float)
 
         lat_cell_id = np.arange(i0m, i1m, dtype=int)
@@ -198,8 +207,8 @@ def determine_domain(
                 "lon_start": (lon_name, lon_edges_sub[:-1].astype(np.float64)),
                 "lon_end": (lon_name, lon_edges_sub[1:].astype(np.float64)),
                 "p_cell_id": (level_name, p_cell_id),
-                "p_start": (level_name, p_edges[:-1].astype(np.float64)),
-                "p_end": (level_name, p_edges[1:].astype(np.float64)),
+                "p_start": (level_name, p_start.astype(np.float64)),
+                "p_end": (level_name, p_end.astype(np.float64)),
                 "p_mid": (level_name, p_mid.astype(np.float64)),
             }
         )

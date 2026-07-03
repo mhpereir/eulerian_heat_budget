@@ -126,9 +126,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data-source",
         dest="data_source",
-        choices=("local_era5", "arco_era5"),
+        choices=("local_era5", "arco_era5", "staged_zarr"),
         default=None,
         help="Data source to load input dataset from.",
+    )
+    parser.add_argument(
+        "--staged-data-path",
+        dest="staged_data_path",
+        type=str,
+        default=None,
+        help="Local Zarr store produced by scripts/stage_arco_subset.py.",
     )
 
     parser.add_argument(
