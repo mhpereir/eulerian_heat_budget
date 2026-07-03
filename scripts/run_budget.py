@@ -8,14 +8,11 @@ PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+import dask
 import xarray as xr
 
 from src import config, cli, specs, io, validate, grid, budget, run_outputs
 from src import plot_results
-
-import logging
-from dask.distributed import Client
-    
 
 from src import terms
 
@@ -179,16 +176,26 @@ def _env_int(env: Mapping[str, str], name: str, default: int) -> int:
     return int(value)
 
 
-def build_dask_client_kwargs(
+def build_dask_threaded_config(
     env: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     active_env = os.environ if env is None else env
     return {
-        "n_workers": _env_int(active_env, "EHB_DASK_N_WORKERS", 4),
-        "threads_per_worker": _env_int(active_env, "EHB_DASK_THREADS_PER_WORKER", 1),
-        "processes": True,
-        "memory_limit": active_env.get("EHB_DASK_MEMORY_LIMIT", "8GB") or "8GB",
+        "scheduler": "threads",
+        "num_workers": _env_int(active_env, "EHB_DASK_N_WORKERS", 4),
     }
+
+
+def configure_dask_runtime(
+    env: Mapping[str, str] | None = None,
+) -> None:
+    threaded_config = build_dask_threaded_config(env)
+    dask.config.set(threaded_config)
+    print(
+        "[info] using dask "
+        f"{threaded_config['scheduler']} scheduler "
+        f"with num_workers={threaded_config['num_workers']}"
+    )
 
 
 def main() -> None:
@@ -387,15 +394,7 @@ def main() -> None:
             plot_results.plot_constant_T_results(result, result_test, plot_dir=constant_t_plot_dir)
 
 if __name__ == "__main__":
-    
-    logging.getLogger("distributed.shuffle._scheduler_plugin").setLevel(logging.ERROR)
-    logging.getLogger("distributed.shuffle._core").setLevel(logging.ERROR)  
-
-    client = Client(**build_dask_client_kwargs()) # type: ignore
-
-    # print(client)
-    # print("Dashboard:", client.dashboard_link)
-
+    configure_dask_runtime()
     main()
 
     

@@ -63,8 +63,6 @@ export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
 export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
 export EHB_DASK_N_WORKERS="${EHB_DASK_N_WORKERS:-4}"
-export EHB_DASK_THREADS_PER_WORKER="${EHB_DASK_THREADS_PER_WORKER:-1}"
-export EHB_DASK_MEMORY_LIMIT="${EHB_DASK_MEMORY_LIMIT:-8GB}"
 
 if [[ -z "${HOME:-}" ]]; then
   HOME=$(getent passwd "$(id -un)" | cut -d: -f6)
@@ -183,7 +181,7 @@ ensure_manifest() {
 echo "[info] repo root: ${REPO_ROOT}"
 echo "[info] slurm job id: ${SLURM_JOB_ID:-not-set}"
 echo "[info] slurm array job/task: ${SLURM_ARRAY_JOB_ID:-not-set}/${SLURM_ARRAY_TASK_ID:-not-set}"
-echo "[info] dask: workers=${EHB_DASK_N_WORKERS}, threads=${EHB_DASK_THREADS_PER_WORKER}, memory=${EHB_DASK_MEMORY_LIMIT}"
+echo "[info] dask: threaded scheduler, workers=${EHB_DASK_N_WORKERS}"
 
 if [[ "${INIT_MANIFEST_ONLY}" == "1" ]]; then
   ensure_manifest

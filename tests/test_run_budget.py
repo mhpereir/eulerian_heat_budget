@@ -106,32 +106,34 @@ def test_build_runtime_controls_use_config_defaults():
     assert constant_temperature_test is config.DEFAULT_CONSTANT_TEMPERATURE_TEST
 
 
-def test_build_dask_client_kwargs_preserves_current_defaults():
-    kwargs = run_budget.build_dask_client_kwargs(env={})
+def test_build_dask_threaded_config_uses_defaults():
+    config = run_budget.build_dask_threaded_config(env={})
 
-    assert kwargs == {
-        "n_workers": 4,
-        "threads_per_worker": 1,
-        "processes": True,
-        "memory_limit": "8GB",
+    assert config == {
+        "scheduler": "threads",
+        "num_workers": 4,
     }
 
 
-def test_build_dask_client_kwargs_reads_env_overrides():
-    kwargs = run_budget.build_dask_client_kwargs(
-        env={
-            "EHB_DASK_N_WORKERS": "6",
-            "EHB_DASK_THREADS_PER_WORKER": "2",
-            "EHB_DASK_MEMORY_LIMIT": "5GB",
-        }
-    )
+def test_build_dask_threaded_config_reads_worker_override():
+    config = run_budget.build_dask_threaded_config(env={"EHB_DASK_N_WORKERS": "2"})
 
-    assert kwargs == {
-        "n_workers": 6,
-        "threads_per_worker": 2,
-        "processes": True,
-        "memory_limit": "5GB",
+    assert config == {
+        "scheduler": "threads",
+        "num_workers": 2,
     }
+
+
+def test_configure_dask_runtime_sets_threaded_scheduler(monkeypatch, capsys):
+    dask_config_calls = []
+    monkeypatch.setattr(run_budget.dask.config, "set", lambda config: dask_config_calls.append(config))
+
+    run_budget.configure_dask_runtime(env={"EHB_DASK_N_WORKERS": "3"})
+
+    captured = capsys.readouterr()
+
+    assert dask_config_calls == [{"scheduler": "threads", "num_workers": 3}]
+    assert "using dask threads scheduler with num_workers=3" in captured.out
 
 
 def test_cli_runtime_flags_parse_explicit_values():
