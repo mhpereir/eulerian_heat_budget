@@ -18,42 +18,27 @@ import numpy as np
 import time
 
 from collections.abc import Mapping
-from pathlib import Path
 
 from . import config, specs
+from src_arco import cache as arco_cache
+from src_arco import variables as arco_variables
 
 
-ARCO_CORE_VAR_MAP = {
-    "temperature": "T",
-    "u_component_of_wind": "u",
-    "v_component_of_wind": "v",
-    "vertical_velocity": "w",
-    "surface_pressure": "sp",
-}
 
-ARCO_SURFACE_VAR_MAP = {
-    "2m_temperature": "T2m",
-    "10m_u_component_of_wind": "u10",
-    "10m_v_component_of_wind": "v10",
-}
-
-ARCO_BENCHMARK_VAR_MAP = {
-    "vertical_integral_of_eastward_heat_flux": "Fx_heat",
-    "vertical_integral_of_northward_heat_flux": "Fy_heat",
-    "vertical_integral_of_eastward_mass_flux": "Fx_mass",
-    "vertical_integral_of_northward_mass_flux": "Fy_mass",
-}
-
-STAGED_BENCHMARK_VAR_NAMES = tuple(ARCO_BENCHMARK_VAR_MAP.values())
-
-
-def load_dataset(source_cfg: specs.DataSourceConfig, SurfaceSpecs: specs.SurfaceBehaviour) -> xr.Dataset:
+def load_dataset(
+    source_cfg: specs.DataSourceConfig,
+    SurfaceSpecs: specs.SurfaceBehaviour,
+    request: specs.DomainRequest | None = None,
+) -> xr.Dataset:
     if source_cfg.kind == "local_era5":
         ds = _load_local_era5(source_cfg, SurfaceSpecs)
     elif source_cfg.kind == "arco_era5":
         ds = _load_arco_era5(source_cfg, SurfaceSpecs)
-    elif source_cfg.kind == "staged_zarr":
-        ds = _load_staged_zarr(source_cfg)
+    elif source_cfg.kind == "staged_arco_cache":
+        arco_variables.require_no_surface_variables(SurfaceSpecs)
+        if request is None:
+            raise ValueError("staged_arco_cache data source requires a DomainRequest.")
+        ds = _load_staged_arco_cache(source_cfg, request)
     else:
         raise ValueError(f"Unsupported data source: {source_cfg.kind}")
     ds = standardize_era5_dataset(ds, source_cfg)
@@ -93,49 +78,13 @@ def _load_local_era5(cfg: specs.DataSourceConfig, SurfaceSpecs: specs.SurfaceBeh
 def _load_arco_era5(cfg: specs.DataSourceConfig, SurfaceSpecs: specs.SurfaceBehaviour) -> xr.Dataset:
     ds = _open_arco_zarr_with_retry(cfg)
 
-    var_map = _arco_primary_var_map(SurfaceSpecs)
-
-    ds = ds[list(var_map.keys())]
-
-    if cfg.time_start is not None or cfg.time_end is not None:
-        ds = ds.sel(time=slice(cfg.time_start, cfg.time_end))
-
-    ds = ds.rename(var_map)
-
-    return ds
-
-
-def _load_staged_zarr(cfg: specs.DataSourceConfig) -> xr.Dataset:
-    if cfg.staged_data_path is None:
-        raise ValueError("staged_zarr data source requires staged_data_path.")
-
-    staged_path = Path(cfg.staged_data_path)
-    if not staged_path.exists():
-        raise FileNotFoundError(f"Staged Zarr store not found: {staged_path}")
-
-    return xr.open_zarr(str(staged_path), decode_timedelta=False)
-
-
-def _arco_primary_var_map(SurfaceSpecs: specs.SurfaceBehaviour) -> dict[str, str]:
-    var_map = dict(ARCO_CORE_VAR_MAP)
+    var_map = dict(arco_variables.ARCO_CORE_VAR_MAP)
     if SurfaceSpecs.use_surface_variables:
-        var_map.update(ARCO_SURFACE_VAR_MAP)
-    return var_map
-
-
-def build_arco_staged_subset(
-    cfg: specs.DataSourceConfig,
-    SurfaceSpecs: specs.SurfaceBehaviour,
-    request: specs.DomainRequest,
-    *,
-    include_benchmark_variables: bool = False,
-) -> xr.Dataset:
-    """Return a canonical local subset suitable for offline staged_zarr runs."""
-    ds = _open_arco_zarr_with_retry(cfg)
-
-    var_map = _arco_primary_var_map(SurfaceSpecs)
-    if include_benchmark_variables:
-        var_map.update(ARCO_BENCHMARK_VAR_MAP)
+        var_map.update({
+            "2m_temperature": "T2m",
+            "10m_u_component_of_wind": "u10",
+            "10m_v_component_of_wind": "v10",
+        })
 
     ds = ds[list(var_map.keys())]
 
@@ -143,118 +92,36 @@ def build_arco_staged_subset(
         ds = ds.sel(time=slice(cfg.time_start, cfg.time_end))
 
     ds = ds.rename(var_map)
-    ds = standardize_era5_dataset(ds, cfg)
-    ds = _select_staging_horizontal_extent(ds, request.bbox)
-    ds = _select_staging_vertical_extent(ds, request)
-
-    ds.attrs.update(
-        {
-            "ehb_staged_source_kind": "arco_era5",
-            "ehb_staged_arco_path": str(cfg.arco_path),
-            "ehb_staged_time_start": cfg.time_start,
-            "ehb_staged_time_end": cfg.time_end,
-            "ehb_staged_bbox": ",".join(str(float(v)) for v in request.bbox),
-            "ehb_staged_zg_top_pressure_pa": float(request.zg_top_pressure),
-            "ehb_staged_zg_bottom": str(request.zg_bottom),
-        }
-    )
-    if request.zg_bottom_pressure is not None:
-        ds.attrs["ehb_staged_zg_bottom_pressure_pa"] = float(request.zg_bottom_pressure)
 
     return ds
 
 
-def extract_staged_benchmark_fluxes(ds: xr.Dataset) -> xr.Dataset:
-    missing = [name for name in STAGED_BENCHMARK_VAR_NAMES if name not in ds]
-    if missing:
-        raise ValueError(
-            "Staged Zarr store does not contain benchmark variables required by "
-            f"--include-benchmark-variables: {missing}"
-        )
-    return ds[list(STAGED_BENCHMARK_VAR_NAMES)]
-
-
-def _select_staging_horizontal_extent(
-    ds: xr.Dataset,
-    bbox: tuple[float, float, float, float],
-) -> xr.Dataset:
-    lat_min, lat_max, lon_min, lon_max = map(float, bbox)
-    lat_index = _coord_interval_overlap_indices(ds["lat"], lat_min, lat_max, "lat")
-    lon_index = _coord_interval_overlap_indices(ds["lon"], lon_min, lon_max, "lon")
-    return ds.isel(lat=lat_index, lon=lon_index)
-
-
-def _select_staging_vertical_extent(
-    ds: xr.Dataset,
+def _load_staged_arco_cache(
+    cfg: specs.DataSourceConfig,
     request: specs.DomainRequest,
 ) -> xr.Dataset:
-    ds = _with_pressure_bounds_from_levels(ds)
-
-    p_top = float(request.zg_top_pressure)
-    if request.zg_bottom == "pressure_level":
-        if request.zg_bottom_pressure is None:
-            raise ValueError("zg_bottom_pressure must be set when zg_bottom='pressure_level'.")
-        p_bottom = float(request.zg_bottom_pressure)
-    else:
-        p_bottom = float(ds["p_start"].max().values)
-
-    p_start = ds["p_start"].astype("float64")
-    p_end = ds["p_end"].astype("float64")
-    keep = (p_start >= p_top) & (p_end <= p_bottom)
-    indices = np.flatnonzero(np.asarray(keep.values, dtype=bool))
-    if indices.size == 0:
-        raise ValueError(
-            "No pressure levels overlap the requested staging interval "
-            f"[{p_top}, {p_bottom}] Pa."
-        )
-
-    return ds.isel(level=indices)
-
-
-def _with_pressure_bounds_from_levels(ds: xr.Dataset) -> xr.Dataset:
-    level = ds["level"]
-    edges = _cell_edges_from_centers(level, "level")
-    return ds.assign_coords(
-        {
-            "p_start": ("level", edges[:-1].astype(np.float64)),
-            "p_end": ("level", edges[1:].astype(np.float64)),
-            "p_mid": ("level", np.asarray(level.values, dtype=float).astype(np.float64)),
-        }
+    if cfg.staged_cache_root is None:
+        raise ValueError("staged_arco_cache data source requires staged_cache_root.")
+    return arco_cache.load_cache_dataset(
+        cfg.staged_cache_root,
+        cfg,
+        request,
+        include_benchmark_variables=False,
     )
 
 
-def _coord_interval_overlap_indices(
-    coord: xr.DataArray,
-    lower: float,
-    upper: float,
-    name: str,
-) -> np.ndarray:
-    edges = _cell_edges_from_centers(coord, name)
-    starts = np.minimum(edges[:-1], edges[1:])
-    ends = np.maximum(edges[:-1], edges[1:])
-    keep = (ends >= lower) & (starts <= upper)
-    indices = np.flatnonzero(keep)
-    if indices.size == 0:
-        raise ValueError(f"No {name} cells overlap requested interval [{lower}, {upper}].")
-    return indices
-
-
-def _cell_edges_from_centers(coord: xr.DataArray, name: str) -> np.ndarray:
-    values = np.asarray(coord.values, dtype=float)
-    if values.ndim != 1:
-        raise ValueError(f"{name} coordinate must be one-dimensional.")
-    if values.size < 2:
-        raise ValueError(f"{name} coordinate must contain at least two points.")
-
-    diffs = np.diff(values)
-    if not (np.all(diffs > 0.0) or np.all(diffs < 0.0)):
-        raise ValueError(f"{name} coordinate must be strictly monotonic.")
-
-    edges = np.empty(values.size + 1, dtype=float)
-    edges[1:-1] = 0.5 * (values[:-1] + values[1:])
-    edges[0] = values[0] - 0.5 * diffs[0]
-    edges[-1] = values[-1] + 0.5 * diffs[-1]
-    return edges
+def load_staged_arco_benchmark_fluxes(
+    cfg: specs.DataSourceConfig,
+    request: specs.DomainRequest,
+) -> xr.Dataset:
+    if cfg.staged_cache_root is None:
+        raise ValueError("staged_arco_cache data source requires staged_cache_root.")
+    return arco_cache.load_cache_dataset(
+        cfg.staged_cache_root,
+        cfg,
+        request,
+        include_benchmark_variables=True,
+    )
 
 
 def standardize_era5_dataset(ds: xr.Dataset, cfg: specs.DataSourceConfig) -> xr.Dataset:
@@ -418,7 +285,7 @@ def standardize_era5_dataset(ds: xr.Dataset, cfg: specs.DataSourceConfig) -> xr.
     # 11) Chunk for dask workflows
     # ------------------------------------------------------------------
     chunk_map = dict(config.DEFAULT_CHUNKS_3D1)
-    if cfg.kind in {"arco_era5", "staged_zarr"}:
+    if cfg.kind in {"arco_era5", "staged_arco_cache"}:
         chunk_map["time"] = cfg.chunks_time
 
     ds = ds.chunk(chunk_map)

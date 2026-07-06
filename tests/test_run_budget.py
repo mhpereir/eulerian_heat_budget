@@ -108,33 +108,64 @@ def test_build_runtime_controls_use_config_defaults():
     assert constant_temperature_test is config.DEFAULT_CONSTANT_TEMPERATURE_TEST
 
 
-def test_build_data_source_accepts_staged_zarr_path():
+def test_cli_parses_staged_arco_cache_source():
     args = cli.parse_args(
         [
             "--data-source",
-            "staged_zarr",
-            "--staged-data-path",
-            "/tmp/staged/subset.zarr",
-            "--time-start",
-            "1940-06-01T00:00:00",
-            "--time-end",
-            "1940-06-07T00:00:00",
+            "staged_arco_cache",
+            "--staged-cache-root",
+            "/tmp/ehb-cache",
+            "--region",
+            "pnw_bartusek",
         ]
     )
 
-    source_cfg = run_budget.build_data_source_from_cli(args)
-
-    assert source_cfg.kind == "staged_zarr"
-    assert source_cfg.staged_data_path == "/tmp/staged/subset.zarr"
-    assert source_cfg.time_start == "1940-06-01T00:00:00"
-    assert source_cfg.time_end == "1940-06-07T00:00:00"
+    assert args.data_source == "staged_arco_cache"
+    assert args.staged_cache_root == "/tmp/ehb-cache"
 
 
-def test_build_data_source_requires_staged_zarr_path():
-    args = cli.parse_args(["--data-source", "staged_zarr"])
+def test_build_data_source_accepts_staged_arco_cache():
+    args = cli.parse_args(
+        [
+            "--data-source",
+            "staged_arco_cache",
+            "--staged-cache-root",
+            "/tmp/ehb-cache",
+            "--time-start",
+            "1940-06-01T00:00:00",
+            "--time-end",
+            "1940-06-02T00:00:00",
+        ]
+    )
 
-    with pytest.raises(ValueError, match="requires --staged-data-path"):
+    source = run_budget.build_data_source_from_cli(args)
+
+    assert source.kind == "staged_arco_cache"
+    assert source.staged_cache_root == "/tmp/ehb-cache"
+    assert source.time_start == "1940-06-01T00:00:00"
+    assert source.time_end == "1940-06-02T00:00:00"
+
+
+def test_build_data_source_requires_staged_cache_root():
+    args = cli.parse_args(["--data-source", "staged_arco_cache"])
+
+    with pytest.raises(ValueError, match="--staged-cache-root"):
         run_budget.build_data_source_from_cli(args)
+
+
+def test_staged_arco_cache_rejects_surface_variables():
+    args = cli.parse_args(
+        [
+            "--data-source",
+            "staged_arco_cache",
+            "--staged-cache-root",
+            "/tmp/ehb-cache",
+            "--use-surface-variables",
+        ]
+    )
+
+    with pytest.raises(NotImplementedError, match="T2m, u10, and v10"):
+        run_budget.build_surface_behaviour_from_cli(args)
 
 
 def test_build_dask_threaded_config_uses_defaults():
@@ -744,16 +775,16 @@ def test_main_arco_run_loads_benchmark_with_flag(monkeypatch):
     assert calculate_calls[0]["benchmark_ds"] is benchmark_ds
 
 
-def test_main_staged_run_loads_benchmark_from_staged_dataset(monkeypatch):
+def test_main_staged_cache_loads_local_benchmark_with_flag(monkeypatch):
     benchmark_ds = xr.Dataset({"Fx_heat": xr.DataArray([1.0], dims=("time",))})
     _configure_main_stubs(
         monkeypatch,
         cli.parse_args(
             [
                 "--data-source",
-                "staged_zarr",
-                "--staged-data-path",
-                "/tmp/subset.zarr",
+                "staged_arco_cache",
+                "--staged-cache-root",
+                "/tmp/ehb-cache",
                 "--region",
                 "pnw_bartusek",
                 "--include-benchmark-variables",
@@ -761,8 +792,8 @@ def test_main_staged_run_loads_benchmark_from_staged_dataset(monkeypatch):
         ),
     )
 
-    extract_calls = []
     calculate_calls = []
+    benchmark_load_calls = []
 
     monkeypatch.setattr(
         run_budget.io,
@@ -771,8 +802,8 @@ def test_main_staged_run_loads_benchmark_from_staged_dataset(monkeypatch):
     )
     monkeypatch.setattr(
         run_budget.io,
-        "extract_staged_benchmark_fluxes",
-        lambda ds: extract_calls.append(ds) or benchmark_ds,
+        "load_staged_arco_benchmark_fluxes",
+        lambda *args, **kwargs: benchmark_load_calls.append((args, kwargs)) or benchmark_ds,
     )
     monkeypatch.setattr(
         run_budget.budget,
@@ -783,21 +814,22 @@ def test_main_staged_run_loads_benchmark_from_staged_dataset(monkeypatch):
 
     run_budget.main()
 
-    assert len(extract_calls) == 1
+    assert len(benchmark_load_calls) == 1
+    assert benchmark_load_calls[0][0][0].kind == "staged_arco_cache"
     assert calculate_calls[0]["benchmark_ds"] is benchmark_ds
 
 
-def test_slurm_script_requires_staged_data_path(tmp_path):
+def test_slurm_script_requires_staged_cache_root(tmp_path):
     script_path = Path(PROJECT_ROOT) / "schedulers" / "schedule_run_budget_slurm.sh"
     env = os.environ.copy()
     env.update(
         {
             "PROJECT_ROOT": PROJECT_ROOT,
             "LOG_DIR": str(tmp_path / "logs"),
-            "DATA_SOURCE": "staged_zarr",
+            "DATA_SOURCE": "staged_arco_cache",
+            "STAGED_CACHE_ROOT": "",
         }
     )
-    env.pop("STAGED_DATA_PATH", None)
 
     result = subprocess.run(
         ["bash", str(script_path)],
@@ -809,7 +841,7 @@ def test_slurm_script_requires_staged_data_path(tmp_path):
     )
 
     assert result.returncode == 1
-    assert "requires STAGED_DATA_PATH" in result.stdout + result.stderr
+    assert "requires STAGED_CACHE_ROOT" in result.stdout + result.stderr
 
 
 def _configure_main_stubs(monkeypatch, args):
@@ -842,7 +874,7 @@ def _configure_core_stubs(monkeypatch, args):
     ds_domain = _make_stub_domain_dataset()
 
     monkeypatch.setattr(run_budget.cli, "parse_args", lambda: args)
-    monkeypatch.setattr(run_budget.io, "load_dataset", lambda source_cfg, surface_specs: xr.Dataset())
+    monkeypatch.setattr(run_budget.io, "load_dataset", lambda source_cfg, surface_specs, request=None: xr.Dataset())
     monkeypatch.setattr(run_budget.validate, "validate_schema", lambda ds: None)
     monkeypatch.setattr(
         run_budget.grid,

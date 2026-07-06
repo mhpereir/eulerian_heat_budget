@@ -71,12 +71,19 @@ fi
 export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-${HOME}/miniconda3}"
 export EHB_CONDA_ENV="${EHB_CONDA_ENV:-dev_env}"
 
-source "${MAMBA_ROOT_PREFIX}/etc/profile.d/mamba.sh"
-mamba activate "${EHB_CONDA_ENV}"
+# source "${MAMBA_ROOT_PREFIX}/etc/profile.d/mamba.sh"
+# mamba activate "${EHB_CONDA_ENV}"
+
+# module load python/3.11
+# virtualenv --no-download $SLURM_TMPDIR/env
+source /home/mhpereir/conda_envs/ENV/bin/activate
+# pip install --no-index --upgrade pip
+
+# pip install --no-index -r /home/mhpereir/conda_envs/dev_env_nostats_requirements.txt
 
 START_YEAR="${START_YEAR:-1940}"
 END_YEAR="${END_YEAR:-2025}"
-DATA_SOURCE="${DATA_SOURCE:-arco_era5}"
+DATA_SOURCE="${DATA_SOURCE:-staged_arco_cache}"
 DEFAULT_PRODUCTION_OUTPUT_DIR=$(default_production_output_dir)
 PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-${DEFAULT_PRODUCTION_OUTPUT_DIR}}"
 REGION="${REGION:-pnw_bartusek}"
@@ -93,6 +100,12 @@ MANIFEST_PATH="${PRODUCTION_OUTPUT_DIR}/production_run.json"
 MANIFEST_LOCK_DIR="${PRODUCTION_OUTPUT_DIR}/.manifest_init.lock"
 MANIFEST_WAIT_SECONDS="${MANIFEST_WAIT_SECONDS:-300}"
 
+if [[ "${DATA_SOURCE}" == "staged_arco_cache" && -z "${STAGED_CACHE_ROOT:-}" ]]; then
+  echo "[error] DATA_SOURCE=staged_arco_cache requires STAGED_CACHE_ROOT to point to a local indexed cache root." >&2
+  echo "[error] Populate it first with scripts/staged_arco_retrieval.py from an internet-capable session." >&2
+  exit 1
+fi
+
 mkdir -p "${PRODUCTION_OUTPUT_DIR}"
 
 cd "${SCRIPT_DIR}"
@@ -103,6 +116,10 @@ COMMON_RUN_ARGS=(
   --region "${REGION}"
   --zg-top-pa "${ZG_TOP_PA}"
 )
+
+if [[ "${DATA_SOURCE}" == "staged_arco_cache" ]]; then
+  COMMON_RUN_ARGS+=(--staged-cache-root "${STAGED_CACHE_ROOT}")
+fi
 
 if [[ "${USE_SURFACE_AS_BOTTOM}" == "1" ]]; then
   COMMON_RUN_ARGS+=(--zg-bottom surface_pressure)
@@ -182,6 +199,10 @@ echo "[info] repo root: ${REPO_ROOT}"
 echo "[info] slurm job id: ${SLURM_JOB_ID:-not-set}"
 echo "[info] slurm array job/task: ${SLURM_ARRAY_JOB_ID:-not-set}/${SLURM_ARRAY_TASK_ID:-not-set}"
 echo "[info] dask: threaded scheduler, workers=${EHB_DASK_N_WORKERS}"
+echo "[info] data source: ${DATA_SOURCE}"
+if [[ "${DATA_SOURCE}" == "staged_arco_cache" ]]; then
+  echo "[info] staged cache root: ${STAGED_CACHE_ROOT}"
+fi
 
 if [[ "${INIT_MANIFEST_ONLY}" == "1" ]]; then
   ensure_manifest

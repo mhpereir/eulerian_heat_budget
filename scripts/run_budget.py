@@ -13,6 +13,7 @@ import xarray as xr
 
 from src import config, cli, specs, io, validate, grid, budget, run_outputs
 from src import plot_results
+from src_arco import variables as arco_variables
 
 from src import terms
 
@@ -65,14 +66,28 @@ def build_request_from_cli(args) -> specs.DomainRequest:
     )
 
 def build_surface_behaviour_from_cli(args) -> specs.SurfaceBehaviour:
+    use_surface_variables = (
+        args.use_surface_variables
+        if args.use_surface_variables is not None
+        else config.DEFAULT_USE_SURFACE_VARIABLES
+    )
 
-    if args.use_surface_variables if args.use_surface_variables is not None else config.DEFAULT_USE_SURFACE_VARIABLES:
+    if use_surface_variables and getattr(args, "data_source", None) == "staged_arco_cache":
+        arco_variables.require_no_surface_variables(
+            specs.SurfaceBehaviour(
+                allow_bottom_overflow=True,
+                use_surface_variables=True,
+                surface_variable_mode=None,
+            )
+        )
+
+    if use_surface_variables:
         if (args.surface_variable_mode is None or args.surface_variable_mode == 'none') and config.DEFAULT_SURFACE_VARIABLE_MODE == 'none':
             raise ValueError("surface_variable_mode must be set when use_surface_variables is True")
 
     return specs.SurfaceBehaviour(
         allow_bottom_overflow=args.allow_bottom_overflow if args.allow_bottom_overflow is not None else config.DEFAULT_ALLOW_BOTTOM_OVERFLOW,
-        use_surface_variables=args.use_surface_variables if args.use_surface_variables is not None else config.DEFAULT_USE_SURFACE_VARIABLES,
+        use_surface_variables=use_surface_variables,
         surface_variable_mode=args.surface_variable_mode if args.surface_variable_mode is not None else config.DEFAULT_SURFACE_VARIABLE_MODE
     )
 
@@ -102,12 +117,12 @@ def build_data_source_from_cli(
             time_start=time_start,
             time_end=time_end,
         )
-    elif args.data_source == "staged_zarr":
-        if args.staged_data_path is None:
-            raise ValueError("--data-source staged_zarr requires --staged-data-path.")
+    elif args.data_source == "staged_arco_cache":
+        if args.staged_cache_root is None:
+            raise ValueError("--data-source staged_arco_cache requires --staged-cache-root.")
         return specs.DataSourceConfig(
-            kind="staged_zarr",
-            staged_data_path=args.staged_data_path,
+            kind="staged_arco_cache",
+            staged_cache_root=args.staged_cache_root,
             time_start=time_start,
             time_end=time_end,
         )
@@ -223,6 +238,8 @@ def main() -> None:
 
     if production_options is not None and production_options.init_manifest:
         SourceCfg = build_data_source_from_cli(args, use_default_time_window=False)
+        if SourceCfg.kind == "staged_arco_cache":
+            arco_variables.require_no_surface_variables(SurfaceSpecs)
         production_paths = run_outputs.prepare_production_paths(production_options.output_dir)
         manifest_path = run_outputs.write_production_manifest(
             production_paths,
@@ -238,6 +255,8 @@ def main() -> None:
         return
 
     SourceCfg = build_data_source_from_cli(args)
+    if SourceCfg.kind == "staged_arco_cache":
+        arco_variables.require_no_surface_variables(SurfaceSpecs)
 
     if production_options is not None:
         production_paths = run_outputs.prepare_production_paths(
@@ -273,7 +292,7 @@ def main() -> None:
                 print(f"Saving constant-temperature output to {constant_t_output_path}")
         print(f"Saving plots to {plot_dir}")
 
-    ds_merged = io.load_dataset(SourceCfg, SurfaceSpecs)
+    ds_merged = io.load_dataset(SourceCfg, SurfaceSpecs, request)
     
     # Validate merged dataset against strict schema
     validate.validate_schema(ds_merged)
@@ -281,9 +300,9 @@ def main() -> None:
     ds_bench = None
     if args.include_benchmark_variables:
         if SourceCfg.kind == "arco_era5":
-            ds_bench = io.load_arco_benchmark_fluxes(SourceCfg, io.ARCO_BENCHMARK_VAR_MAP)
-        elif SourceCfg.kind == "staged_zarr":
-            ds_bench = io.extract_staged_benchmark_fluxes(ds_merged)
+            ds_bench = io.load_arco_benchmark_fluxes(SourceCfg, arco_variables.ARCO_BENCHMARK_VAR_MAP)
+        elif SourceCfg.kind == "staged_arco_cache":
+            ds_bench = io.load_staged_arco_benchmark_fluxes(SourceCfg, request)
 
 
 

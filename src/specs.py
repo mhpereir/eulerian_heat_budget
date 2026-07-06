@@ -15,7 +15,7 @@ from typing import Literal, Optional, Dict, Any, Tuple
 from . import config
 
 BotMode    = Literal["surface_pressure", "pressure_level"]
-SourceKind = Literal["local_era5", "arco_era5", "staged_zarr"]
+SourceKind = Literal["local_era5", "arco_era5", "staged_arco_cache"]
 
 @dataclass(frozen=True)
 class DataSourceConfig:
@@ -23,12 +23,14 @@ class DataSourceConfig:
 
     # local
     path_data: Optional[str] = None
-    staged_data_path: Optional[str] = None
 
     # ARCO
     arco_path: Optional[str] = None
     arco_storage_token: str = config.DEFAULT_ARCO_TOKEN
     chunks_time: int = config.n_time # number of time steps per chunk in ARCO dataset; used to optimize chunking for loading time slices
+
+    # staged ARCO cache
+    staged_cache_root: Optional[str] = None
 
     # common selection
     time_start: Optional[str] = None

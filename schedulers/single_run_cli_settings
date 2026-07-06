@@ -1,0 +1,112 @@
+# Shared CLI settings for single-run ARCO staging and offline budget runs.
+#
+# This file is sourced by:
+# - schedulers/schedule_staged_arco_retrieval.sh
+# - schedulers/schedule_run_budget.sh
+# - schedulers/schedule_staged_arco_retrieval_slurm.sh
+# - schedulers/schedule_run_budget_slurm.sh
+#
+# Keep settings used by both scripts here so staging and compute cannot drift.
+
+TIME_START="${TIME_START:-1941-05-01T00:00:00}"
+TIME_END="${TIME_END:-1941-09-01T00:00:00}"
+REGION="${REGION:-ocean_test}"
+
+STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT-/home/mhpereir/eulerian_heat_budget/results/staged_arco_cache/single_run}"
+
+ZG_TOP_PA="${ZG_TOP_PA:-100}"
+ZG_BOTTOM="${ZG_BOTTOM:-surface_pressure}"
+ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-}"
+ALLOW_BOTTOM_OVERFLOW="${ALLOW_BOTTOM_OVERFLOW:-1}"
+
+USE_SURFACE_VARIABLES="${USE_SURFACE_VARIABLES:-0}"
+SURFACE_VARIABLE_MODE="${SURFACE_VARIABLE_MODE:-none}"
+ENABLE_BENCHMARK_VARIABLES="${ENABLE_BENCHMARK_VARIABLES:-1}"
+
+DATA_SOURCE="${DATA_SOURCE:-staged_arco_cache}"
+ENABLE_DIAGNOSTIC_PLOTS="${ENABLE_DIAGNOSTIC_PLOTS:-1}"
+ENABLE_CONSTANT_TEMPERATURE_TEST="${ENABLE_CONSTANT_TEMPERATURE_TEST:-1}"
+WRITE_NETCDF="${WRITE_NETCDF:-1}"
+OVERWRITE_OUTPUT="${OVERWRITE_OUTPUT:-0}"
+
+ehb_bool_enabled() {
+  case "${1:-0}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+ehb_add_shared_budget_domain_args() {
+  local target_array="$1"
+  local -n args_ref="${target_array}"
+
+  args_ref+=(
+    --region "${REGION}"
+    --time-start "${TIME_START}"
+    --time-end "${TIME_END}"
+    --zg-bottom "${ZG_BOTTOM}"
+    --zg-top-pa "${ZG_TOP_PA}"
+  )
+
+  if [[ "${ZG_BOTTOM}" == "pressure_level" ]]; then
+    : "${ZG_BOTTOM_PA:?ZG_BOTTOM_PA must be set when ZG_BOTTOM=pressure_level}"
+    args_ref+=(--zg-bottom-pa "${ZG_BOTTOM_PA}")
+  fi
+
+  if ehb_bool_enabled "${ALLOW_BOTTOM_OVERFLOW}"; then
+    args_ref+=(--allow-bottom-overflow)
+  else
+    args_ref+=(--no-allow-bottom-overflow)
+  fi
+
+  if ehb_bool_enabled "${USE_SURFACE_VARIABLES}"; then
+    args_ref+=(--use-surface-variables --surface-variable-mode "${SURFACE_VARIABLE_MODE}")
+  else
+    args_ref+=(--no-use-surface-variables)
+  fi
+
+  if ehb_bool_enabled "${ENABLE_BENCHMARK_VARIABLES}"; then
+    args_ref+=(--include-benchmark-variables)
+  fi
+}
+
+ehb_build_run_budget_args() {
+  local target_array="$1"
+  local -n args_ref="${target_array}"
+  args_ref=(--data-source "${DATA_SOURCE}")
+  ehb_add_shared_budget_domain_args "${target_array}"
+
+  if [[ "${DATA_SOURCE}" == "staged_arco_cache" ]]; then
+    : "${STAGED_CACHE_ROOT:?DATA_SOURCE=staged_arco_cache requires STAGED_CACHE_ROOT to point to a local indexed cache root. Populate it first with scripts/staged_arco_retrieval.py.}"
+    args_ref+=(--staged-cache-root "${STAGED_CACHE_ROOT}")
+  fi
+
+  if ehb_bool_enabled "${ENABLE_DIAGNOSTIC_PLOTS}"; then
+    args_ref+=(--diagnostic-plots)
+  else
+    args_ref+=(--no-diagnostic-plots)
+  fi
+
+  if ehb_bool_enabled "${ENABLE_CONSTANT_TEMPERATURE_TEST}"; then
+    args_ref+=(--constant-temperature-test)
+  else
+    args_ref+=(--no-constant-temperature-test)
+  fi
+
+  if ehb_bool_enabled "${WRITE_NETCDF}"; then
+    args_ref+=(--write-netcdf)
+  fi
+
+  if ehb_bool_enabled "${OVERWRITE_OUTPUT}"; then
+    args_ref+=(--overwrite-output)
+  fi
+}
+
+ehb_build_staged_arco_retrieval_args() {
+  local target_array="$1"
+  local -n args_ref="${target_array}"
+  : "${STAGED_CACHE_ROOT:?staged ARCO retrieval requires STAGED_CACHE_ROOT to point to a local indexed cache root.}"
+
+  args_ref=(--staged-cache-root "${STAGED_CACHE_ROOT}")
+  ehb_add_shared_budget_domain_args "${target_array}"
+}

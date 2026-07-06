@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=eulerian_heat_budget
+#SBATCH --job-name=ehb_stage_arco
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -42,7 +42,7 @@ SCHEDULER_DIR="${REPO_ROOT}/schedulers"
 SETTINGS_FILE="${SINGLE_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/single_run_cli_settings}"
 LOG_DIR="${LOG_DIR:-${REPO_ROOT}/logs}"
 JOB_ID="${SLURM_JOB_ID:-manual}"
-LOGFILE="${LOG_DIR}/${JOB_ID}_EHB_single.log"
+LOGFILE="${LOG_DIR}/${JOB_ID}_EHB_stage_arco.log"
 
 mkdir -p "${LOG_DIR}"
 exec > >(tee -a "${LOGFILE}") 2>&1
@@ -57,8 +57,8 @@ export EHB_DASK_N_WORKERS="${EHB_DASK_N_WORKERS:-4}"
 
 source "${SETTINGS_FILE}"
 
-RUN_ARGS=()
-ehb_build_run_budget_args RUN_ARGS
+RETRIEVAL_ARGS=()
+ehb_build_staged_arco_retrieval_args RETRIEVAL_ARGS
 
 if [[ -z "${HOME:-}" ]]; then
   HOME=$(getent passwd "$(id -un)" | cut -d: -f6)
@@ -70,23 +70,21 @@ export EHB_CONDA_ENV="${EHB_CONDA_ENV:-dev_env}"
 # source "${MAMBA_ROOT_PREFIX}/etc/profile.d/mamba.sh"
 # mamba activate "${EHB_CONDA_ENV}"
 
-# module load python/3.11                                                   
-# virtualenv --no-download $SLURM_TMPDIR/env                                
-source /home/mhpereir/conda_envs/ENV/bin/activate                                     
-# pip install --no-index --upgrade pip                                      
+# module load python/3.11
+# virtualenv --no-download $SLURM_TMPDIR/env
+source /home/mhpereir/conda_envs/ENV/bin/activate
+# pip install --no-index --upgrade pip
 
-# pip install --no-index -r /home/mhpereir/conda_envs/dev_env_nostats_requirements.txt       
+# pip install --no-index -r /home/mhpereir/conda_envs/dev_env_nostats_requirements.txt
 
 cd "${SCRIPT_DIR}"
 
-echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hostname)"
+echo "[info] $(date -Is) starting staged ARCO retrieval on host $(hostname)"
 echo "[info] repo root: ${REPO_ROOT}"
 echo "[info] slurm job id: ${SLURM_JOB_ID:-not-set}"
 echo "[info] dask: threaded scheduler, workers=${EHB_DASK_N_WORKERS}"
 echo "[info] settings file: ${SETTINGS_FILE}"
-echo "[info] data source: ${DATA_SOURCE}"
-if [[ "${DATA_SOURCE}" == "staged_arco_cache" ]]; then
-  echo "[info] staged cache root: ${STAGED_CACHE_ROOT}"
-fi
-python run_budget.py "${RUN_ARGS[@]}"
+echo "[info] staged cache root: ${STAGED_CACHE_ROOT}"
+
+python staged_arco_retrieval.py "${RETRIEVAL_ARGS[@]}"
 echo "[info] $(date -Is) done"
