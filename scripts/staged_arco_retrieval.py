@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 
 PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
@@ -70,14 +71,8 @@ def main() -> None:
             continue
 
         print(f"[info] staging ARCO ERA5 {time_start} to {time_end}")
-        tile = _build_tile_from_arco(
-            source_cfg,
-            request,
-            include_benchmark_variables=args.include_benchmark_variables,
-        )
-        tile_path = cache.write_tile(
+        tile_path, tile = _stage_window_with_retry(
             cache_root,
-            tile,
             source_cfg,
             request,
             include_benchmark_variables=args.include_benchmark_variables,
@@ -86,6 +81,45 @@ def main() -> None:
             "[info] wrote staged tile "
             f"{tile_path} sizes={dict(tile.sizes)} variables={list(tile.data_vars)}"
         )
+
+
+def _stage_window_with_retry(
+    cache_root: Path,
+    source_cfg: specs.DataSourceConfig,
+    request: specs.DomainRequest,
+    *,
+    include_benchmark_variables: bool,
+):
+    max_attempts = config.DEFAULT_ARCO_OPEN_MAX_ATTEMPTS
+    base_delay_seconds = config.DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            tile = _build_tile_from_arco(
+                source_cfg,
+                request,
+                include_benchmark_variables=include_benchmark_variables,
+            )
+            tile_path = cache.write_tile(
+                cache_root,
+                tile,
+                source_cfg,
+                request,
+                include_benchmark_variables=include_benchmark_variables,
+            )
+            return tile_path, tile
+        except Exception as exc:
+            if not io._is_transient_arco_open_error(exc) or attempt == max_attempts:
+                raise
+
+            delay_seconds = base_delay_seconds * (2 ** (attempt - 1))
+            print(
+                f"ARCO stage/write attempt {attempt}/{max_attempts} failed with a transient error: {exc}. "
+                f"Retrying in {delay_seconds:.0f} seconds..."
+            )
+            time.sleep(delay_seconds)
+
+    raise RuntimeError("ARCO stage/write retry loop exhausted unexpectedly.")
 
 
 def _iter_time_windows(args):

@@ -792,8 +792,26 @@ def test_single_run_schedulers_share_cli_settings():
     assert "TIME_START=" in settings
     assert "ehb_build_run_budget_args" in settings
     assert "ehb_build_staged_arco_retrieval_args" in settings
-    assert "source \"${SCHEDULER_DIR}/single_run_cli_settings\"" in run_scheduler
-    assert "source \"${SCHEDULER_DIR}/single_run_cli_settings\"" in retrieval_scheduler
+    assert "PROJECT_ROOT=\"${PROJECT_ROOT:-/home/mhpereir/eulerian_heat_budget}\"" in run_scheduler
+    assert "PROJECT_ROOT=\"${PROJECT_ROOT:-/home/mhpereir/eulerian_heat_budget}\"" in retrieval_scheduler
+    assert "SCHEDULER_DIR=\"${SCHEDULER_DIR:-${PROJECT_ROOT}/schedulers}\"" in run_scheduler
+    assert "SCHEDULER_DIR=\"${SCHEDULER_DIR:-${PROJECT_ROOT}/schedulers}\"" in retrieval_scheduler
+    assert "SETTINGS_FILE=\"${SINGLE_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/single_run_cli_settings}\"" in run_scheduler
+    assert "SETTINGS_FILE=\"${SINGLE_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/single_run_cli_settings}\"" in retrieval_scheduler
+    assert "source \"${SETTINGS_FILE}\"" in run_scheduler
+    assert "source \"${SETTINGS_FILE}\"" in retrieval_scheduler
+    assert "BASH_SOURCE" not in run_scheduler
+    assert "BASH_SOURCE" not in retrieval_scheduler
+    assert "#PBS -o /home/mhpereir/eulerian_heat_budget/logs/" in run_scheduler
+    assert "#PBS -o /home/mhpereir/eulerian_heat_budget/logs/" in retrieval_scheduler
+    assert "/dev/null" not in run_scheduler
+    assert "/dev/null" not in retrieval_scheduler
+    assert run_scheduler.index("exec > >(tee -a") < run_scheduler.index(
+        "source \"${SETTINGS_FILE}\""
+    )
+    assert retrieval_scheduler.index("exec > >(tee -a") < retrieval_scheduler.index(
+        "source \"${SETTINGS_FILE}\""
+    )
     assert "python run_budget.py \"${RUN_ARGS[@]}\"" in run_scheduler
     assert "python staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in retrieval_scheduler
 

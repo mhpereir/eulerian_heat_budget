@@ -7,19 +7,21 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import sqlite3
 import time
 
 import numpy as np
 import xarray as xr
 
-from src import specs
+from src import config, specs
 from . import selection
 
 
 DB_NAME = "cache.sqlite"
 TILES_DIR = "tiles"
 LOCK_DIR = ".write.lock"
+CACHE_SCHEMA = "staged_arco_cache_v2"
 
 
 class OfflineCoverageError(RuntimeError):
@@ -68,7 +70,7 @@ def tile_id_for_request(
         },
         "request": asdict(request),
         "include_benchmark_variables": bool(include_benchmark_variables),
-        "schema": "staged_arco_cache_v1",
+        "schema": CACHE_SCHEMA,
     }
     encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:24]
@@ -97,9 +99,17 @@ def write_tile(
             return tile_path
 
         tmp_path = root / TILES_DIR / f".{tile_id}.tmp.zarr"
-        tile.to_zarr(str(tmp_path), mode="w")
+        tile_to_write = _normalize_zarr_chunks(tile, source_cfg)
+        if tmp_path.exists():
+            shutil.rmtree(tmp_path)
+        try:
+            tile_to_write.to_zarr(str(tmp_path), mode="w")
+        except Exception:
+            if tmp_path.exists():
+                shutil.rmtree(tmp_path)
+            raise
         tmp_path.replace(tile_path)
-        _register_tile(root, tile_id, rel_path, tile, source_cfg, request, include_benchmark_variables)
+        _register_tile(root, tile_id, rel_path, tile_to_write, source_cfg, request, include_benchmark_variables)
     return tile_path
 
 
@@ -195,8 +205,12 @@ def _validate_wall_coverage(ds: xr.Dataset, request: specs.DomainRequest) -> Non
 
     required_u_lon = set(np.asarray(ds["lon"].isel(lon=indexers["u_lon"]).values, dtype=float))
     required_v_lat = set(np.asarray(ds["lat"].isel(lat=indexers["v_lat"]).values, dtype=float))
+    required_u_lat = set(np.asarray(ds["lat"].isel(lat=indexers["domain_lat"]).values, dtype=float))
+    required_v_lon = set(np.asarray(ds["lon"].isel(lon=indexers["domain_lon"]).values, dtype=float))
     available_u_lon = set(np.asarray(ds["u_wall"]["u_lon"].values, dtype=float)) if "u_wall" in ds else set()
     available_v_lat = set(np.asarray(ds["v_wall"]["v_lat"].values, dtype=float)) if "v_wall" in ds else set()
+    available_u_lat = _available_wall_coord_values(ds, "u_wall", compact_coord="u_lat", canonical_coord="lat")
+    available_v_lon = _available_wall_coord_values(ds, "v_wall", compact_coord="v_lon", canonical_coord="lon")
 
     if not required_u_lon.issubset(available_u_lon):
         missing = sorted(required_u_lon - available_u_lon)
@@ -204,6 +218,54 @@ def _validate_wall_coverage(ds: xr.Dataset, request: specs.DomainRequest) -> Non
     if not required_v_lat.issubset(available_v_lat):
         missing = sorted(required_v_lat - available_v_lat)
         raise OfflineCoverageError(f"Staged ARCO cache missing v_wall lat stencils: {missing}")
+    if not required_u_lat.issubset(available_u_lat):
+        missing = sorted(required_u_lat - available_u_lat)
+        raise OfflineCoverageError(f"Staged ARCO cache missing u_wall domain lat coverage: {missing}")
+    if not required_v_lon.issubset(available_v_lon):
+        missing = sorted(required_v_lon - available_v_lon)
+        raise OfflineCoverageError(f"Staged ARCO cache missing v_wall domain lon coverage: {missing}")
+
+
+def _available_wall_coord_values(
+    ds: xr.Dataset,
+    variable: str,
+    *,
+    compact_coord: str,
+    canonical_coord: str,
+) -> set[float]:
+    if variable not in ds:
+        return set()
+    da = ds[variable]
+    if compact_coord in da.coords:
+        values = da[compact_coord].values
+    elif canonical_coord in da.coords:
+        values = da[canonical_coord].values
+    else:
+        return set()
+    return set(np.asarray(values, dtype=float))
+
+
+def _normalize_zarr_chunks(tile: xr.Dataset, source_cfg: specs.DataSourceConfig) -> xr.Dataset:
+    chunk_spec: dict[str, int] = {}
+    for dim, size in tile.sizes.items():
+        if dim == "time":
+            chunk_spec[dim] = max(1, min(int(size), int(source_cfg.chunks_time)))
+        elif dim == "level":
+            chunk_spec[dim] = int(size)
+        elif dim in {"lat", "lon", "u_lat", "v_lat", "u_lon", "v_lon"}:
+            base = config.n_lat if dim in {"lat", "u_lat", "v_lat"} else config.n_lon
+            chunk_spec[dim] = max(1, min(int(size), int(base)))
+        else:
+            chunk_spec[dim] = int(size)
+    rechunked = tile.chunk(chunk_spec)
+    return _clear_inherited_zarr_chunk_encoding(rechunked)
+
+
+def _clear_inherited_zarr_chunk_encoding(tile: xr.Dataset) -> xr.Dataset:
+    tile = tile.copy()
+    for variable in tile.variables.values():
+        variable.encoding.clear()
+    return tile
 
 
 def _require_time_bounds(ds: xr.Dataset, source_cfg: specs.DataSourceConfig) -> None:

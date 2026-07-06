@@ -91,10 +91,14 @@ def test_build_arco_cache_tile_stores_wall_only_velocities():
 
     assert "u" not in tile
     assert "v" not in tile
-    assert tile["u_wall"].dims == ("time", "level", "lat", "u_lon")
-    assert tile["v_wall"].dims == ("time", "level", "v_lat", "lon")
+    assert tile["u_wall"].dims == ("time", "level", "u_lat", "u_lon")
+    assert tile["v_wall"].dims == ("time", "level", "v_lat", "v_lon")
+    assert set(tile["u_wall"]["u_lat"].values) == {2.0, 3.0, 4.0}
     assert set(tile["u_wall"]["u_lon"].values) == {11.0, 12.0, 14.0, 15.0}
     assert set(tile["v_wall"]["v_lat"].values) == {1.0, 2.0, 4.0, 5.0}
+    assert set(tile["v_wall"]["v_lon"].values) == {12.0, 13.0, 14.0}
+    assert tile["Fx_heat"].dims == ("time", "u_lat", "u_lon")
+    assert tile["Fy_heat"].dims == ("time", "v_lat", "v_lon")
     assert "p_start" in tile.coords
     assert "Fx_heat" in tile
 
@@ -112,8 +116,128 @@ def test_reconstruct_budget_dataset_keeps_canonical_shape_with_sparse_velocity()
     assert out["v"].dims == ("time", "level", "lat", "lon")
     assert bool(out["u"].sel(lon=13.0).isnull().all())
     assert bool(out["v"].sel(lat=3.0).isnull().all())
-    assert bool(out["u"].sel(lon=11.0).notnull().all())
-    assert bool(out["v"].sel(lat=1.0).notnull().all())
+    assert bool(out["u"].sel(lon=11.0, lat=[2.0, 3.0, 4.0]).notnull().all())
+    assert bool(out["u"].sel(lon=11.0, lat=[1.0, 5.0]).isnull().all())
+    assert bool(out["v"].sel(lat=1.0, lon=[12.0, 13.0, 14.0]).notnull().all())
+    assert bool(out["v"].sel(lat=1.0, lon=[11.0, 15.0]).isnull().all())
+
+
+def test_reconstruct_benchmark_dataset_expands_compact_shell():
+    tile = cache.build_arco_cache_tile(
+        _canonical_dataset(),
+        _request(),
+        include_benchmark_variables=True,
+    )
+
+    out = selection.reconstruct_benchmark_dataset(tile, _request())
+
+    for name in ("Fx_heat", "Fy_heat", "Fx_mass", "Fy_mass"):
+        assert out[name].dims == ("time", "lat", "lon")
+
+    assert bool(out["Fx_mass"].sel(lon=11.0, lat=[2.0, 3.0, 4.0]).notnull().all())
+    assert bool(out["Fx_mass"].sel(lon=13.0).isnull().all())
+    assert bool(out["Fx_mass"].sel(lon=11.0, lat=[1.0, 5.0]).isnull().all())
+    assert bool(out["Fy_mass"].sel(lat=1.0, lon=[12.0, 13.0, 14.0]).notnull().all())
+    assert bool(out["Fy_mass"].sel(lat=3.0).isnull().all())
+    assert bool(out["Fy_mass"].sel(lat=1.0, lon=[11.0, 15.0]).isnull().all())
+
+
+def test_normalize_zarr_chunks_clears_inherited_arco_encoding():
+    tile = cache.build_arco_cache_tile(
+        _canonical_dataset().chunk({"time": (2, 3), "lat": (2, 3, 2), "lon": (3, 4)}),
+        _request(),
+        include_benchmark_variables=True,
+    )
+    tile["w"].encoding["chunks"] = (1, 37, 721, 1440)
+    tile["w"].encoding["preferred_chunks"] = {
+        "time": 1,
+        "level": 37,
+        "lat": 721,
+        "lon": 1440,
+    }
+    tile["w"].encoding["compressor"] = object()
+    tile["w"].encoding["filters"] = [object()]
+
+    out = cache._normalize_zarr_chunks(tile, _source_cfg())
+
+    assert "chunks" not in out["w"].encoding
+    assert "preferred_chunks" not in out["w"].encoding
+    assert "compressor" not in out["w"].encoding
+    assert "filters" not in out["w"].encoding
+    assert out["w"].chunks == ((5,), (3,), (5,), (5,))
+    assert out["Fy_mass"].chunks == ((5,), (4,), (3,))
+
+
+def test_write_tile_removes_partial_tmp_store_on_failure(monkeypatch, tmp_path):
+    source_cfg = _source_cfg()
+    request = _request()
+    tile = cache.build_arco_cache_tile(
+        _canonical_dataset(),
+        request,
+        include_benchmark_variables=False,
+    )
+    tile_id = cache.tile_id_for_request(
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+    tmp_store = tmp_path / cache.TILES_DIR / f".{tile_id}.tmp.zarr"
+
+    def fake_to_zarr(self, path, mode="w"):
+        Path(path).mkdir(parents=True, exist_ok=True)
+        (Path(path) / "zarr.json").write_text("{}")
+        raise OSError("Temporary failure in name resolution")
+
+    monkeypatch.setattr(xr.Dataset, "to_zarr", fake_to_zarr)
+
+    with pytest.raises(OSError, match="Temporary failure"):
+        cache.write_tile(
+            tmp_path,
+            tile,
+            source_cfg,
+            request,
+            include_benchmark_variables=False,
+        )
+
+    assert not tmp_store.exists()
+
+
+def test_staged_arco_retrieval_retries_transient_write_failures(monkeypatch, tmp_path):
+    source_cfg = _source_cfg()
+    request = _request()
+    tile = xr.Dataset({"dummy": xr.DataArray([1.0], dims=("time",))})
+    build_calls = []
+    write_calls = []
+    sleeps = []
+
+    def fake_build_tile_from_arco(*args, **kwargs):
+        build_calls.append((args, kwargs))
+        return tile
+
+    def fake_write_tile(*args, **kwargs):
+        write_calls.append((args, kwargs))
+        if len(write_calls) == 1:
+            raise OSError("Temporary failure in name resolution")
+        return tmp_path / "tile.zarr"
+
+    monkeypatch.setattr(staged_arco_retrieval, "_build_tile_from_arco", fake_build_tile_from_arco)
+    monkeypatch.setattr(staged_arco_retrieval.cache, "write_tile", fake_write_tile)
+    monkeypatch.setattr(staged_arco_retrieval.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(staged_arco_retrieval.config, "DEFAULT_ARCO_OPEN_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(staged_arco_retrieval.config, "DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS", 3.0)
+
+    tile_path, staged_tile = staged_arco_retrieval._stage_window_with_retry(
+        tmp_path,
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+
+    assert tile_path == tmp_path / "tile.zarr"
+    assert staged_tile is tile
+    assert len(build_calls) == 2
+    assert len(write_calls) == 2
+    assert sleeps == [3.0]
 
 
 def test_cache_load_reconstructs_from_local_tile_without_arco(monkeypatch, tmp_path):

@@ -86,6 +86,8 @@ def select_wall_only_tile(
 ) -> xr.Dataset:
     """Return a staged tile with full scalar fields and wall-only velocities."""
     indexers = wall_stencil_indices(ds, request)
+    domain_lat_indices = indexers["domain_lat"]
+    domain_lon_indices = indexers["domain_lon"]
     u_lon_indices = indexers["u_lon"]
     v_lat_indices = indexers["v_lat"]
 
@@ -94,8 +96,12 @@ def select_wall_only_tile(
             "T": ds["T"],
             "w": ds["w"],
             "sp": ds["sp"],
-            "u_wall": ds["u"].isel(lon=u_lon_indices).rename({"lon": "u_lon"}),
-            "v_wall": ds["v"].isel(lat=v_lat_indices).rename({"lat": "v_lat"}),
+            "u_wall": ds["u"]
+            .isel(lat=domain_lat_indices, lon=u_lon_indices)
+            .rename({"lat": "u_lat", "lon": "u_lon"}),
+            "v_wall": ds["v"]
+            .isel(lat=v_lat_indices, lon=domain_lon_indices)
+            .rename({"lat": "v_lat", "lon": "v_lon"}),
         },
         attrs=dict(ds.attrs),
     )
@@ -105,12 +111,20 @@ def select_wall_only_tile(
             tile = tile.assign_coords({coord_name: ds[coord_name]})
 
     if include_benchmark_variables:
-        tile = _add_wall_only_benchmark_variables(tile, ds, u_lon_indices, v_lat_indices)
+        tile = _add_wall_only_benchmark_variables(
+            tile,
+            ds,
+            domain_lat_indices,
+            domain_lon_indices,
+            u_lon_indices,
+            v_lat_indices,
+        )
 
     tile.attrs.update(
         {
-            "ehb_cache_schema": "staged_arco_cache_v1",
+            "ehb_cache_schema": "staged_arco_cache_v2",
             "ehb_velocity_storage": "wall_only",
+            "ehb_wall_storage": "compact_lateral_shell",
         }
     )
     return tile
@@ -125,8 +139,8 @@ def reconstruct_budget_dataset(tile: xr.Dataset, request: specs.DomainRequest) -
     if "u_wall" not in tile or "v_wall" not in tile:
         raise ValueError("Staged cache tile is missing required u_wall/v_wall variables.")
 
-    u_wall = tile["u_wall"].sel(u_lon=required_u_lon.values).rename({"u_lon": "lon"})
-    v_wall = tile["v_wall"].sel(v_lat=required_v_lat.values).rename({"v_lat": "lat"})
+    u_wall = _select_u_wall(tile, indexers, required_u_lon)
+    v_wall = _select_v_wall(tile, indexers, required_v_lat)
 
     u = xr.full_like(tile["T"], np.nan).rename("u")
     v = xr.full_like(tile["T"], np.nan).rename("v")
@@ -167,15 +181,95 @@ def reconstruct_benchmark_dataset(tile: xr.Dataset, request: specs.DomainRequest
 
     out_vars = {}
     for name in ("Fx_heat", "Fx_mass"):
-        wall = tile[name].sel(lon=u_lon.values)
+        wall = _select_x_benchmark_wall(tile, name, indexers, u_lon)
         empty = xr.full_like(tile["sp"], np.nan).rename(name)
         out_vars[name] = wall.combine_first(empty).transpose("time", "lat", "lon")
     for name in ("Fy_heat", "Fy_mass"):
-        wall = tile[name].sel(lat=v_lat.values)
+        wall = _select_y_benchmark_wall(tile, name, indexers, v_lat)
         empty = xr.full_like(tile["sp"], np.nan).rename(name)
         out_vars[name] = wall.combine_first(empty).transpose("time", "lat", "lon")
 
     return xr.Dataset(out_vars, attrs=dict(tile.attrs))
+
+
+def _select_u_wall(
+    tile: xr.Dataset,
+    indexers: dict[str, np.ndarray],
+    required_u_lon: xr.DataArray,
+) -> xr.DataArray:
+    required_u_lat = tile["lat"].isel(lat=indexers["domain_lat"])
+    wall = tile["u_wall"].sel(u_lon=required_u_lon.values)
+    if "u_lat" in wall.dims:
+        wall = wall.sel(u_lat=required_u_lat.values).rename({"u_lat": "lat"})
+    elif "lat" in wall.dims:
+        wall = wall.sel(lat=required_u_lat.values)
+    else:
+        raise ValueError("u_wall must contain either a compact u_lat dimension or canonical lat dimension.")
+    return wall.rename({"u_lon": "lon"})
+
+
+def _select_v_wall(
+    tile: xr.Dataset,
+    indexers: dict[str, np.ndarray],
+    required_v_lat: xr.DataArray,
+) -> xr.DataArray:
+    required_v_lon = tile["lon"].isel(lon=indexers["domain_lon"])
+    wall = tile["v_wall"].sel(v_lat=required_v_lat.values)
+    if "v_lon" in wall.dims:
+        wall = wall.sel(v_lon=required_v_lon.values).rename({"v_lon": "lon"})
+    elif "lon" in wall.dims:
+        wall = wall.sel(lon=required_v_lon.values)
+    else:
+        raise ValueError("v_wall must contain either a compact v_lon dimension or canonical lon dimension.")
+    return wall.rename({"v_lat": "lat"})
+
+
+def _select_x_benchmark_wall(
+    tile: xr.Dataset,
+    name: str,
+    indexers: dict[str, np.ndarray],
+    required_u_lon: xr.DataArray,
+) -> xr.DataArray:
+    required_u_lat = tile["lat"].isel(lat=indexers["domain_lat"])
+    wall = tile[name]
+    if "u_lon" in wall.dims:
+        wall = wall.sel(u_lon=required_u_lon.values).rename({"u_lon": "lon"})
+    elif "lon" in wall.dims:
+        wall = wall.sel(lon=required_u_lon.values)
+    else:
+        raise ValueError(f"{name} must contain either a compact u_lon dimension or canonical lon dimension.")
+
+    if "u_lat" in wall.dims:
+        wall = wall.sel(u_lat=required_u_lat.values).rename({"u_lat": "lat"})
+    elif "lat" in wall.dims:
+        wall = wall.sel(lat=required_u_lat.values)
+    else:
+        raise ValueError(f"{name} must contain either a compact u_lat dimension or canonical lat dimension.")
+    return wall
+
+
+def _select_y_benchmark_wall(
+    tile: xr.Dataset,
+    name: str,
+    indexers: dict[str, np.ndarray],
+    required_v_lat: xr.DataArray,
+) -> xr.DataArray:
+    required_v_lon = tile["lon"].isel(lon=indexers["domain_lon"])
+    wall = tile[name]
+    if "v_lat" in wall.dims:
+        wall = wall.sel(v_lat=required_v_lat.values).rename({"v_lat": "lat"})
+    elif "lat" in wall.dims:
+        wall = wall.sel(lat=required_v_lat.values)
+    else:
+        raise ValueError(f"{name} must contain either a compact v_lat dimension or canonical lat dimension.")
+
+    if "v_lon" in wall.dims:
+        wall = wall.sel(v_lon=required_v_lon.values).rename({"v_lon": "lon"})
+    elif "lon" in wall.dims:
+        wall = wall.sel(lon=required_v_lon.values)
+    else:
+        raise ValueError(f"{name} must contain either a compact v_lon dimension or canonical lon dimension.")
+    return wall
 
 
 def wall_stencil_indices(ds: xr.Dataset, request: specs.DomainRequest) -> dict[str, np.ndarray]:
@@ -198,6 +292,12 @@ def wall_stencil_indices(ds: xr.Dataset, request: specs.DomainRequest) -> dict[s
 
     if halo_lat_stop - halo_lat_start < 2 or halo_lon_stop - halo_lon_start < 2:
         raise ValueError("Staged domain is too small to build wall velocity stencils.")
+    domain_lat_start = lat_start + margin
+    domain_lat_stop = lat_stop - margin
+    domain_lon_start = lon_start + margin
+    domain_lon_stop = lon_stop - margin
+    if domain_lat_stop <= domain_lat_start or domain_lon_stop <= domain_lon_start:
+        raise ValueError("Staged domain is too small after applying the requested margin.")
 
     u_lon = np.array(
         [halo_lon_start, halo_lon_start + 1, halo_lon_stop - 2, halo_lon_stop - 1],
@@ -208,6 +308,8 @@ def wall_stencil_indices(ds: xr.Dataset, request: specs.DomainRequest) -> dict[s
         dtype=int,
     )
     return {
+        "domain_lat": np.arange(domain_lat_start, domain_lat_stop, dtype=int),
+        "domain_lon": np.arange(domain_lon_start, domain_lon_stop, dtype=int),
         "u_lon": np.unique(u_lon),
         "v_lat": np.unique(v_lat),
     }
@@ -216,21 +318,28 @@ def wall_stencil_indices(ds: xr.Dataset, request: specs.DomainRequest) -> dict[s
 def _add_wall_only_benchmark_variables(
     tile: xr.Dataset,
     ds: xr.Dataset,
+    domain_lat_indices: np.ndarray,
+    domain_lon_indices: np.ndarray,
     u_lon_indices: np.ndarray,
     v_lat_indices: np.ndarray,
 ) -> xr.Dataset:
-    lon_mask = ds["lon"].isin(ds["lon"].isel(lon=u_lon_indices))
-    lat_mask = ds["lat"].isin(ds["lat"].isel(lat=v_lat_indices))
-
     for name in ("Fx_heat", "Fx_mass"):
         if name not in ds:
             raise ValueError(f"Benchmark variable {name!r} is missing from staged source dataset.")
-        tile[name] = ds[name].where(lon_mask)
+        tile[name] = (
+            ds[name]
+            .isel(lat=domain_lat_indices, lon=u_lon_indices)
+            .rename({"lat": "u_lat", "lon": "u_lon"})
+        )
 
     for name in ("Fy_heat", "Fy_mass"):
         if name not in ds:
             raise ValueError(f"Benchmark variable {name!r} is missing from staged source dataset.")
-        tile[name] = ds[name].where(lat_mask)
+        tile[name] = (
+            ds[name]
+            .isel(lat=v_lat_indices, lon=domain_lon_indices)
+            .rename({"lat": "v_lat", "lon": "v_lon"})
+        )
 
     return tile
 
@@ -261,4 +370,3 @@ def _center_index_span(
     if not np.any(mask):
         raise ValueError(f"No {name} centers fall inside requested interval [{lower}, {upper}].")
     return int(np.flatnonzero(mask)[0]), int(np.flatnonzero(mask)[-1]) + 1
-
