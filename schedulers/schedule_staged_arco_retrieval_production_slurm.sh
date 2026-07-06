@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=eulerian_heat_budget_prod
+#SBATCH --job-name=ehb_stage_arco_prod
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -45,7 +45,7 @@ LOG_DIR="${LOG_DIR:-${REPO_ROOT}/logs}"
 JOB_ID="${SLURM_JOB_ID:-manual}"
 ARRAY_JOB_ID="${SLURM_ARRAY_JOB_ID:-${JOB_ID}}"
 ARRAY_TASK_ID_FOR_LOG="${SLURM_ARRAY_TASK_ID:-noarray}"
-LOGFILE="${LOG_DIR}/${ARRAY_JOB_ID}_${ARRAY_TASK_ID_FOR_LOG}_EHB_prod.log"
+LOGFILE="${LOG_DIR}/${ARRAY_JOB_ID}_${ARRAY_TASK_ID_FOR_LOG}_EHB_stage_arco_prod.log"
 
 mkdir -p "${LOG_DIR}"
 exec > >(tee -a "${LOGFILE}") 2>&1
@@ -60,8 +60,16 @@ export EHB_DASK_N_WORKERS="${EHB_DASK_N_WORKERS:-4}"
 
 source "${SETTINGS_FILE}"
 
-COMMON_RUN_ARGS=()
-ehb_build_production_run_budget_args COMMON_RUN_ARGS
+ehb_require_staged_cache_root "production staged ARCO retrieval"
+
+: "${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID must be set for yearly production staged ARCO retrieval}"
+
+YEAR=$(ehb_production_year_for_task "${SLURM_ARRAY_TASK_ID}")
+ehb_validate_production_year "${YEAR}"
+ehb_build_production_time_window "${YEAR}" TIME_START TIME_END
+
+RETRIEVAL_ARGS=()
+ehb_build_production_staged_retrieval_args RETRIEVAL_ARGS "${TIME_START}" "${TIME_END}"
 
 if [[ -z "${HOME:-}" ]]; then
   HOME=$(getent passwd "$(id -un)" | cut -d: -f6)
@@ -80,86 +88,16 @@ source /home/mhpereir/conda_envs/ENV/bin/activate
 
 # pip install --no-index -r /home/mhpereir/conda_envs/dev_env_nostats_requirements.txt
 
-mkdir -p "${PRODUCTION_OUTPUT_DIR}"
-
 cd "${SCRIPT_DIR}"
 
-initialize_manifest() {
-  echo "[info] $(date -Is) initializing production manifest in ${PRODUCTION_OUTPUT_DIR}"
-  /usr/bin/time -v python run_budget.py \
-    "${COMMON_RUN_ARGS[@]}" \
-    --init-production-manifest \
-    --production-start-year "${START_YEAR}" \
-    --production-end-year "${END_YEAR}"
-  echo "[info] $(date -Is) manifest initialization complete"
-}
-
-ensure_manifest() {
-  local waited=0
-
-  if [[ -f "${MANIFEST_PATH}" ]]; then
-    return 0
-  fi
-
-  while true; do
-    if [[ -f "${MANIFEST_PATH}" ]]; then
-      return 0
-    fi
-
-    if mkdir "${MANIFEST_LOCK_DIR}" 2>/dev/null; then
-      if [[ -f "${MANIFEST_PATH}" ]]; then
-        rmdir "${MANIFEST_LOCK_DIR}" || true
-        return 0
-      fi
-
-      if initialize_manifest; then
-        rmdir "${MANIFEST_LOCK_DIR}" || true
-        return 0
-      else
-        local status=$?
-        rmdir "${MANIFEST_LOCK_DIR}" || true
-        return "${status}"
-      fi
-    fi
-
-    if (( waited >= MANIFEST_WAIT_SECONDS )); then
-      echo "[error] Timed out waiting for production manifest at ${MANIFEST_PATH}" >&2
-      return 1
-    fi
-
-    echo "[info] $(date -Is) waiting for production manifest at ${MANIFEST_PATH}"
-    sleep 5
-    waited=$((waited + 5))
-  done
-}
-
+echo "[info] $(date -Is) starting production staged ARCO retrieval for year ${YEAR} on host $(hostname)"
 echo "[info] repo root: ${REPO_ROOT}"
 echo "[info] slurm job id: ${SLURM_JOB_ID:-not-set}"
 echo "[info] slurm array job/task: ${SLURM_ARRAY_JOB_ID:-not-set}/${SLURM_ARRAY_TASK_ID:-not-set}"
 echo "[info] dask: threaded scheduler, workers=${EHB_DASK_N_WORKERS}"
 echo "[info] settings file: ${SETTINGS_FILE}"
-echo "[info] data source: ${DATA_SOURCE}"
-if [[ "${DATA_SOURCE}" == "staged_arco_cache" ]]; then
-  echo "[info] staged cache root: ${STAGED_CACHE_ROOT}"
-fi
+echo "[info] staged cache root: ${STAGED_CACHE_ROOT}"
+echo "[info] time window: ${TIME_START} to ${TIME_END}"
 
-if [[ "${INIT_MANIFEST_ONLY}" == "1" ]]; then
-  ensure_manifest
-  exit 0
-fi
-
-: "${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID must be set for yearly production runs}"
-
-YEAR=$(ehb_production_year_for_task "${SLURM_ARRAY_TASK_ID}")
-ehb_validate_production_year "${YEAR}"
-ehb_build_production_time_window "${YEAR}" TIME_START TIME_END
-
-ensure_manifest
-
-echo "[info] $(date -Is) starting production year ${YEAR} on host $(hostname)"
-echo "[info] output dir: ${PRODUCTION_OUTPUT_DIR}"
-/usr/bin/time -v python run_budget.py \
-  "${COMMON_RUN_ARGS[@]}" \
-  --time-start "${TIME_START}" \
-  --time-end "${TIME_END}"
-echo "[info] $(date -Is) finished production year ${YEAR}"
+/usr/bin/time -v python staged_arco_retrieval.py "${RETRIEVAL_ARGS[@]}"
+echo "[info] $(date -Is) finished production staged ARCO retrieval for year ${YEAR}"

@@ -844,6 +844,102 @@ def test_slurm_script_requires_staged_cache_root(tmp_path):
     assert "requires STAGED_CACHE_ROOT" in result.stdout + result.stderr
 
 
+def test_production_slurm_script_requires_staged_cache_root(tmp_path):
+    script_path = Path(PROJECT_ROOT) / "schedulers" / "schedule_run_budget_production_slurm.sh"
+    env = os.environ.copy()
+    env.update(
+        {
+            "PROJECT_ROOT": PROJECT_ROOT,
+            "LOG_DIR": str(tmp_path / "logs"),
+            "DATA_SOURCE": "staged_arco_cache",
+            "STAGED_CACHE_ROOT": "",
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(script_path)],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "requires STAGED_CACHE_ROOT" in result.stdout + result.stderr
+
+
+def test_production_staged_retrieval_slurm_script_requires_staged_cache_root(tmp_path):
+    script_path = Path(PROJECT_ROOT) / "schedulers" / "schedule_staged_arco_retrieval_production_slurm.sh"
+    env = os.environ.copy()
+    env.update(
+        {
+            "PROJECT_ROOT": PROJECT_ROOT,
+            "LOG_DIR": str(tmp_path / "logs"),
+            "STAGED_CACHE_ROOT": "",
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(script_path)],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "requires STAGED_CACHE_ROOT" in result.stdout + result.stderr
+
+
+def test_production_settings_share_yearly_domain_and_cache_args(tmp_path):
+    script = """
+set -euo pipefail
+source schedulers/production_run_cli_settings
+YEAR=$(ehb_production_year_for_task 5)
+ehb_build_production_time_window "${YEAR}" TIME_START TIME_END
+RUN_ARGS=()
+ehb_build_production_run_budget_args RUN_ARGS
+RETRIEVAL_ARGS=()
+ehb_build_production_staged_retrieval_args RETRIEVAL_ARGS "${TIME_START}" "${TIME_END}"
+printf 'YEAR=%s\n' "${YEAR}"
+printf 'TIME_START=%s\n' "${TIME_START}"
+printf 'TIME_END=%s\n' "${TIME_END}"
+printf 'RUN_ARGS=%s\n' "${RUN_ARGS[*]}"
+printf 'RETRIEVAL_ARGS=%s\n' "${RETRIEVAL_ARGS[*]}"
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "REPO_ROOT": PROJECT_ROOT,
+            "STAGED_CACHE_ROOT": str(tmp_path / "cache"),
+            "PRODUCTION_OUTPUT_DIR": str(tmp_path / "production"),
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    output = result.stdout
+    assert "YEAR=1945" in output
+    assert "TIME_START=1945-05-01T00:00:00" in output
+    assert "TIME_END=1945-10-31T23:00:00" in output
+    assert "--data-source staged_arco_cache" in output
+    assert f"--production-output-dir {tmp_path / 'production'}" in output
+    assert f"--staged-cache-root {tmp_path / 'cache'}" in output
+    assert "--region pnw_bartusek" in output
+    assert "--zg-top-pa 50000" in output
+    assert "--zg-bottom pressure_level --zg-bottom-pa 70000" in output
+    assert "--time-start 1945-05-01T00:00:00 --time-end 1945-10-31T23:00:00" in output
+
+
 def _configure_main_stubs(monkeypatch, args):
     _configure_core_stubs(monkeypatch, args)
     monkeypatch.setattr(
