@@ -341,3 +341,14 @@ def test_staged_arco_retrieval_rejects_surface_variables(monkeypatch, tmp_path):
 
     with pytest.raises(NotImplementedError, match=variables.SURFACE_VARIABLE_ERROR):
         staged_arco_retrieval.main()
+
+
+def test_staged_arco_retrieval_entrypoint_configures_dask(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(staged_arco_retrieval.run_budget, "configure_dask_runtime", lambda: calls.append("configured"))
+    monkeypatch.setattr(staged_arco_retrieval, "main", lambda: calls.append("main"))
+
+    staged_arco_retrieval.run()
+
+    assert calls == ["configured", "main"]

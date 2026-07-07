@@ -53,7 +53,8 @@ export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
 export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
-export EHB_DASK_N_WORKERS="${EHB_DASK_N_WORKERS:-4}"
+EHB_DASK_MAX_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
+export EHB_DASK_N_WORKERS="${EHB_DASK_N_WORKERS:-${EHB_DASK_MAX_WORKERS}}"
 
 source "${SETTINGS_FILE}"
 
@@ -82,7 +83,7 @@ cd "${SCRIPT_DIR}"
 echo "[info] $(date -Is) starting staged ARCO retrieval on host $(hostname)"
 echo "[info] repo root: ${REPO_ROOT}"
 echo "[info] slurm job id: ${SLURM_JOB_ID:-not-set}"
-echo "[info] dask: threaded scheduler, workers=${EHB_DASK_N_WORKERS}"
+echo "[info] dask: threaded scheduler, requested_workers=${EHB_DASK_N_WORKERS}, max_workers=${EHB_DASK_MAX_WORKERS}"
 echo "[info] settings file: ${SETTINGS_FILE}"
 echo "[info] staged cache root: ${STAGED_CACHE_ROOT}"
 

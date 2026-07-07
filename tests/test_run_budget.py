@@ -186,6 +186,29 @@ def test_build_dask_threaded_config_reads_worker_override():
     }
 
 
+def test_build_dask_threaded_config_caps_workers_to_slurm_cpus():
+    config = run_budget.build_dask_threaded_config(
+        env={
+            "EHB_DASK_N_WORKERS": "8",
+            "SLURM_CPUS_PER_TASK": "1",
+        }
+    )
+
+    assert config == {
+        "scheduler": "threads",
+        "num_workers": 1,
+    }
+
+
+def test_build_dask_threaded_config_defaults_to_slurm_cpus_when_lower():
+    config = run_budget.build_dask_threaded_config(env={"SLURM_CPUS_PER_TASK": "2"})
+
+    assert config == {
+        "scheduler": "threads",
+        "num_workers": 2,
+    }
+
+
 def test_configure_dask_runtime_sets_threaded_scheduler(monkeypatch, capsys):
     dask_config_calls = []
     monkeypatch.setattr(run_budget.dask.config, "set", lambda config: dask_config_calls.append(config))
@@ -896,7 +919,7 @@ def test_production_staged_retrieval_slurm_script_requires_staged_cache_root(tmp
 def test_production_settings_share_yearly_domain_and_cache_args(tmp_path):
     script = """
 set -euo pipefail
-source schedulers/production_run_cli_settings
+source schedulers/production_run_cli_settings.sh
 YEAR=$(ehb_production_year_for_task 5)
 ehb_build_production_time_window "${YEAR}" TIME_START TIME_END
 RUN_ARGS=()

@@ -167,5 +167,10 @@ def _build_tile_from_arco(
     )
 
 
-if __name__ == "__main__":
+def run() -> None:
+    run_budget.configure_dask_runtime()
     main()
+
+
+if __name__ == "__main__":
+    run()

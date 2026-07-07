@@ -2,10 +2,10 @@
 #SBATCH --job-name=ehb_stage_arco_prod
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=36G
-#SBATCH --time=24:00:00
-#SBATCH --array=0-85%7
+#SBATCH --time=12:00:00
+#SBATCH --array=0-4%5
 #SBATCH --output=/dev/null
 
 set -euo pipefail
@@ -56,7 +56,8 @@ export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
 export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
-export EHB_DASK_N_WORKERS="${EHB_DASK_N_WORKERS:-4}"
+EHB_DASK_MAX_WORKERS="${SLURM_CPUS_PER_TASK:-8}"
+export EHB_DASK_N_WORKERS="${EHB_DASK_N_WORKERS:-${EHB_DASK_MAX_WORKERS}}"
 
 source "${SETTINGS_FILE}"
 
@@ -94,7 +95,7 @@ echo "[info] $(date -Is) starting production staged ARCO retrieval for year ${YE
 echo "[info] repo root: ${REPO_ROOT}"
 echo "[info] slurm job id: ${SLURM_JOB_ID:-not-set}"
 echo "[info] slurm array job/task: ${SLURM_ARRAY_JOB_ID:-not-set}/${SLURM_ARRAY_TASK_ID:-not-set}"
-echo "[info] dask: threaded scheduler, workers=${EHB_DASK_N_WORKERS}"
+echo "[info] dask: threaded scheduler, requested_workers=${EHB_DASK_N_WORKERS}, max_workers=${EHB_DASK_MAX_WORKERS}"
 echo "[info] settings file: ${SETTINGS_FILE}"
 echo "[info] staged cache root: ${STAGED_CACHE_ROOT}"
 echo "[info] time window: ${TIME_START} to ${TIME_END}"

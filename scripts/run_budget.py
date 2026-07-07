@@ -204,9 +204,14 @@ def build_dask_threaded_config(
     env: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     active_env = os.environ if env is None else env
+    requested_workers = _env_int(active_env, "EHB_DASK_N_WORKERS", 4)
+    slurm_cpus_per_task = _env_int(active_env, "SLURM_CPUS_PER_TASK", 0)
+    if slurm_cpus_per_task > 0:
+        requested_workers = min(requested_workers, slurm_cpus_per_task)
+
     return {
         "scheduler": "threads",
-        "num_workers": _env_int(active_env, "EHB_DASK_N_WORKERS", 4),
+        "num_workers": max(1, requested_workers),
     }
 
 
