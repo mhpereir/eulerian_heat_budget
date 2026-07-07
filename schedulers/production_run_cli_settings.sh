@@ -39,10 +39,21 @@ ehb_default_production_output_dir() {
   fi
 }
 
+ehb_default_staged_cache_root() {
+  if [[ -n "${SCRATCH:-}" ]]; then
+    printf "%s\n" "${SCRATCH}/eulerian_heat_budget/results/staged_arco_cache/production"
+  else
+    printf "%s\n" "${REPO_ROOT:-$(pwd)}/results/staged_arco_cache/production"
+  fi
+}
+
 DEFAULT_PRODUCTION_OUTPUT_DIR="${DEFAULT_PRODUCTION_OUTPUT_DIR:-$(ehb_default_production_output_dir)}"
 PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-${DEFAULT_PRODUCTION_OUTPUT_DIR}}"
 MANIFEST_PATH="${MANIFEST_PATH:-${PRODUCTION_OUTPUT_DIR}/production_run.json}"
 MANIFEST_LOCK_DIR="${MANIFEST_LOCK_DIR:-${PRODUCTION_OUTPUT_DIR}/.manifest_init.lock}"
+
+DEFAULT_STAGED_CACHE_ROOT="${DEFAULT_STAGED_CACHE_ROOT:-$(ehb_default_staged_cache_root)}"
+STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT-${DEFAULT_STAGED_CACHE_ROOT}}"
 
 ehb_require_staged_cache_root() {
   local context="$1"

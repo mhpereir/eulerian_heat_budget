@@ -6,7 +6,10 @@
 #SBATCH --mem=36G
 #SBATCH --time=24:00:00
 #SBATCH --array=0-85%7
-#SBATCH --output=/dev/null
+# Submit from the repository root after ensuring logs/ exists; Slurm
+# resolves output paths before this script can compute REPO_ROOT.
+#SBATCH --output=logs/%A_%a_EHB_prod.log
+#SBATCH --error=logs/%A_%a_EHB_prod.log
 
 set -euo pipefail
 
@@ -48,7 +51,11 @@ ARRAY_TASK_ID_FOR_LOG="${SLURM_ARRAY_TASK_ID:-noarray}"
 LOGFILE="${LOG_DIR}/${ARRAY_JOB_ID}_${ARRAY_TASK_ID_FOR_LOG}_EHB_prod.log"
 
 mkdir -p "${LOG_DIR}"
-exec > >(tee -a "${LOGFILE}") 2>&1
+if [[ -n "${SLURM_JOB_ID:-}" && -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+  exec > >(tee -a "${LOGFILE}" >/dev/null) 2>&1
+else
+  exec > >(tee -a "${LOGFILE}") 2>&1
+fi
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
