@@ -49,11 +49,11 @@ ARRAY_TASK_ID_FOR_LOG="${SLURM_ARRAY_TASK_ID:-noarray}"
 LOGFILE="${LOG_DIR}/${ARRAY_JOB_ID}_${ARRAY_TASK_ID_FOR_LOG}_EHB_stage_arco_prod.log"
 
 mkdir -p "${LOG_DIR}"
-if [[ -n "${SLURM_JOB_ID:-}" ]]; then
-  exec > >(tee -a "${LOGFILE}" >/dev/null) 2>&1
-else
-  exec > >(tee -a "${LOGFILE}") 2>&1
-fi
+# if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+#   exec > >(tee -a "${LOGFILE}" >/dev/null) 2>&1
+# else
+#   exec > >(tee -a "${LOGFILE}") 2>&1
+# fi
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
