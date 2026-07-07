@@ -6,8 +6,8 @@
 #SBATCH --mem=36G
 #SBATCH --time=12:00:00
 #SBATCH --array=0-4%5
-#SBATCH --output=/home/mhpereir/eulerian_heat_budget/logs/%A_%a_EHB_stage_arco_prod.log
-#SBATCH --error=/home/mhpereir/eulerian_heat_budget/logs/%A_%a_EHB_stage_arco_prod.log
+#SBATCH --output=/home/mhpereir/projects/eulerian_heat_budget/logs/%A_%a_EHB_stage_arco_prod.log
+#SBATCH --error=/home/mhpereir/projects/eulerian_heat_budget/logs/%A_%a_EHB_stage_arco_prod.log
 
 set -euo pipefail
 
