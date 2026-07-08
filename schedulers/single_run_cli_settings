@@ -8,13 +8,13 @@
 
 TIME_START="${TIME_START:-1941-05-01T00:00:00}"
 TIME_END="${TIME_END:-1941-09-01T00:00:00}"
-REGION="${REGION:-pnw_bartusek}"
+REGION="${REGION:-ocean_test}"
 
 STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-/home/mhpereir/eulerian_heat_budget/results/staged_arco_cache/single_run}"
 
-ZG_TOP_PA="${ZG_TOP_PA:-100}"
-ZG_BOTTOM="${ZG_BOTTOM:-surface_pressure}"
-ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-}"
+ZG_TOP_PA="${ZG_TOP_PA:-30000}"
+ZG_BOTTOM="${ZG_BOTTOM:-pressure_level}"
+ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-50000}"
 ALLOW_BOTTOM_OVERFLOW="${ALLOW_BOTTOM_OVERFLOW:-1}"
 
 USE_SURFACE_VARIABLES="${USE_SURFACE_VARIABLES:-0}"

@@ -38,6 +38,94 @@ def _source_cfg() -> DataSourceConfig:
     )
 
 
+def _source_cfg_with(
+    *,
+    time_start: str = "1940-06-01T00:00:00",
+    time_end: str = "1940-06-01T04:00:00",
+    arco_path: str = "gs://example.zarr",
+) -> DataSourceConfig:
+    return DataSourceConfig(
+        kind="arco_era5",
+        arco_path=arco_path,
+        time_start=time_start,
+        time_end=time_end,
+    )
+
+
+def _staged_source_cfg(
+    *,
+    time_start: str = "1940-06-01T00:00:00",
+    time_end: str = "1940-06-01T04:00:00",
+    staged_cache_root: str = "/tmp/ehb-cache",
+    arco_path: str = "gs://example.zarr",
+) -> DataSourceConfig:
+    return DataSourceConfig(
+        kind="staged_arco_cache",
+        staged_cache_root=staged_cache_root,
+        arco_path=arco_path,
+        time_start=time_start,
+        time_end=time_end,
+    )
+
+
+def _request_with(
+    *,
+    zg_top_pressure: float = 80000.0,
+    zg_bottom: str = "pressure_level",
+    zg_bottom_pressure: float | None = 100000.0,
+) -> DomainRequest:
+    return DomainRequest(
+        bbox=(1.0, 5.0, 11.0, 15.0),
+        margin_n=1,
+        zg_top_pressure=zg_top_pressure,
+        zg_bottom=zg_bottom,  # type: ignore[arg-type]
+        zg_bottom_pressure=zg_bottom_pressure,
+    )
+
+
+def _patch_to_zarr_creates_store(monkeypatch) -> None:
+    def fake_to_zarr(self, path, mode="w"):
+        Path(path).mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(xr.Dataset, "to_zarr", fake_to_zarr)
+
+
+def _patch_open_zarr_from_registry(monkeypatch, registry: dict[str, xr.Dataset], opened: list[str] | None = None) -> None:
+    def fake_open_zarr(path, *args, **kwargs):
+        key = str(path)
+        if opened is not None:
+            opened.append(key)
+        return registry[key]
+
+    monkeypatch.setattr(cache.xr, "open_zarr", fake_open_zarr)
+
+
+def _write_indexed_tile(
+    tmp_path,
+    source_cfg: DataSourceConfig,
+    request: DomainRequest,
+    *,
+    include_benchmark_variables: bool = False,
+    ds: xr.Dataset | None = None,
+) -> tuple[Path, xr.Dataset]:
+    source_ds = _canonical_dataset() if ds is None else ds
+    if source_cfg.time_start is not None or source_cfg.time_end is not None:
+        source_ds = source_ds.sel(time=slice(source_cfg.time_start, source_cfg.time_end))
+    tile = cache.build_arco_cache_tile(
+        source_ds,
+        request,
+        include_benchmark_variables=include_benchmark_variables,
+    )
+    tile_path = cache.write_tile(
+        tmp_path,
+        tile,
+        source_cfg,
+        request,
+        include_benchmark_variables=include_benchmark_variables,
+    )
+    return tile_path, tile
+
+
 def _surface_specs() -> SurfaceBehaviour:
     return SurfaceBehaviour(
         allow_bottom_overflow=False,
@@ -168,6 +256,34 @@ def test_normalize_zarr_chunks_clears_inherited_arco_encoding():
     assert out["Fy_mass"].chunks == ((5,), (4,), (3,))
 
 
+def test_tile_id_changes_with_vertical_request_fields():
+    source_cfg = _source_cfg()
+    ids = {
+        cache.tile_id_for_request(
+            source_cfg,
+            _request_with(zg_top_pressure=80000.0, zg_bottom="pressure_level", zg_bottom_pressure=100000.0),
+            include_benchmark_variables=False,
+        ),
+        cache.tile_id_for_request(
+            source_cfg,
+            _request_with(zg_top_pressure=90000.0, zg_bottom="pressure_level", zg_bottom_pressure=100000.0),
+            include_benchmark_variables=False,
+        ),
+        cache.tile_id_for_request(
+            source_cfg,
+            _request_with(zg_top_pressure=80000.0, zg_bottom="pressure_level", zg_bottom_pressure=90000.0),
+            include_benchmark_variables=False,
+        ),
+        cache.tile_id_for_request(
+            source_cfg,
+            _request_with(zg_top_pressure=80000.0, zg_bottom="surface_pressure", zg_bottom_pressure=None),
+            include_benchmark_variables=False,
+        ),
+    }
+
+    assert len(ids) == 4
+
+
 def test_write_tile_removes_partial_tmp_store_on_failure(monkeypatch, tmp_path):
     source_cfg = _source_cfg()
     request = _request()
@@ -240,6 +356,78 @@ def test_staged_arco_retrieval_retries_transient_write_failures(monkeypatch, tmp
     assert sleeps == [3.0]
 
 
+def test_staged_retrieval_skips_only_exact_existing_tile(monkeypatch, tmp_path):
+    _patch_to_zarr_creates_store(monkeypatch)
+    source_cfg = DataSourceConfig(
+        kind="arco_era5",
+        arco_path=staged_arco_retrieval.config.DEFAULT_ARCO_PATH,
+        time_start="1940-06-01T00:00:00",
+        time_end="1940-06-01T04:00:00",
+    )
+    broad_request = _request_with(
+        zg_top_pressure=70000.0,
+        zg_bottom="pressure_level",
+        zg_bottom_pressure=100000.0,
+    )
+    target_request = _request()
+    _write_indexed_tile(tmp_path, source_cfg, broad_request)
+
+    args = cli.parse_args(
+        [
+            "--lat-min",
+            "1",
+            "--lat-max",
+            "5",
+            "--lon-min",
+            "11",
+            "--lon-max",
+            "15",
+            "--time-start",
+            "1940-06-01T00:00:00",
+            "--time-end",
+            "1940-06-01T04:00:00",
+            "--zg-top-pa",
+            "80000",
+            "--zg-bottom",
+            "pressure_level",
+            "--zg-bottom-pa",
+            "100000",
+            "--staged-cache-root",
+            str(tmp_path),
+            "--no-use-surface-variables",
+        ]
+    )
+    build_calls = []
+
+    def fake_build_tile_from_arco(*args, **kwargs):
+        build_calls.append((args, kwargs))
+        return cache.build_arco_cache_tile(
+            _canonical_dataset(),
+            target_request,
+            include_benchmark_variables=False,
+        )
+
+    monkeypatch.setattr(staged_arco_retrieval, "parse_args", lambda: args)
+    monkeypatch.setattr(staged_arco_retrieval, "_build_tile_from_arco", fake_build_tile_from_arco)
+
+    staged_arco_retrieval.main()
+
+    assert len(build_calls) == 1
+    assert cache.exact_tile_exists(
+        tmp_path,
+        source_cfg,
+        target_request,
+        include_benchmark_variables=False,
+    )
+
+    monkeypatch.setattr(
+        staged_arco_retrieval,
+        "_build_tile_from_arco",
+        lambda *args, **kwargs: pytest.fail("exact tile should have been skipped"),
+    )
+    staged_arco_retrieval.main()
+
+
 def test_cache_load_reconstructs_from_local_tile_without_arco(monkeypatch, tmp_path):
     source_cfg = _source_cfg()
     request = _request()
@@ -273,6 +461,157 @@ def test_cache_load_reconstructs_from_local_tile_without_arco(monkeypatch, tmp_p
     assert "T" in out
     assert "u" in out
     assert bool(out["u"].sel(lon=13.0).isnull().all())
+
+
+def test_cache_load_prefers_exact_vertical_tile(monkeypatch, tmp_path):
+    _patch_to_zarr_creates_store(monkeypatch)
+    source_cfg = _source_cfg()
+    request = _request()
+    broad_request = _request_with(
+        zg_top_pressure=70000.0,
+        zg_bottom="pressure_level",
+        zg_bottom_pressure=100000.0,
+    )
+    broad_path, broad_tile = _write_indexed_tile(tmp_path, source_cfg, broad_request)
+    exact_path, exact_tile = _write_indexed_tile(tmp_path, source_cfg, request)
+    registry = {str(broad_path): broad_tile, str(exact_path): exact_tile}
+    opened = []
+    _patch_open_zarr_from_registry(monkeypatch, registry, opened)
+
+    out = cache.load_cache_dataset(
+        tmp_path,
+        _staged_source_cfg(staged_cache_root=str(tmp_path)),
+        request,
+        include_benchmark_variables=False,
+    )
+
+    assert opened == [str(exact_path)]
+    assert out.sizes["level"] == exact_tile.sizes["level"]
+
+
+def test_cache_load_rejects_insufficient_vertical_coverage(monkeypatch, tmp_path):
+    _patch_to_zarr_creates_store(monkeypatch)
+    source_cfg = _source_cfg()
+    shallow_request = _request_with(
+        zg_top_pressure=90000.0,
+        zg_bottom="pressure_level",
+        zg_bottom_pressure=100000.0,
+    )
+    shallow_path, shallow_tile = _write_indexed_tile(tmp_path, source_cfg, shallow_request)
+    _patch_open_zarr_from_registry(monkeypatch, {str(shallow_path): shallow_tile})
+
+    with pytest.raises(cache.OfflineCoverageError, match="No staged ARCO cache tiles"):
+        cache.load_cache_dataset(
+            tmp_path,
+            _staged_source_cfg(staged_cache_root=str(tmp_path)),
+            _request(),
+            include_benchmark_variables=False,
+        )
+
+
+def test_cache_load_rejects_different_arco_source_path(monkeypatch, tmp_path):
+    _patch_to_zarr_creates_store(monkeypatch)
+    other_source = _source_cfg_with(arco_path="gs://other.zarr")
+    tile_path, tile = _write_indexed_tile(tmp_path, other_source, _request())
+    _patch_open_zarr_from_registry(monkeypatch, {str(tile_path): tile})
+
+    with pytest.raises(cache.OfflineCoverageError, match="No staged ARCO cache tiles"):
+        cache.load_cache_dataset(
+            tmp_path,
+            _staged_source_cfg(staged_cache_root=str(tmp_path), arco_path="gs://example.zarr"),
+            _request(),
+            include_benchmark_variables=False,
+        )
+
+
+def test_cache_load_combines_complementary_time_tiles(monkeypatch, tmp_path):
+    _patch_to_zarr_creates_store(monkeypatch)
+    request = _request()
+    first_source = _source_cfg_with(
+        time_start="1940-06-01T00:00:00",
+        time_end="1940-06-01T02:00:00",
+    )
+    second_source = _source_cfg_with(
+        time_start="1940-06-01T03:00:00",
+        time_end="1940-06-01T04:00:00",
+    )
+    first_path, first_tile = _write_indexed_tile(tmp_path, first_source, request)
+    second_path, second_tile = _write_indexed_tile(tmp_path, second_source, request)
+    _patch_open_zarr_from_registry(
+        monkeypatch,
+        {
+            str(first_path): first_tile,
+            str(second_path): second_tile,
+        },
+    )
+
+    out = cache.load_cache_dataset(
+        tmp_path,
+        _staged_source_cfg(staged_cache_root=str(tmp_path)),
+        request,
+        include_benchmark_variables=False,
+    )
+
+    assert out.sizes["time"] == 5
+    assert str(out["time"].values[0]) == "1940-06-01T00:00:00.000000000"
+    assert str(out["time"].values[-1]) == "1940-06-01T04:00:00.000000000"
+
+
+def test_cache_load_rejects_conflicting_overlapping_time_tiles(monkeypatch, tmp_path):
+    _patch_to_zarr_creates_store(monkeypatch)
+    request = _request()
+    first_source = _source_cfg_with(
+        time_start="1940-06-01T00:00:00",
+        time_end="1940-06-01T03:00:00",
+    )
+    second_source = _source_cfg_with(
+        time_start="1940-06-01T02:00:00",
+        time_end="1940-06-01T04:00:00",
+    )
+    first_path, first_tile = _write_indexed_tile(tmp_path, first_source, request)
+    conflicting_ds = _canonical_dataset().copy(deep=True)
+    conflicting_ds["T"] = conflicting_ds["T"] + 1000.0
+    second_path, second_tile = _write_indexed_tile(
+        tmp_path,
+        second_source,
+        request,
+        ds=conflicting_ds,
+    )
+    _patch_open_zarr_from_registry(
+        monkeypatch,
+        {
+            str(first_path): first_tile,
+            str(second_path): second_tile,
+        },
+    )
+
+    with pytest.raises(cache.OfflineCoverageError, match="conflict"):
+        cache.load_cache_dataset(
+            tmp_path,
+            _staged_source_cfg(staged_cache_root=str(tmp_path)),
+            request,
+            include_benchmark_variables=False,
+        )
+
+
+def test_benchmark_cache_load_rejects_nonbenchmark_tile(monkeypatch, tmp_path):
+    _patch_to_zarr_creates_store(monkeypatch)
+    source_cfg = _source_cfg()
+    tile_path, tile = _write_indexed_tile(
+        tmp_path,
+        source_cfg,
+        _request(),
+        include_benchmark_variables=False,
+    )
+    _patch_open_zarr_from_registry(monkeypatch, {str(tile_path): tile})
+
+    with pytest.raises(cache.OfflineCoverageError, match="No staged ARCO cache tiles"):
+        cache.load_cache_dataset(
+            tmp_path,
+            _staged_source_cfg(staged_cache_root=str(tmp_path)),
+            _request(),
+            include_benchmark_variables=True,
+        )
 
 
 def test_wall_only_reconstruction_matches_full_budget(tmp_path):
