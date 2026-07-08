@@ -61,13 +61,13 @@ def main() -> None:
             time_end=time_end,
         )
 
-        if cache.cache_has_coverage(
+        if cache.exact_tile_exists(
             cache_root,
             source_cfg,
             request,
             include_benchmark_variables=args.include_benchmark_variables,
         ):
-            print(f"[info] cache already covers {time_start} to {time_end}; skipping")
+            print(f"[info] exact staged tile already exists for {time_start} to {time_end}; skipping")
             continue
 
         print(f"[info] staging ARCO ERA5 {time_start} to {time_end}")
