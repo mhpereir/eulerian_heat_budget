@@ -11,6 +11,7 @@ TIME_END="${TIME_END:-1941-09-01T00:00:00}"
 REGION="${REGION:-ocean_test}"
 
 STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-/home/mhpereir/eulerian_heat_budget/results/staged_arco_cache/single_run}"
+STAGED_ARCO_TIME_CHUNK="${STAGED_ARCO_TIME_CHUNK:-month}"
 
 ZG_TOP_PA="${ZG_TOP_PA:-30000}"
 ZG_BOTTOM="${ZG_BOTTOM:-pressure_level}"
@@ -107,4 +108,5 @@ ehb_build_staged_arco_retrieval_args() {
 
   args_ref=(--staged-cache-root "${STAGED_CACHE_ROOT}")
   ehb_add_shared_budget_domain_args "${target_array}"
+  args_ref+=(--stage-time-chunk "${STAGED_ARCO_TIME_CHUNK}")
 }

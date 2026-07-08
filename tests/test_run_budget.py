@@ -789,6 +789,7 @@ def test_single_run_schedulers_share_cli_settings():
     retrieval_scheduler = (scheduler_dir / "schedule_staged_arco_retrieval.sh").read_text()
 
     assert "STAGED_CACHE_ROOT=" in settings
+    assert "STAGED_ARCO_TIME_CHUNK=" in settings
     assert "TIME_START=" in settings
     assert "ehb_build_run_budget_args" in settings
     assert "ehb_build_staged_arco_retrieval_args" in settings
@@ -814,6 +815,7 @@ def test_single_run_schedulers_share_cli_settings():
     )
     assert "python run_budget.py \"${RUN_ARGS[@]}\"" in run_scheduler
     assert "python staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in retrieval_scheduler
+    assert "--stage-time-chunk \"${STAGED_ARCO_TIME_CHUNK}\"" in settings
 
 
 def _configure_main_stubs(monkeypatch, args):

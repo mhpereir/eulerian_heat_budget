@@ -1,5 +1,6 @@
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
@@ -29,6 +30,16 @@ def parse_args():
         default="10-31",
         help="Campaign season end month/day used with --production-end-year.",
     )
+    parser.add_argument(
+        "--stage-time-chunk",
+        dest="stage_time_chunk",
+        choices=("none", "day", "month"),
+        default="month",
+        help=(
+            "Split each requested staging window into smaller ARCO fetch/write tiles. "
+            "Use 'none' for the previous full-window behavior."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -53,34 +64,42 @@ def main() -> None:
     cache_root = cache.init_cache_root(args.staged_cache_root)
     print(f"[info] staged ARCO cache root: {cache_root}")
 
+    stage_time_chunk = getattr(args, "stage_time_chunk", "month")
     for time_start, time_end in _iter_time_windows(args):
-        source_cfg = specs.DataSourceConfig(
-            kind="arco_era5",
-            arco_path=config.DEFAULT_ARCO_PATH,
-            time_start=time_start,
-            time_end=time_end,
-        )
+        chunk_windows = list(_iter_chunked_time_windows(time_start, time_end, stage_time_chunk))
+        if len(chunk_windows) > 1:
+            print(
+                "[info] staging window "
+                f"{time_start} to {time_end} as {len(chunk_windows)} {stage_time_chunk} chunks"
+            )
+        for chunk_start, chunk_end in chunk_windows:
+            source_cfg = specs.DataSourceConfig(
+                kind="arco_era5",
+                arco_path=config.DEFAULT_ARCO_PATH,
+                time_start=chunk_start,
+                time_end=chunk_end,
+            )
 
-        if cache.exact_tile_exists(
-            cache_root,
-            source_cfg,
-            request,
-            include_benchmark_variables=args.include_benchmark_variables,
-        ):
-            print(f"[info] exact staged tile already exists for {time_start} to {time_end}; skipping")
-            continue
+            if cache.exact_tile_exists(
+                cache_root,
+                source_cfg,
+                request,
+                include_benchmark_variables=args.include_benchmark_variables,
+            ):
+                print(f"[info] exact staged tile already exists for {chunk_start} to {chunk_end}; skipping")
+                continue
 
-        print(f"[info] staging ARCO ERA5 {time_start} to {time_end}")
-        tile_path, tile = _stage_window_with_retry(
-            cache_root,
-            source_cfg,
-            request,
-            include_benchmark_variables=args.include_benchmark_variables,
-        )
-        print(
-            "[info] wrote staged tile "
-            f"{tile_path} sizes={dict(tile.sizes)} variables={list(tile.data_vars)}"
-        )
+            print(f"[info] staging ARCO ERA5 {chunk_start} to {chunk_end}")
+            tile_path, tile = _stage_window_with_retry(
+                cache_root,
+                source_cfg,
+                request,
+                include_benchmark_variables=args.include_benchmark_variables,
+            )
+            print(
+                "[info] wrote staged tile "
+                f"{tile_path} sizes={dict(tile.sizes)} variables={list(tile.data_vars)}"
+            )
 
 
 def _stage_window_with_retry(
@@ -142,6 +161,55 @@ def _iter_time_windows(args):
         args.time_start if args.time_start is not None else config.DEFAULT_TIME_START,
         args.time_end if args.time_end is not None else config.DEFAULT_TIME_END,
     )
+
+
+def _iter_chunked_time_windows(time_start: str, time_end: str, chunk: str):
+    if chunk == "none":
+        yield time_start, time_end
+        return
+    if chunk not in {"day", "month"}:
+        raise ValueError("--stage-time-chunk must be one of: none, day, month.")
+
+    start = _parse_hourly_iso_time(time_start)
+    end = _parse_hourly_iso_time(time_end)
+    if start > end:
+        raise ValueError(f"time_start={time_start!r} is after time_end={time_end!r}.")
+
+    current = start
+    while current <= end:
+        boundary = _next_chunk_boundary(current, chunk)
+        chunk_end = min(end, boundary - timedelta(hours=1))
+        if chunk_end < current:
+            raise ValueError(
+                f"Could not build a non-empty {chunk} chunk starting at {current.isoformat()}."
+            )
+        yield _format_time(current), _format_time(chunk_end)
+        current = chunk_end + timedelta(hours=1)
+
+
+def _parse_hourly_iso_time(value: str) -> datetime:
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    if parsed.minute != 0 or parsed.second != 0 or parsed.microsecond != 0:
+        raise ValueError(
+            "Staged ARCO time chunking expects hourly-aligned ISO times; "
+            f"got {value!r}."
+        )
+    return parsed
+
+
+def _next_chunk_boundary(current: datetime, chunk: str) -> datetime:
+    if chunk == "day":
+        return datetime(current.year, current.month, current.day) + timedelta(days=1)
+    if current.month == 12:
+        return datetime(current.year + 1, 1, 1)
+    return datetime(current.year, current.month + 1, 1)
+
+
+def _format_time(value: datetime) -> str:
+    return value.isoformat(timespec="seconds")
 
 
 def _build_tile_from_arco(

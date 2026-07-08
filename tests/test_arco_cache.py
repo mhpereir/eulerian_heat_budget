@@ -356,6 +356,93 @@ def test_staged_arco_retrieval_retries_transient_write_failures(monkeypatch, tmp
     assert sleeps == [3.0]
 
 
+def test_staged_retrieval_chunks_month_windows():
+    windows = list(
+        staged_arco_retrieval._iter_chunked_time_windows(
+            "1940-05-15T12:00:00",
+            "1940-07-02T03:00:00",
+            "month",
+        )
+    )
+
+    assert windows == [
+        ("1940-05-15T12:00:00", "1940-05-31T23:00:00"),
+        ("1940-06-01T00:00:00", "1940-06-30T23:00:00"),
+        ("1940-07-01T00:00:00", "1940-07-02T03:00:00"),
+    ]
+
+
+def test_staged_retrieval_chunks_day_windows():
+    windows = list(
+        staged_arco_retrieval._iter_chunked_time_windows(
+            "1940-06-01T12:00:00",
+            "1940-06-03T02:00:00",
+            "day",
+        )
+    )
+
+    assert windows == [
+        ("1940-06-01T12:00:00", "1940-06-01T23:00:00"),
+        ("1940-06-02T00:00:00", "1940-06-02T23:00:00"),
+        ("1940-06-03T00:00:00", "1940-06-03T02:00:00"),
+    ]
+
+
+def test_staged_retrieval_main_stages_each_month_chunk(monkeypatch, tmp_path):
+    args = cli.parse_args(
+        [
+            "--lat-min",
+            "1",
+            "--lat-max",
+            "5",
+            "--lon-min",
+            "11",
+            "--lon-max",
+            "15",
+            "--time-start",
+            "1940-06-01T00:00:00",
+            "--time-end",
+            "1940-07-01T02:00:00",
+            "--zg-top-pa",
+            "80000",
+            "--zg-bottom",
+            "pressure_level",
+            "--zg-bottom-pa",
+            "100000",
+            "--staged-cache-root",
+            str(tmp_path),
+            "--no-use-surface-variables",
+        ]
+    )
+    args.stage_time_chunk = "month"
+    staged_windows = []
+
+    def fake_stage_window_with_retry(
+        cache_root,
+        source_cfg,
+        request,
+        *,
+        include_benchmark_variables,
+    ):
+        staged_windows.append((source_cfg.time_start, source_cfg.time_end))
+        tile = xr.Dataset({"dummy": xr.DataArray([1.0], dims=("time",))})
+        return tmp_path / f"tile-{len(staged_windows)}.zarr", tile
+
+    monkeypatch.setattr(staged_arco_retrieval, "parse_args", lambda: args)
+    monkeypatch.setattr(
+        staged_arco_retrieval,
+        "_stage_window_with_retry",
+        fake_stage_window_with_retry,
+    )
+
+    staged_arco_retrieval.main()
+
+    assert staged_windows == [
+        ("1940-06-01T00:00:00", "1940-06-30T23:00:00"),
+        ("1940-07-01T00:00:00", "1940-07-01T02:00:00"),
+    ]
+
+
 def test_staged_retrieval_skips_only_exact_existing_tile(monkeypatch, tmp_path):
     _patch_to_zarr_creates_store(monkeypatch)
     source_cfg = DataSourceConfig(
