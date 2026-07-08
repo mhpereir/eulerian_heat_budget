@@ -306,8 +306,13 @@ def calculate_budget(
             out,
             advection_terms_out,
         )
+        benchmark_output_face_fluxes = terms.compute_benchmark_output_face_fluxes(
+            benchmark_mass_fluxes,
+            benchmark_heat_fluxes,
+            out["time"],
+        )
         out = xr.merge(
-            [out, benchmark_diagnostic_totals],
+            [out, benchmark_diagnostic_totals, benchmark_output_face_fluxes],
             compat="equals",
             join="exact",
         ).compute()
