@@ -892,3 +892,54 @@ def compute_benchmark_diagnostic_totals(
     )
 
     return out
+
+
+def compute_benchmark_output_face_fluxes(
+    benchmark_mass_fluxes: xr.Dataset,
+    benchmark_heat_fluxes: xr.Dataset,
+    output_time: xr.DataArray,
+) -> xr.Dataset:
+    """Return per-face benchmark fluxes in the output-file sign convention."""
+    faces = ("north", "south", "east", "west")
+    mass_face_names = [
+        f"benchmark_mass_flux_{face}"
+        for face in faces
+        if f"benchmark_mass_flux_{face}" in benchmark_mass_fluxes
+    ]
+    heat_face_names = [
+        f"benchmark_heat_flux_{face}"
+        for face in faces
+        if f"benchmark_heat_flux_{face}" in benchmark_heat_fluxes
+    ]
+
+    parts = []
+    if mass_face_names:
+        parts.append(-benchmark_mass_fluxes[mass_face_names].sel(time=output_time))
+    if heat_face_names:
+        parts.append(-benchmark_heat_fluxes[heat_face_names].sel(time=output_time))
+
+    if parts:
+        out = xr.merge(parts, compat="equals", join="exact")
+    else:
+        out = xr.Dataset(coords={"time": output_time})
+
+    for name in mass_face_names:
+        out[name].attrs.update(
+            {
+                "long_name": name.replace("_", " ").title(),
+                "units": "m2 Pa s-1",
+                "sign_convention": "positive into domain",
+                "diagnostic_figure": "5",
+            }
+        )
+    for name in heat_face_names:
+        out[name].attrs.update(
+            {
+                "long_name": name.replace("_", " ").title(),
+                "units": "K m2 Pa s-1",
+                "sign_convention": "positive into domain",
+                "diagnostic_figure": "5",
+            }
+        )
+
+    return out
