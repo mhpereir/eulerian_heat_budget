@@ -54,6 +54,7 @@ MANIFEST_LOCK_DIR="${MANIFEST_LOCK_DIR:-${PRODUCTION_OUTPUT_DIR}/.manifest_init.
 
 DEFAULT_STAGED_CACHE_ROOT="${DEFAULT_STAGED_CACHE_ROOT:-$(ehb_default_staged_cache_root)}"
 STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT-${DEFAULT_STAGED_CACHE_ROOT}}"
+STAGED_ARCO_TIME_CHUNK="${STAGED_ARCO_TIME_CHUNK:-month}"
 
 ehb_require_staged_cache_root() {
   local context="$1"
@@ -136,6 +137,7 @@ ehb_build_production_staged_retrieval_args() {
     --time-end "${time_end}"
   )
   ehb_add_production_domain_args "${target_array}"
+  args_ref+=(--stage-time-chunk "${STAGED_ARCO_TIME_CHUNK}")
 }
 
 ehb_production_year_for_task() {

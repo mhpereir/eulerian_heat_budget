@@ -961,6 +961,33 @@ printf 'RETRIEVAL_ARGS=%s\n' "${RETRIEVAL_ARGS[*]}"
     assert "--zg-top-pa 50000" in output
     assert "--zg-bottom pressure_level --zg-bottom-pa 70000" in output
     assert "--time-start 1945-05-01T00:00:00 --time-end 1945-10-31T23:00:00" in output
+    assert "--stage-time-chunk month" in output
+
+
+def test_single_run_slurm_schedulers_share_cli_settings():
+    scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
+    settings = (scheduler_dir / "single_run_cli_settings").read_text()
+    run_scheduler = (scheduler_dir / "schedule_run_budget_slurm.sh").read_text()
+    retrieval_scheduler = (scheduler_dir / "schedule_staged_arco_retrieval_slurm.sh").read_text()
+
+    assert "STAGED_CACHE_ROOT=" in settings
+    assert "STAGED_ARCO_TIME_CHUNK=" in settings
+    assert "TIME_START=" in settings
+    assert "ehb_build_run_budget_args" in settings
+    assert "ehb_build_staged_arco_retrieval_args" in settings
+    assert "schedule_staged_arco_retrieval_slurm.sh" in settings
+    assert "schedule_run_budget_slurm.sh" in settings
+    assert "SCHEDULER_DIR=\"${REPO_ROOT}/schedulers\"" in run_scheduler
+    assert "SCHEDULER_DIR=\"${REPO_ROOT}/schedulers\"" in retrieval_scheduler
+    assert "SETTINGS_FILE=\"${SINGLE_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/single_run_cli_settings}\"" in run_scheduler
+    assert "SETTINGS_FILE=\"${SINGLE_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/single_run_cli_settings}\"" in retrieval_scheduler
+    assert "source \"${SETTINGS_FILE}\"" in run_scheduler
+    assert "source \"${SETTINGS_FILE}\"" in retrieval_scheduler
+    assert "ehb_build_run_budget_args RUN_ARGS" in run_scheduler
+    assert "ehb_build_staged_arco_retrieval_args RETRIEVAL_ARGS" in retrieval_scheduler
+    assert "python run_budget.py \"${RUN_ARGS[@]}\"" in run_scheduler
+    assert "python staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in retrieval_scheduler
+    assert "--stage-time-chunk \"${STAGED_ARCO_TIME_CHUNK}\"" in settings
 
 
 def _configure_main_stubs(monkeypatch, args):
