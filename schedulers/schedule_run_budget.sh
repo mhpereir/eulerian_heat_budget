@@ -19,9 +19,9 @@ mamba activate dev_env
 
 set -euo pipefail
 
-TIME_START="1941-06-01T00:00:00"
+TIME_START="1941-05-01T00:00:00"
 TIME_END="1941-09-01T00:00:00"
-REGION="${REGION:-pnw_hotz}"
+REGION="${REGION:-pnw_bartusek}"
 
 cd /home/mhpereir/eulerian_heat_budget/scripts
 
@@ -31,8 +31,9 @@ echo "[info] $(date -Is) starting eulerian heat budget calculation on host $(hos
   --region "${REGION}" \
   --time-start "${TIME_START}" \
   --time-end "${TIME_END}" \
-  --zg-bottom "surface_pressure" \
-  --zg-top-pa 100 \
+  --zg-bottom "pressure_level" \
+  --zg-bottom-pa 50000 \
+  --zg-top-pa 30000 \
   --diagnostic-plots \
   --allow-bottom-overflow \
   --include-benchmark-variables \
