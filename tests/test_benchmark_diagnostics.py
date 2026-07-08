@@ -9,7 +9,10 @@ PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.terms import compute_benchmark_diagnostic_totals
+from src.terms import (
+    compute_benchmark_diagnostic_totals,
+    compute_benchmark_output_face_fluxes,
+)
 from src.plot_diagnostics import fig1_benchmark_mass_continuity, fig5_benchmark_comparison
 
 
@@ -147,6 +150,51 @@ def test_compute_benchmark_diagnostic_totals_supports_surface_bottom():
         out["benchmark_heat_flux_net_lateral_prime"],
         [-3.0 - (-1.0) * 10.0, -4.0 - (-2.0) * 20.0],
     )
+
+
+def test_compute_benchmark_output_face_fluxes_matches_output_schema():
+    full_time = np.arange(5)
+    output_time = xr.DataArray(full_time[1:-1], dims=("time",), name="time")
+    faces = ("north", "south", "east", "west")
+
+    benchmark_mass_fluxes = xr.Dataset(
+        {
+            **{
+                f"benchmark_mass_flux_{face}": ("time", np.arange(5, dtype=float))
+                for face in faces
+            },
+            "benchmark_mass_flux_net": ("time", np.arange(10, 15, dtype=float)),
+        },
+        coords={"time": full_time},
+    )
+    benchmark_heat_fluxes = xr.Dataset(
+        {
+            **{
+                f"benchmark_heat_flux_{face}": ("time", np.arange(20, 25, dtype=float))
+                for face in faces
+            },
+            "benchmark_heat_flux_net": ("time", np.arange(30, 35, dtype=float)),
+        },
+        coords={"time": full_time},
+    )
+
+    out = compute_benchmark_output_face_fluxes(
+        benchmark_mass_fluxes,
+        benchmark_heat_fluxes,
+        output_time,
+    )
+
+    assert set(out.data_vars) == {
+        *(f"benchmark_mass_flux_{face}" for face in faces),
+        *(f"benchmark_heat_flux_{face}" for face in faces),
+    }
+    npt.assert_array_equal(out["time"], full_time[1:-1])
+    npt.assert_allclose(out["benchmark_mass_flux_north"], [-1.0, -2.0, -3.0])
+    npt.assert_allclose(out["benchmark_heat_flux_north"], [-21.0, -22.0, -23.0])
+    assert out["benchmark_mass_flux_north"].attrs["sign_convention"] == (
+        "positive into domain"
+    )
+    assert out["benchmark_heat_flux_north"].attrs["units"] == "K m2 Pa s-1"
 
 
 def test_fig1_benchmark_mass_continuity_plots_benchmark_scatter(tmp_path):
