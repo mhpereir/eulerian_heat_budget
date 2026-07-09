@@ -8,7 +8,7 @@
 
 TIME_START="${TIME_START:-2021-05-01T00:00:00}"
 TIME_END="${TIME_END:-2021-09-01T00:00:00}"
-REGION="${REGION:-pnw_bartusek}"
+REGION="${REGION:-ocean_test}"
 
 STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-/home/mhpereir/eulerian_heat_budget/results/staged_arco_cache/single_run}"
 STAGED_ARCO_TIME_CHUNK="${STAGED_ARCO_TIME_CHUNK:-month}"
