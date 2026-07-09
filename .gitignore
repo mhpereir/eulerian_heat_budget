@@ -14,3 +14,4 @@ __pycache__/
 /scratch/
 /tmp/
 /archive/run_catalog.csv
+/cache_viz/outputs/
