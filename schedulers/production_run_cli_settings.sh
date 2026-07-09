@@ -33,9 +33,9 @@ ehb_bool_enabled() {
 
 ehb_default_production_output_dir() {
   if [[ -n "${SCRATCH:-}" ]]; then
-    printf "%s\n" "${SCRATCH}/eulerian_heat_budget/results/production/pnw_full_run_700_500_hPa"
+    printf "%s\n" "${SCRATCH}/eulerian_heat_budget/results/staged_arco_cache/production"
   else
-    printf "%s\n" "${REPO_ROOT:-$(pwd)}/results/production/pnw_full_run_700_500_hPa"
+    printf "%s\n" "${REPO_ROOT:-$(pwd)}/results/staged_arco_cache/production"
   fi
 }
 
