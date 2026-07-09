@@ -4,3 +4,4 @@ logs/
 results/
 saved_results/
 archive/run_catalog.csv
+cache_viz/outputs/
