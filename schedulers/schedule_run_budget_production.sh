@@ -21,78 +21,19 @@ mamba activate dev_env
 
 set -euo pipefail
 
-START_YEAR=1940
-END_YEAR=2025
-DATA_SOURCE="${DATA_SOURCE:-staged_arco_cache}"
-PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_bartusek_surface_700hPa_1940_2025_second_attempt}"
-REGION="${REGION:-pnw_bartusek}"
-ZG_TOP_PA="${ZG_TOP_PA:-70000}"
-# ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-70000}"
-USE_SURFACE_AS_BOTTOM="${USE_SURFACE_AS_BOTTOM:-1}"
-ALLOW_BOTTOM_OVERFLOW="${ALLOW_BOTTOM_OVERFLOW:-1}"
-INIT_MANIFEST_ONLY="${INIT_MANIFEST_ONLY:-0}"
-ENABLE_DIAGNOSTIC_PLOTS="${ENABLE_DIAGNOSTIC_PLOTS:-1}"
-ENABLE_CONSTANT_TEMPERATURE_TEST="${ENABLE_CONSTANT_TEMPERATURE_TEST:-0}"
-ENABLE_BENCHMARK_VARIABLES="${ENABLE_BENCHMARK_VARIABLES:-0}" #use only with full atmosphere
-RUN_START_MONTH_DAY="${RUN_START_MONTH_DAY:-05-01}"
-RUN_END_MONTH_DAY="${RUN_END_MONTH_DAY:-10-31}"
-MANIFEST_PATH="${PRODUCTION_OUTPUT_DIR}/production_run.json"
-MANIFEST_LOCK_DIR="${PRODUCTION_OUTPUT_DIR}/.manifest_init.lock"
-MANIFEST_WAIT_SECONDS="${MANIFEST_WAIT_SECONDS:-300}"
+PROJECT_ROOT="${PROJECT_ROOT:-/home/mhpereir/eulerian_heat_budget}"
+SCHEDULER_DIR="${SCHEDULER_DIR:-${PROJECT_ROOT}/schedulers}"
+SCRIPT_DIR="${SCRIPT_DIR:-${PROJECT_ROOT}/scripts}"
+SETTINGS_FILE="${PRODUCTION_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/production_run_cli_settings.sh}"
 
-if [[ "${DATA_SOURCE}" == "staged_arco_cache" && -z "${STAGED_CACHE_ROOT:-}" ]]; then
-  echo "[error] DATA_SOURCE=staged_arco_cache requires STAGED_CACHE_ROOT to point to a local indexed cache root." >&2
-  echo "[error] Populate it first with scripts/staged_arco_retrieval.py from an internet-capable session." >&2
-  exit 1
-fi
+source "${SETTINGS_FILE}"
 
 mkdir -p "${PRODUCTION_OUTPUT_DIR}"
 
-cd /home/mhpereir/eulerian_heat_budget/scripts
+cd "${SCRIPT_DIR}"
 
-
-
-COMMON_RUN_ARGS=(
-  --data-source "${DATA_SOURCE}"
-  --production-output-dir "${PRODUCTION_OUTPUT_DIR}"
-  --region "${REGION}"
-  --zg-top-pa "${ZG_TOP_PA}"
-)
-
-if [[ "${DATA_SOURCE}" == "staged_arco_cache" ]]; then
-  COMMON_RUN_ARGS+=(--staged-cache-root "${STAGED_CACHE_ROOT}")
-fi
-
-if [[ "${USE_SURFACE_AS_BOTTOM}" == "1" ]]; then
-  COMMON_RUN_ARGS+=(--zg-bottom surface_pressure)
-else
-  COMMON_RUN_ARGS+=(
-    --zg-bottom pressure_level
-    --zg-bottom-pa "${ZG_BOTTOM_PA}"
-  )
-fi
-
-if [[ "${ALLOW_BOTTOM_OVERFLOW}" == "1" ]]; then
-  COMMON_RUN_ARGS+=(--allow-bottom-overflow)
-else
-  COMMON_RUN_ARGS+=(--no-allow-bottom-overflow)
-fi
-
-if [[ "${ENABLE_DIAGNOSTIC_PLOTS}" == "1" ]]; then
-  COMMON_RUN_ARGS+=(--diagnostic-plots)
-else
-  COMMON_RUN_ARGS+=(--no-diagnostic-plots)
-fi
-
-if [[ "${ENABLE_CONSTANT_TEMPERATURE_TEST}" == "1" ]]; then
-  COMMON_RUN_ARGS+=(--constant-temperature-test)
-else
-  COMMON_RUN_ARGS+=(--no-constant-temperature-test)
-fi
-
-if [[ "${ENABLE_BENCHMARK_VARIABLES}" == "1" ]]; then
-  COMMON_RUN_ARGS+=(--include-benchmark-variables)
-fi
+COMMON_RUN_ARGS=()
+ehb_build_production_run_budget_args COMMON_RUN_ARGS
 
 initialize_manifest() {
   echo "[info] $(date -Is) initializing production manifest in ${PRODUCTION_OUTPUT_DIR}"
@@ -150,18 +91,15 @@ fi
 
 : "${PBS_ARRAY_INDEX:?PBS_ARRAY_INDEX must be set for yearly production runs}"
 
-YEAR=$((START_YEAR + PBS_ARRAY_INDEX))
-if (( YEAR > END_YEAR )); then
-  echo "[error] Computed YEAR=${YEAR} exceeds END_YEAR=${END_YEAR}" >&2
-  exit 1
-fi
-
-TIME_START=$(printf "%04d-%sT00:00:00" "${YEAR}" "${RUN_START_MONTH_DAY}")
-TIME_END=$(printf "%04d-%sT23:00:00" "${YEAR}" "${RUN_END_MONTH_DAY}")
+YEAR=$(ehb_production_year_for_task "${PBS_ARRAY_INDEX}")
+ehb_validate_production_year "${YEAR}"
+ehb_build_production_time_window "${YEAR}" TIME_START TIME_END
 
 ensure_manifest
 
 echo "[info] $(date -Is) starting production year ${YEAR} on host $(hostname)"
+echo "[info] repo root: ${PROJECT_ROOT}"
+echo "[info] settings file: ${SETTINGS_FILE}"
 echo "[info] output dir: ${PRODUCTION_OUTPUT_DIR}"
 /usr/bin/time -v python run_budget.py \
   "${COMMON_RUN_ARGS[@]}" \
