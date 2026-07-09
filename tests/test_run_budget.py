@@ -824,17 +824,29 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
     settings = (scheduler_dir / "production_run_cli_settings.sh").read_text()
     production_scheduler = (scheduler_dir / "schedule_run_budget_production.sh").read_text()
+    staging_scheduler = (scheduler_dir / "schedule_staged_arco_retrieval_production.sh").read_text()
 
     assert "START_YEAR=" in settings
     assert "END_YEAR=" in settings
     assert "STAGED_ARCO_TIME_CHUNK=" in settings
     assert "ehb_build_production_run_budget_args" in settings
     assert "ehb_build_production_staged_retrieval_args" in settings
+    assert "schedule_run_budget_production.sh" in settings
+    assert "schedule_staged_arco_retrieval_production.sh" in settings
     assert "SETTINGS_FILE=\"${PRODUCTION_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/production_run_cli_settings.sh}\"" in production_scheduler
+    assert "SETTINGS_FILE=\"${PRODUCTION_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/production_run_cli_settings.sh}\"" in staging_scheduler
     assert "source \"${SETTINGS_FILE}\"" in production_scheduler
+    assert "source \"${SETTINGS_FILE}\"" in staging_scheduler
     assert "ehb_build_production_run_budget_args COMMON_RUN_ARGS" in production_scheduler
     assert "ehb_production_year_for_task \"${PBS_ARRAY_INDEX}\"" in production_scheduler
     assert "ehb_build_production_time_window \"${YEAR}\" TIME_START TIME_END" in production_scheduler
+    assert "ehb_production_year_for_task \"${PBS_ARRAY_INDEX}\"" in staging_scheduler
+    assert "ehb_build_production_time_window \"${YEAR}\" TIME_START TIME_END" in staging_scheduler
+    assert (
+        "ehb_build_production_staged_retrieval_args RETRIEVAL_ARGS "
+        "\"${TIME_START}\" \"${TIME_END}\""
+    ) in staging_scheduler
+    assert "python staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in staging_scheduler
 
     script = """
 set -euo pipefail
@@ -844,7 +856,7 @@ ehb_build_production_time_window "${YEAR}" TIME_START TIME_END
 RUN_ARGS=()
 ehb_build_production_run_budget_args RUN_ARGS
 RETRIEVAL_ARGS=()
-ehb_build_production_staged_retrieval_args RETRIEVAL_ARGS
+ehb_build_production_staged_retrieval_args RETRIEVAL_ARGS "${TIME_START}" "${TIME_END}"
 printf 'YEAR=%s\n' "${YEAR}"
 printf 'TIME_START=%s\n' "${TIME_START}"
 printf 'TIME_END=%s\n' "${TIME_END}"
@@ -880,7 +892,7 @@ printf 'RETRIEVAL_ARGS=%s\n' "${RETRIEVAL_ARGS[*]}"
     assert "--zg-bottom surface_pressure" in output
     assert "--diagnostic-plots" in output
     assert "--no-constant-temperature-test" in output
-    assert "--production-start-year 1940 --production-end-year 2025" in output
+    assert "--time-start 1945-05-01T00:00:00 --time-end 1945-10-31T23:00:00" in output
     assert "--stage-time-chunk month" in output
 
 

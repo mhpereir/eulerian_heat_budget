@@ -2,6 +2,7 @@
 #
 # This file is sourced by:
 # - schedulers/schedule_run_budget_production.sh
+# - schedulers/schedule_staged_arco_retrieval_production.sh
 #
 # Keep production staging and compute settings here so they cannot drift.
 
@@ -106,15 +107,15 @@ ehb_build_production_run_budget_args() {
 
 ehb_build_production_staged_retrieval_args() {
   local target_array="$1"
+  local time_start="$2"
+  local time_end="$3"
   local -n args_ref="${target_array}"
 
   ehb_require_staged_cache_root "production staged ARCO retrieval"
   args_ref=(
     --staged-cache-root "${STAGED_CACHE_ROOT}"
-    --production-start-year "${START_YEAR}"
-    --production-end-year "${END_YEAR}"
-    --run-start-month-day "${RUN_START_MONTH_DAY}"
-    --run-end-month-day "${RUN_END_MONTH_DAY}"
+    --time-start "${time_start}"
+    --time-end "${time_end}"
   )
   ehb_add_production_domain_args "${target_array}"
   args_ref+=(--stage-time-chunk "${STAGED_ARCO_TIME_CHUNK}")
