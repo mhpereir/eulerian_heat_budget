@@ -6,8 +6,8 @@
 #
 # Keep settings used by both scripts here so staging and compute cannot drift.
 
-TIME_START="${TIME_START:-1941-05-01T00:00:00}"
-TIME_END="${TIME_END:-1941-09-01T00:00:00}"
+TIME_START="${TIME_START:-2021-05-01T00:00:00}"
+TIME_END="${TIME_END:-2021-09-01T00:00:00}"
 REGION="${REGION:-pnw_bartusek}"
 
 STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-/home/mhpereir/eulerian_heat_budget/results/staged_arco_cache/single_run}"

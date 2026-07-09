@@ -1,5 +1,36 @@
 {
-    "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda",
-    "workbench.colorTheme": "Abyss"
+  "python.analysis.typeCheckingMode": "standard",
+  "remote.SSH.localServerDownload": "always",
+  "github.copilot.nextEditSuggestions.enabled": false,
+  "github.copilot.enable": {
+    "*": false,
+    "plaintext": false,
+    "markdown": false,
+    "scminput": false
+  },
+  "chat.viewSessions.orientation": "stacked",
+  "workbench.colorTheme": "Rosé Pine Moon",
+  "workbench.colorCustomizations": {
+    "terminal.background": "#232136",
+    "terminal.foreground": "#e0def4",
+    "terminal.selectionBackground": "#232136",
+    "terminal.ansiBlack": "#393552",
+    "terminal.ansiRed": "#eb6f92",
+    "terminal.ansiGreen": "#9ccfd8",
+    "terminal.ansiYellow": "#f6c177",
+    "terminal.ansiBlue": "#3e8fb0",
+    "terminal.ansiMagenta": "#c4a7e7",
+    "terminal.ansiCyan": "#ea9a97",
+    "terminal.ansiWhite": "#e0def4",
+    "terminal.ansiBrightBlack": "#6e6a86",
+    "terminal.ansiBrightRed": "#eb6f92",
+    "terminal.ansiBrightGreen": "#9ccfd8",
+    "terminal.ansiBrightYellow": "#f6c177",
+    "terminal.ansiBrightBlue": "#3e8fb0",
+    "terminal.ansiBrightMagenta": "#c4a7e7",
+    "terminal.ansiBrightCyan": "#ea9a97",
+    "terminal.ansiBrightWhite": "#e0def4",
+    "terminalCursor.background": "#e0def4",
+    "terminalCursor.foreground": "#232136"
+  }
 }
