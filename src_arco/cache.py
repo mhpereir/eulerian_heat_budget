@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import shutil
 import sqlite3
+import tempfile
 import time
 
 import numpy as np
@@ -147,23 +148,34 @@ def write_tile(
     rel_path = Path(TILES_DIR) / f"{tile_id}.zarr"
     tile_path = root / rel_path
 
-    with _cache_write_lock(root):
-        if tile_path.exists():
-            _register_tile(root, tile_id, rel_path, tile, source_cfg, request, include_benchmark_variables)
-            return tile_path
+    if tile_path.exists():
+        with _cache_write_lock(root):
+            if tile_path.exists():
+                _register_tile(root, tile_id, rel_path, tile, source_cfg, request, include_benchmark_variables)
+                return tile_path
 
-        tmp_path = root / TILES_DIR / f".{tile_id}.tmp.zarr"
-        tile_to_write = _normalize_zarr_chunks(tile, source_cfg)
+    tmp_path = _new_tmp_tile_path(root, tile_id)
+    tile_to_write = _normalize_zarr_chunks(tile, source_cfg)
+    try:
+        tile_to_write.to_zarr(str(tmp_path), mode="w")
+        with _cache_write_lock(root):
+            if tile_path.exists():
+                shutil.rmtree(tmp_path)
+            else:
+                tmp_path.replace(tile_path)
+            _register_tile(
+                root,
+                tile_id,
+                rel_path,
+                tile_to_write,
+                source_cfg,
+                request,
+                include_benchmark_variables,
+            )
+    except Exception:
         if tmp_path.exists():
             shutil.rmtree(tmp_path)
-        try:
-            tile_to_write.to_zarr(str(tmp_path), mode="w")
-        except Exception:
-            if tmp_path.exists():
-                shutil.rmtree(tmp_path)
-            raise
-        tmp_path.replace(tile_path)
-        _register_tile(root, tile_id, rel_path, tile_to_write, source_cfg, request, include_benchmark_variables)
+        raise
     return tile_path
 
 
@@ -748,6 +760,15 @@ def _coord_max_as_str(ds: xr.Dataset, coord: str) -> str | None:
 def _connect(root: Path) -> sqlite3.Connection:
     root.mkdir(parents=True, exist_ok=True)
     return sqlite3.connect(root / DB_NAME)
+
+
+def _new_tmp_tile_path(root: Path, tile_id: str) -> Path:
+    tmp_dir = tempfile.mkdtemp(
+        prefix=f".{tile_id}.",
+        suffix=".tmp.zarr",
+        dir=root / TILES_DIR,
+    )
+    return Path(tmp_dir)
 
 
 class _cache_write_lock:

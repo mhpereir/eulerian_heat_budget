@@ -297,7 +297,7 @@ def test_write_tile_removes_partial_tmp_store_on_failure(monkeypatch, tmp_path):
         request,
         include_benchmark_variables=False,
     )
-    tmp_store = tmp_path / cache.TILES_DIR / f".{tile_id}.tmp.zarr"
+    tiles_dir = tmp_path / cache.TILES_DIR
 
     def fake_to_zarr(self, path, mode="w"):
         Path(path).mkdir(parents=True, exist_ok=True)
@@ -315,7 +315,49 @@ def test_write_tile_removes_partial_tmp_store_on_failure(monkeypatch, tmp_path):
             include_benchmark_variables=False,
         )
 
-    assert not tmp_store.exists()
+    assert not list(tiles_dir.glob(f".{tile_id}.*.tmp.zarr"))
+
+
+def test_write_tile_does_not_hold_cache_lock_during_zarr_write(monkeypatch, tmp_path):
+    source_cfg = _source_cfg()
+    request = _request()
+    tile = cache.build_arco_cache_tile(
+        _canonical_dataset(),
+        request,
+        include_benchmark_variables=False,
+    )
+    events = []
+    original_lock = cache._cache_write_lock
+
+    class SpyLock:
+        def __init__(self, *args, **kwargs):
+            self._lock = original_lock(*args, **kwargs)
+
+        def __enter__(self):
+            events.append("enter")
+            return self._lock.__enter__()
+
+        def __exit__(self, exc_type, exc, tb):
+            events.append("exit")
+            return self._lock.__exit__(exc_type, exc, tb)
+
+    def fake_to_zarr(self, path, mode="w"):
+        assert events == []
+        Path(path).mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(cache, "_cache_write_lock", SpyLock)
+    monkeypatch.setattr(xr.Dataset, "to_zarr", fake_to_zarr)
+
+    tile_path = cache.write_tile(
+        tmp_path,
+        tile,
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+
+    assert tile_path.exists()
+    assert events == ["enter", "exit"]
 
 
 def test_staged_arco_retrieval_retries_transient_write_failures(monkeypatch, tmp_path):
