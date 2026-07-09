@@ -2,7 +2,7 @@
 #SBATCH --job-name=ehb_stage_arco_prod
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=36G
 #SBATCH --time=12:00:00
 #SBATCH --array=0-4%5
