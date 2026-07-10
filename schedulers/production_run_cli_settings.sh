@@ -15,8 +15,8 @@ DATA_SOURCE="${DATA_SOURCE:-staged_arco_cache}"
 PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/pnw_bartusek_surface_700hPa_1940_2025_second_attempt}"
 REGION="${REGION:-pnw_bartusek}"
 ZG_TOP_PA="${ZG_TOP_PA:-70000}"
+ZG_BOTTOM="${ZG_BOTTOM:-surface_pressure}"
 ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-70000}"
-USE_SURFACE_AS_BOTTOM="${USE_SURFACE_AS_BOTTOM:-1}"
 ALLOW_BOTTOM_OVERFLOW="${ALLOW_BOTTOM_OVERFLOW:-1}"
 
 STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-/home/mhpereir/eulerian_heat_budget/results/staged_arco_cache/production}"
@@ -53,17 +53,13 @@ ehb_add_production_domain_args() {
 
   args_ref+=(
     --region "${REGION}"
+    --zg-bottom "${ZG_BOTTOM}"
     --zg-top-pa "${ZG_TOP_PA}"
   )
 
-  if ehb_bool_enabled "${USE_SURFACE_AS_BOTTOM}"; then
-    args_ref+=(--zg-bottom surface_pressure)
-  else
-    : "${ZG_BOTTOM_PA:?ZG_BOTTOM_PA must be set when USE_SURFACE_AS_BOTTOM=0}"
-    args_ref+=(
-      --zg-bottom pressure_level
-      --zg-bottom-pa "${ZG_BOTTOM_PA}"
-    )
+  if [[ "${ZG_BOTTOM}" == "pressure_level" ]]; then
+    : "${ZG_BOTTOM_PA:?ZG_BOTTOM_PA must be set when ZG_BOTTOM=pressure_level}"
+    args_ref+=(--zg-bottom-pa "${ZG_BOTTOM_PA}")
   fi
 
   if ehb_bool_enabled "${ALLOW_BOTTOM_OVERFLOW}"; then

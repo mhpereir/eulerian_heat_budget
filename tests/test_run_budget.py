@@ -828,6 +828,8 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
 
     assert "START_YEAR=" in settings
     assert "END_YEAR=" in settings
+    assert "ZG_BOTTOM=" in settings
+    assert "USE_SURFACE_AS_BOTTOM" not in settings
     assert "STAGED_ARCO_TIME_CHUNK=" in settings
     assert "ehb_build_production_run_budget_args" in settings
     assert "ehb_build_production_staged_retrieval_args" in settings
@@ -894,6 +896,20 @@ printf 'RETRIEVAL_ARGS=%s\n' "${RETRIEVAL_ARGS[*]}"
     assert "--no-constant-temperature-test" in output
     assert "--time-start 1945-05-01T00:00:00 --time-end 1945-10-31T23:00:00" in output
     assert "--stage-time-chunk month" in output
+
+    pressure_env = env.copy()
+    pressure_env.update({"ZG_BOTTOM": "pressure_level", "ZG_BOTTOM_PA": "85000"})
+    pressure_result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=PROJECT_ROOT,
+        env=pressure_env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    pressure_output = pressure_result.stdout
+    assert "--zg-bottom pressure_level" in pressure_output
+    assert "--zg-bottom-pa 85000" in pressure_output
 
 
 def _configure_main_stubs(monkeypatch, args):
