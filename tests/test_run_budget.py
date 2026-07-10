@@ -807,6 +807,7 @@ def test_single_run_schedulers_share_cli_settings():
     assert "BASH_SOURCE" not in retrieval_scheduler
     assert "#PBS -o /home/mhpereir/eulerian_heat_budget/logs/" in run_scheduler
     assert "#PBS -o /home/mhpereir/eulerian_heat_budget/logs/" in retrieval_scheduler
+    assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in retrieval_scheduler
     assert "/dev/null" not in run_scheduler
     assert "/dev/null" not in retrieval_scheduler
     assert run_scheduler.index("exec > >(tee -a") < run_scheduler.index(
@@ -816,7 +817,7 @@ def test_single_run_schedulers_share_cli_settings():
         "source \"${SETTINGS_FILE}\""
     )
     assert "python run_budget.py \"${RUN_ARGS[@]}\"" in run_scheduler
-    assert "python staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in retrieval_scheduler
+    assert "python -u staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in retrieval_scheduler
     assert "--stage-time-chunk \"${STAGED_ARCO_TIME_CHUNK}\"" in settings
 
 
@@ -839,6 +840,7 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "SETTINGS_FILE=\"${PRODUCTION_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/production_run_cli_settings.sh}\"" in staging_scheduler
     assert "source \"${SETTINGS_FILE}\"" in production_scheduler
     assert "source \"${SETTINGS_FILE}\"" in staging_scheduler
+    assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in staging_scheduler
     assert "ehb_build_production_run_budget_args COMMON_RUN_ARGS" in production_scheduler
     assert "ehb_production_year_for_task \"${PBS_ARRAY_INDEX}\"" in production_scheduler
     assert "ehb_build_production_time_window \"${YEAR}\" TIME_START TIME_END" in production_scheduler
@@ -848,7 +850,7 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
         "ehb_build_production_staged_retrieval_args RETRIEVAL_ARGS "
         "\"${TIME_START}\" \"${TIME_END}\""
     ) in staging_scheduler
-    assert "python staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in staging_scheduler
+    assert "python -u staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in staging_scheduler
 
     script = """
 set -euo pipefail

@@ -29,6 +29,11 @@ class OfflineCoverageError(RuntimeError):
     """Raised when a staged ARCO cache cannot satisfy an offline request."""
 
 
+def _log_cache_write(message: str) -> None:
+    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    print(f"[info] {timestamp} staged cache: {message}", flush=True)
+
+
 @dataclass(frozen=True)
 class _TileRecord:
     tile_id: str
@@ -155,13 +160,22 @@ def write_tile(
                 return tile_path
 
     tmp_path = _new_tmp_tile_path(root, tile_id)
+    _log_cache_write(f"normalizing zarr chunks for tile {tile_id}")
     tile_to_write = _normalize_zarr_chunks(tile, source_cfg)
     try:
+        write_started = time.monotonic()
+        _log_cache_write(f"writing temporary zarr store {tmp_path}")
         tile_to_write.to_zarr(str(tmp_path), mode="w")
+        _log_cache_write(
+            f"finished temporary zarr store {tmp_path} "
+            f"in {time.monotonic() - write_started:.1f}s"
+        )
         with _cache_write_lock(root):
             if tile_path.exists():
+                _log_cache_write(f"tile {tile_id} already exists; removing temporary zarr store")
                 shutil.rmtree(tmp_path)
             else:
+                _log_cache_write(f"promoting temporary zarr store to {tile_path}")
                 tmp_path.replace(tile_path)
             _register_tile(
                 root,
@@ -172,8 +186,13 @@ def write_tile(
                 request,
                 include_benchmark_variables,
             )
-    except Exception:
+            _log_cache_write(f"registered tile {tile_id}")
+    except Exception as exc:
         if tmp_path.exists():
+            _log_cache_write(
+                f"removing failed temporary zarr store {tmp_path} "
+                f"after {type(exc).__name__}: {exc}"
+            )
             shutil.rmtree(tmp_path)
         raise
     return tile_path

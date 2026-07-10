@@ -465,7 +465,8 @@ def _open_arco_zarr_with_retry(cfg: specs.DataSourceConfig) -> xr.Dataset:
             delay_seconds = base_delay_seconds * (2 ** (attempt - 1))
             print(
                 f"ARCO open_zarr attempt {attempt}/{max_attempts} failed with a transient error: {exc}. "
-                f"Retrying in {delay_seconds:.0f} seconds..."
+                f"Retrying in {delay_seconds:.0f} seconds...",
+                flush=True,
             )
             time.sleep(delay_seconds)
 
