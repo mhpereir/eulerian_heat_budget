@@ -233,7 +233,7 @@ def load_cache_dataset(
     if combined is None:
         raise OfflineCoverageError("No staged ARCO cache tiles could be opened.")
 
-    _require_time_bounds(combined, cache_source_cfg)
+    _require_time_coverage(combined, cache_source_cfg)
     _validate_wall_coverage(combined, request)
 
     if include_benchmark_variables:
@@ -275,7 +275,7 @@ def _select_cached_coverage(
         raise OfflineCoverageError(str(exc)) from exc
 
     if require_time_bounds:
-        _require_time_bounds(ds, source_cfg)
+        _require_time_coverage(ds, source_cfg)
     return ds
 
 
@@ -370,6 +370,36 @@ def _require_time_bounds(ds: xr.Dataset, source_cfg: specs.DataSourceConfig) -> 
             raise OfflineCoverageError(
                 f"Staged ARCO cache ends before requested time_end={source_cfg.time_end}."
             )
+
+
+def _require_time_coverage(ds: xr.Dataset, source_cfg: specs.DataSourceConfig) -> None:
+    _require_time_bounds(ds, source_cfg)
+
+    if source_cfg.time_start is None or source_cfg.time_end is None:
+        return
+
+    start = np.datetime64(source_cfg.time_start, "ns")
+    end = np.datetime64(source_cfg.time_end, "ns")
+    hour = np.timedelta64(1, "h")
+    if end < start:
+        raise OfflineCoverageError(
+            f"Requested time_end={source_cfg.time_end} is before time_start={source_cfg.time_start}."
+        )
+    if (end - start) % hour != np.timedelta64(0, "ns"):
+        raise OfflineCoverageError(
+            "Staged ARCO cache coverage checks require hourly-aligned requested time bounds."
+        )
+
+    available = np.unique(np.asarray(ds["time"].values).astype("datetime64[ns]"))
+    expected = np.arange(start, end + hour, hour, dtype="datetime64[ns]")
+    missing = np.setdiff1d(expected, available, assume_unique=True)
+    if missing.size:
+        preview = ", ".join(str(value) for value in missing[:5])
+        if missing.size > 5:
+            preview = f"{preview}, ..."
+        raise OfflineCoverageError(
+            f"Staged ARCO cache is missing {missing.size} requested hourly time(s): {preview}"
+        )
 
 
 def _cache_source_cfg_for_lookup(source_cfg: specs.DataSourceConfig) -> specs.DataSourceConfig:
