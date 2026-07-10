@@ -2,10 +2,10 @@
 #SBATCH --job-name=ehb_stage_arco_prod
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=2
 #SBATCH --mem=36G
-#SBATCH --time=12:00:00
-#SBATCH --array=0-4%5
+#SBATCH --time=24:00:00
+#SBATCH --array=0-4
 # Submit from the repository root after ensuring logs/ exists; Slurm
 # resolves output paths before this script can compute REPO_ROOT.
 #SBATCH --output=logs/%A_%a_EHB_stage_arco_prod.log
