@@ -792,6 +792,7 @@ def test_single_run_schedulers_share_cli_settings():
 
     assert "STAGED_CACHE_ROOT=" in settings
     assert "STAGED_ARCO_TIME_CHUNK=" in settings
+    assert "STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS=" in settings
     assert "TIME_START=" in settings
     assert "ehb_build_run_budget_args" in settings
     assert "ehb_build_staged_arco_retrieval_args" in settings
@@ -819,6 +820,7 @@ def test_single_run_schedulers_share_cli_settings():
     assert "python run_budget.py \"${RUN_ARGS[@]}\"" in run_scheduler
     assert "python -u staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in retrieval_scheduler
     assert "--stage-time-chunk \"${STAGED_ARCO_TIME_CHUNK}\"" in settings
+    assert "--stage-attempt-timeout-seconds \"${STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS}\"" in settings
 
 
 def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
@@ -832,6 +834,7 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "ZG_BOTTOM=" in settings
     assert "USE_SURFACE_AS_BOTTOM" not in settings
     assert "STAGED_ARCO_TIME_CHUNK=" in settings
+    assert "STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS=" in settings
     assert "ehb_build_production_run_budget_args" in settings
     assert "ehb_build_production_staged_retrieval_args" in settings
     assert "schedule_run_budget_production.sh" in settings
@@ -898,6 +901,7 @@ printf 'RETRIEVAL_ARGS=%s\n' "${RETRIEVAL_ARGS[*]}"
     assert "--no-constant-temperature-test" in output
     assert "--time-start 1945-05-01T00:00:00 --time-end 1945-10-31T23:00:00" in output
     assert "--stage-time-chunk month" in output
+    assert "--stage-attempt-timeout-seconds 10800" in output
 
     pressure_env = env.copy()
     pressure_env.update({"ZG_BOTTOM": "pressure_level", "ZG_BOTTOM_PA": "85000"})

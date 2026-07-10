@@ -23,6 +23,7 @@ DEFAULT_ARCO_PATH  = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk
 DEFAULT_ARCO_TOKEN = "anon"
 DEFAULT_ARCO_OPEN_MAX_ATTEMPTS: int = 4
 DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS: float = 15.0
+DEFAULT_ARCO_STAGE_ATTEMPT_TIMEOUT_SECONDS: float = 10800.0
 
 DEFAULT_TIME_START = "1941-06-01T00:00:00" # start time for budget period
 DEFAULT_TIME_END   = "1941-06-07T00:00:00" # end time for budget period 
@@ -84,4 +85,3 @@ DEFAULT_CHUNKS_3D1 = {
     "lat": n_lat,
     "lon": n_lon,
 }
-

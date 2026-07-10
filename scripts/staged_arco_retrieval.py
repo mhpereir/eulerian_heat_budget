@@ -1,7 +1,10 @@
 import sys
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import signal
+import threading
 
 PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
 if PROJECT_ROOT not in sys.path:
@@ -49,6 +52,16 @@ def parse_args():
             "Use 'none' for the previous full-window behavior."
         ),
     )
+    parser.add_argument(
+        "--stage-attempt-timeout-seconds",
+        dest="stage_attempt_timeout_seconds",
+        type=float,
+        default=None,
+        help=(
+            "Wall-clock timeout for one ARCO stage/write attempt. "
+            "Use 0 to disable the timeout."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -74,7 +87,14 @@ def main() -> None:
     _log_info(f"staged ARCO cache root: {cache_root}")
 
     stage_time_chunk = getattr(args, "stage_time_chunk", "month")
-    _log_info(f"staging options: stage_time_chunk={stage_time_chunk}")
+    attempt_timeout_seconds = getattr(args, "stage_attempt_timeout_seconds", None)
+    if attempt_timeout_seconds is None:
+        attempt_timeout_seconds = config.DEFAULT_ARCO_STAGE_ATTEMPT_TIMEOUT_SECONDS
+    _log_info(
+        "staging options: "
+        f"stage_time_chunk={stage_time_chunk}, "
+        f"stage_attempt_timeout_seconds={attempt_timeout_seconds}"
+    )
     for time_start, time_end in _iter_time_windows(args):
         chunk_windows = list(_iter_chunked_time_windows(time_start, time_end, stage_time_chunk))
         if len(chunk_windows) > 1:
@@ -105,6 +125,7 @@ def main() -> None:
                 source_cfg,
                 request,
                 include_benchmark_variables=args.include_benchmark_variables,
+                attempt_timeout_seconds=attempt_timeout_seconds,
             )
             _log_info(
                 f"wrote staged tile {tile_path} "
@@ -118,33 +139,38 @@ def _stage_window_with_retry(
     request: specs.DomainRequest,
     *,
     include_benchmark_variables: bool,
+    attempt_timeout_seconds: float | None = None,
 ):
     max_attempts = config.DEFAULT_ARCO_OPEN_MAX_ATTEMPTS
     base_delay_seconds = config.DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS
+    if attempt_timeout_seconds is None:
+        attempt_timeout_seconds = config.DEFAULT_ARCO_STAGE_ATTEMPT_TIMEOUT_SECONDS
 
     for attempt in range(1, max_attempts + 1):
         attempt_started = time.monotonic()
         try:
             _log_info(
                 f"ARCO stage/write attempt {attempt}/{max_attempts} "
-                f"for {source_cfg.time_start} to {source_cfg.time_end} starting"
+                f"for {source_cfg.time_start} to {source_cfg.time_end} "
+                f"starting (timeout={attempt_timeout_seconds:.0f}s)"
             )
-            tile = _build_tile_from_arco(
-                source_cfg,
-                request,
-                include_benchmark_variables=include_benchmark_variables,
-            )
-            _log_info(
-                f"writing staged tile to local cache root {cache_root} "
-                f"for {source_cfg.time_start} to {source_cfg.time_end}"
-            )
-            tile_path = cache.write_tile(
-                cache_root,
-                tile,
-                source_cfg,
-                request,
-                include_benchmark_variables=include_benchmark_variables,
-            )
+            with _stage_attempt_time_limit(attempt_timeout_seconds):
+                tile = _build_tile_from_arco(
+                    source_cfg,
+                    request,
+                    include_benchmark_variables=include_benchmark_variables,
+                )
+                _log_info(
+                    f"writing staged tile to local cache root {cache_root} "
+                    f"for {source_cfg.time_start} to {source_cfg.time_end}"
+                )
+                tile_path = cache.write_tile(
+                    cache_root,
+                    tile,
+                    source_cfg,
+                    request,
+                    include_benchmark_variables=include_benchmark_variables,
+                )
             _log_info(
                 f"ARCO stage/write attempt {attempt}/{max_attempts} completed "
                 f"in {_elapsed_seconds(attempt_started)}"
@@ -167,6 +193,34 @@ def _stage_window_with_retry(
             time.sleep(delay_seconds)
 
     raise RuntimeError("ARCO stage/write retry loop exhausted unexpectedly.")
+
+
+@contextmanager
+def _stage_attempt_time_limit(timeout_seconds: float | None):
+    if timeout_seconds is None or timeout_seconds <= 0:
+        yield
+        return
+
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    timeout_seconds = float(timeout_seconds)
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+
+    def _raise_timeout(signum, frame):
+        raise TimeoutError(f"ARCO stage/write attempt exceeded {timeout_seconds:.0f} seconds")
+
+    signal.signal(signal.SIGALRM, _raise_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0.0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_timer[0] > 0:
+            signal.setitimer(signal.ITIMER_REAL, previous_timer[0], previous_timer[1])
 
 
 def _iter_time_windows(args):

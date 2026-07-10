@@ -12,6 +12,7 @@ REGION="${REGION:-ocean_test}"
 
 STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-/home/mhpereir/eulerian_heat_budget/results/staged_arco_cache/single_run}"
 STAGED_ARCO_TIME_CHUNK="${STAGED_ARCO_TIME_CHUNK:-month}"
+STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS="${STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS:-10800}"
 
 ZG_TOP_PA="${ZG_TOP_PA:-100}"
 ZG_BOTTOM="${ZG_BOTTOM:-surface_pressure}"
@@ -109,4 +110,5 @@ ehb_build_staged_arco_retrieval_args() {
   args_ref=(--staged-cache-root "${STAGED_CACHE_ROOT}")
   ehb_add_shared_budget_domain_args "${target_array}"
   args_ref+=(--stage-time-chunk "${STAGED_ARCO_TIME_CHUNK}")
+  args_ref+=(--stage-attempt-timeout-seconds "${STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS}")
 }

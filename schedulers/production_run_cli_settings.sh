@@ -21,6 +21,7 @@ ALLOW_BOTTOM_OVERFLOW="${ALLOW_BOTTOM_OVERFLOW:-1}"
 
 STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-/home/mhpereir/eulerian_heat_budget/results/staged_arco_cache/production}"
 STAGED_ARCO_TIME_CHUNK="${STAGED_ARCO_TIME_CHUNK:-month}"
+STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS="${STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS:-10800}"
 
 INIT_MANIFEST_ONLY="${INIT_MANIFEST_ONLY:-0}"
 ENABLE_DIAGNOSTIC_PLOTS="${ENABLE_DIAGNOSTIC_PLOTS:-1}"
@@ -115,6 +116,7 @@ ehb_build_production_staged_retrieval_args() {
   )
   ehb_add_production_domain_args "${target_array}"
   args_ref+=(--stage-time-chunk "${STAGED_ARCO_TIME_CHUNK}")
+  args_ref+=(--stage-attempt-timeout-seconds "${STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS}")
 }
 
 ehb_production_year_for_task() {

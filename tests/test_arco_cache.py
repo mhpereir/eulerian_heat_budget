@@ -398,6 +398,45 @@ def test_staged_arco_retrieval_retries_transient_write_failures(monkeypatch, tmp
     assert sleeps == [3.0]
 
 
+def test_staged_arco_retrieval_retries_stage_attempt_timeout(monkeypatch, tmp_path):
+    source_cfg = _source_cfg()
+    request = _request()
+    tile = xr.Dataset({"dummy": xr.DataArray([1.0], dims=("time",))})
+    build_calls = []
+    sleeps = []
+
+    def fake_build_tile_from_arco(*args, **kwargs):
+        build_calls.append((args, kwargs))
+        if len(build_calls) == 1:
+            raise TimeoutError("ARCO stage/write attempt exceeded 5 seconds")
+        return tile
+
+    monkeypatch.setattr(staged_arco_retrieval, "_build_tile_from_arco", fake_build_tile_from_arco)
+    monkeypatch.setattr(staged_arco_retrieval.cache, "write_tile", lambda *args, **kwargs: tmp_path / "tile.zarr")
+    monkeypatch.setattr(staged_arco_retrieval.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(staged_arco_retrieval.config, "DEFAULT_ARCO_OPEN_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(staged_arco_retrieval.config, "DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS", 3.0)
+
+    tile_path, staged_tile = staged_arco_retrieval._stage_window_with_retry(
+        tmp_path,
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+        attempt_timeout_seconds=5.0,
+    )
+
+    assert tile_path == tmp_path / "tile.zarr"
+    assert staged_tile is tile
+    assert len(build_calls) == 2
+    assert sleeps == [3.0]
+
+
+def test_stage_attempt_time_limit_raises_timeout():
+    with pytest.raises(TimeoutError, match="exceeded 10 seconds"):
+        with staged_arco_retrieval._stage_attempt_time_limit(10.0):
+            staged_arco_retrieval.signal.raise_signal(staged_arco_retrieval.signal.SIGALRM)
+
+
 def test_staged_retrieval_chunks_month_windows():
     windows = list(
         staged_arco_retrieval._iter_chunked_time_windows(
@@ -465,6 +504,7 @@ def test_staged_retrieval_main_stages_each_month_chunk(monkeypatch, tmp_path):
         request,
         *,
         include_benchmark_variables,
+        attempt_timeout_seconds,
     ):
         staged_windows.append((source_cfg.time_start, source_cfg.time_end))
         tile = xr.Dataset({"dummy": xr.DataArray([1.0], dims=("time",))})
