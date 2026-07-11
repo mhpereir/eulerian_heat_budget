@@ -457,6 +457,7 @@ def _open_arco_zarr_with_retry(cfg: specs.DataSourceConfig) -> xr.Dataset:
                 cfg.arco_path,
                 storage_options={"token": cfg.arco_storage_token},
                 decode_timedelta=False,
+                chunks=None, #type: ignore
             )
         except Exception as exc:
             if not _is_transient_arco_open_error(exc) or attempt == max_attempts:
