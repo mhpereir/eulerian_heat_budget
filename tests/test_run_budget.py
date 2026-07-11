@@ -894,6 +894,10 @@ def test_production_slurm_script_requires_staged_cache_root(tmp_path):
 
 def test_production_staged_retrieval_slurm_script_requires_staged_cache_root(tmp_path):
     script_path = Path(PROJECT_ROOT) / "schedulers" / "schedule_staged_arco_retrieval_production_slurm.sh"
+    scheduler = script_path.read_text()
+    assert 'export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"' in scheduler
+    assert 'python -u staged_arco_retrieval.py "${RETRIEVAL_ARGS[@]}"' in scheduler
+
     env = os.environ.copy()
     env.update(
         {
@@ -917,6 +921,11 @@ def test_production_staged_retrieval_slurm_script_requires_staged_cache_root(tmp
 
 
 def test_production_settings_share_yearly_domain_and_cache_args(tmp_path):
+    settings_path = Path(PROJECT_ROOT) / "schedulers" / "production_run_cli_settings.sh"
+    settings = settings_path.read_text()
+    assert "ZG_BOTTOM=" in settings
+    assert "USE_SURFACE_AS_BOTTOM" not in settings
+
     script = """
 set -euo pipefail
 source schedulers/production_run_cli_settings.sh
@@ -951,17 +960,31 @@ printf 'RETRIEVAL_ARGS=%s\n' "${RETRIEVAL_ARGS[*]}"
     )
 
     output = result.stdout
-    assert "YEAR=1945" in output
-    assert "TIME_START=1945-05-01T00:00:00" in output
-    assert "TIME_END=1945-10-31T23:00:00" in output
+    assert "YEAR=1951" in output
+    assert "TIME_START=1951-05-01T00:00:00" in output
+    assert "TIME_END=1951-10-31T23:00:00" in output
     assert "--data-source staged_arco_cache" in output
     assert f"--production-output-dir {tmp_path / 'production'}" in output
     assert f"--staged-cache-root {tmp_path / 'cache'}" in output
-    assert "--region pnw_bartusek" in output
-    assert "--zg-top-pa 50000" in output
-    assert "--zg-bottom pressure_level --zg-bottom-pa 70000" in output
-    assert "--time-start 1945-05-01T00:00:00 --time-end 1945-10-31T23:00:00" in output
+    assert "--region eastern_canada" in output
+    assert "--zg-top-pa 70000" in output
+    assert "--zg-bottom surface_pressure" in output
+    assert "--time-start 1951-05-01T00:00:00 --time-end 1951-10-31T23:00:00" in output
     assert "--stage-time-chunk month" in output
+
+    pressure_env = env.copy()
+    pressure_env.update({"ZG_BOTTOM": "pressure_level", "ZG_BOTTOM_PA": "85000"})
+    pressure_result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=PROJECT_ROOT,
+        env=pressure_env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    pressure_output = pressure_result.stdout
+    assert "--zg-bottom pressure_level" in pressure_output
+    assert "--zg-bottom-pa 85000" in pressure_output
 
 
 def test_single_run_slurm_schedulers_share_cli_settings():
@@ -985,8 +1008,9 @@ def test_single_run_slurm_schedulers_share_cli_settings():
     assert "source \"${SETTINGS_FILE}\"" in retrieval_scheduler
     assert "ehb_build_run_budget_args RUN_ARGS" in run_scheduler
     assert "ehb_build_staged_arco_retrieval_args RETRIEVAL_ARGS" in retrieval_scheduler
+    assert 'export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"' in retrieval_scheduler
     assert "python run_budget.py \"${RUN_ARGS[@]}\"" in run_scheduler
-    assert "python staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in retrieval_scheduler
+    assert "python -u staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in retrieval_scheduler
     assert "--stage-time-chunk \"${STAGED_ARCO_TIME_CHUNK}\"" in settings
 
 

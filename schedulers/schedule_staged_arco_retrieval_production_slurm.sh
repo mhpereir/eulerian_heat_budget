@@ -107,5 +107,5 @@ echo "[info] settings file: ${SETTINGS_FILE}"
 echo "[info] staged cache root: ${STAGED_CACHE_ROOT}"
 echo "[info] time window: ${TIME_START} to ${TIME_END}"
 
-python staged_arco_retrieval.py "${RETRIEVAL_ARGS[@]}"
+python -u staged_arco_retrieval.py "${RETRIEVAL_ARGS[@]}"
 echo "[info] $(date -Is) finished production staged ARCO retrieval for year ${YEAR}"

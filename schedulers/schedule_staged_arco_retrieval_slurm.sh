@@ -87,5 +87,5 @@ echo "[info] dask: threaded scheduler, requested_workers=${EHB_DASK_N_WORKERS}, 
 echo "[info] settings file: ${SETTINGS_FILE}"
 echo "[info] staged cache root: ${STAGED_CACHE_ROOT}"
 
-python staged_arco_retrieval.py "${RETRIEVAL_ARGS[@]}"
+python -u staged_arco_retrieval.py "${RETRIEVAL_ARGS[@]}"
 echo "[info] $(date -Is) done"

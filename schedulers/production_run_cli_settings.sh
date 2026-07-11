@@ -14,8 +14,8 @@ RUN_END_MONTH_DAY="${RUN_END_MONTH_DAY:-10-31}"
 DATA_SOURCE="${DATA_SOURCE:-staged_arco_cache}"
 REGION="${REGION:-eastern_canada}"
 ZG_TOP_PA="${ZG_TOP_PA:-70000}"
+ZG_BOTTOM="${ZG_BOTTOM:-surface_pressure}"
 ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-}"
-USE_SURFACE_AS_BOTTOM="${USE_SURFACE_AS_BOTTOM:-1}"
 ALLOW_BOTTOM_OVERFLOW="${ALLOW_BOTTOM_OVERFLOW:-1}"
 
 INIT_MANIFEST_ONLY="${INIT_MANIFEST_ONLY:-0}"
@@ -72,17 +72,13 @@ ehb_add_production_domain_args() {
 
   args_ref+=(
     --region "${REGION}"
+    --zg-bottom "${ZG_BOTTOM}"
     --zg-top-pa "${ZG_TOP_PA}"
   )
 
-  if [[ "${USE_SURFACE_AS_BOTTOM}" == "1" ]]; then
-    args_ref+=(--zg-bottom surface_pressure)
-  else
-    : "${ZG_BOTTOM_PA:?ZG_BOTTOM_PA must be set when USE_SURFACE_AS_BOTTOM=0}"
-    args_ref+=(
-      --zg-bottom pressure_level
-      --zg-bottom-pa "${ZG_BOTTOM_PA}"
-    )
+  if [[ "${ZG_BOTTOM}" == "pressure_level" ]]; then
+    : "${ZG_BOTTOM_PA:?ZG_BOTTOM_PA must be set when ZG_BOTTOM=pressure_level}"
+    args_ref+=(--zg-bottom-pa "${ZG_BOTTOM_PA}")
   fi
 
   if ehb_bool_enabled "${ALLOW_BOTTOM_OVERFLOW}"; then

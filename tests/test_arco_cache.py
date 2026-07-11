@@ -686,6 +686,36 @@ def test_cache_load_combines_complementary_time_tiles(monkeypatch, tmp_path):
     assert str(out["time"].values[-1]) == "1940-06-01T04:00:00.000000000"
 
 
+def test_cache_load_rejects_gap_between_time_tiles(monkeypatch, tmp_path):
+    _patch_to_zarr_creates_store(monkeypatch)
+    request = _request()
+    first_source = _source_cfg_with(
+        time_start="1940-06-01T00:00:00",
+        time_end="1940-06-01T01:00:00",
+    )
+    second_source = _source_cfg_with(
+        time_start="1940-06-01T03:00:00",
+        time_end="1940-06-01T04:00:00",
+    )
+    first_path, first_tile = _write_indexed_tile(tmp_path, first_source, request)
+    second_path, second_tile = _write_indexed_tile(tmp_path, second_source, request)
+    _patch_open_zarr_from_registry(
+        monkeypatch,
+        {
+            str(first_path): first_tile,
+            str(second_path): second_tile,
+        },
+    )
+
+    with pytest.raises(cache.OfflineCoverageError, match="missing 1 requested hourly"):
+        cache.load_cache_dataset(
+            tmp_path,
+            _staged_source_cfg(staged_cache_root=str(tmp_path)),
+            request,
+            include_benchmark_variables=False,
+        )
+
+
 def test_cache_load_rejects_conflicting_overlapping_time_tiles(monkeypatch, tmp_path):
     _patch_to_zarr_creates_store(monkeypatch)
     request = _request()
