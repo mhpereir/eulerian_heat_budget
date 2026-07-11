@@ -6,8 +6,8 @@
 #
 # Keep production staging and compute settings here so they cannot drift.
 
-START_YEAR="${START_YEAR:-1940}"
-END_YEAR="${END_YEAR:-1945}"
+START_YEAR="${START_YEAR:-1946}"
+END_YEAR="${END_YEAR:-2025}"
 RUN_START_MONTH_DAY="${RUN_START_MONTH_DAY:-05-01}"
 RUN_END_MONTH_DAY="${RUN_END_MONTH_DAY:-10-31}"
 
