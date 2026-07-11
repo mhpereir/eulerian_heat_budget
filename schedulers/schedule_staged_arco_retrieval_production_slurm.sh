@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=32G
+#SBATCH --mem=24G
 #SBATCH --time=72:00:00
 #SBATCH --array=0-74
 # Submit from the repository root after ensuring logs/ exists; Slurm
