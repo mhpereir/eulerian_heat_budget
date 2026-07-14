@@ -124,7 +124,12 @@ def load_staged_arco_benchmark_fluxes(
     )
 
 
-def standardize_era5_dataset(ds: xr.Dataset, cfg: specs.DataSourceConfig) -> xr.Dataset:
+def standardize_era5_dataset(
+    ds: xr.Dataset,
+    cfg: specs.DataSourceConfig,
+    *,
+    rechunk: bool = True,
+) -> xr.Dataset:
     """
     Standardize ERA5-like datasets from either local NetCDF inputs or ARCO Zarr
     into the canonical internal schema expected by validate.py and downstream code.
@@ -284,11 +289,12 @@ def standardize_era5_dataset(ds: xr.Dataset, cfg: specs.DataSourceConfig) -> xr.
     # ------------------------------------------------------------------
     # 11) Chunk for dask workflows
     # ------------------------------------------------------------------
-    chunk_map = dict(config.DEFAULT_CHUNKS_3D1)
-    if cfg.kind in {"arco_era5", "staged_arco_cache"}:
-        chunk_map["time"] = cfg.chunks_time
+    if rechunk:
+        chunk_map = dict(config.DEFAULT_CHUNKS_3D1)
+        if cfg.kind in {"arco_era5", "staged_arco_cache"}:
+            chunk_map["time"] = cfg.chunks_time
 
-    ds = ds.chunk(chunk_map)
+        ds = ds.chunk(chunk_map)
 
     return ds
 
@@ -447,7 +453,11 @@ def load_arco_benchmark_fluxes(
     return ds
 
 
-def _open_arco_zarr_with_retry(cfg: specs.DataSourceConfig) -> xr.Dataset:
+def _open_arco_zarr_with_retry(
+    cfg: specs.DataSourceConfig,
+    *,
+    chunks: str | int | dict | None = "auto",
+) -> xr.Dataset:
     max_attempts = config.DEFAULT_ARCO_OPEN_MAX_ATTEMPTS
     base_delay_seconds = config.DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS
 
@@ -455,6 +465,7 @@ def _open_arco_zarr_with_retry(cfg: specs.DataSourceConfig) -> xr.Dataset:
         try:
             return xr.open_zarr(
                 cfg.arco_path,
+                chunks=chunks,
                 storage_options={"token": cfg.arco_storage_token},
                 decode_timedelta=False,
             )

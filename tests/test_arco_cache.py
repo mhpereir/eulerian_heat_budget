@@ -469,6 +469,41 @@ def test_staged_retrieval_chunks_day_windows():
     ]
 
 
+def test_staged_retrieval_preserves_native_chunks_until_after_selection(monkeypatch):
+    canonical = _canonical_dataset()
+    source = canonical[["T", "u", "v", "w", "sp"]].rename(
+        {
+            "T": "temperature",
+            "u": "u_component_of_wind",
+            "v": "v_component_of_wind",
+            "w": "vertical_velocity",
+            "sp": "surface_pressure",
+        }
+    )
+    observed = {}
+
+    def fake_open(source_cfg, *, chunks="auto"):
+        observed["open_chunks"] = chunks
+        return source
+
+    def fake_standardize(ds, source_cfg, *, rechunk=True):
+        observed["rechunk"] = rechunk
+        return canonical
+
+    monkeypatch.setattr(staged_arco_retrieval.io, "_open_arco_zarr_with_retry", fake_open)
+    monkeypatch.setattr(staged_arco_retrieval.io, "standardize_era5_dataset", fake_standardize)
+
+    tile = staged_arco_retrieval._build_tile_from_arco(
+        _source_cfg(),
+        _request(),
+        include_benchmark_variables=False,
+    )
+
+    assert observed == {"open_chunks": {}, "rechunk": False}
+    assert tile.sizes["lat"] < canonical.sizes["lat"]
+    assert tile.sizes["lon"] < canonical.sizes["lon"]
+
+
 def test_staged_retrieval_main_stages_each_month_chunk(monkeypatch, tmp_path):
     args = cli.parse_args(
         [

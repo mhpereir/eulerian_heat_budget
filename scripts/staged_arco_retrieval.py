@@ -306,7 +306,11 @@ def _build_tile_from_arco(
 
     build_started = time.monotonic()
     _log_info(f"opening ARCO zarr store {source_cfg.arco_path}")
-    ds = io._open_arco_zarr_with_retry(source_cfg)
+    # Preserve the source store's native chunks until after the regional and
+    # vertical selections. Rechunking the global ARCO arrays first creates an
+    # unnecessarily large task graph and can exhaust memory even for a small
+    # requested tile.
+    ds = io._open_arco_zarr_with_retry(source_cfg, chunks={})
     _log_info(f"opened ARCO zarr store in {_elapsed_seconds(build_started)}")
     _log_info(f"selecting ARCO source variables: {list(var_map)}")
     ds = ds[list(var_map.keys())]
@@ -316,7 +320,7 @@ def _build_tile_from_arco(
     _log_info(f"renaming ARCO variables to staged schema: {list(var_map.values())}")
     ds = ds.rename(var_map)
     _log_info("standardizing ARCO dataset metadata and chunks")
-    ds = io.standardize_era5_dataset(ds, source_cfg)
+    ds = io.standardize_era5_dataset(ds, source_cfg, rechunk=False)
     _log_info("building wall-only staged tile metadata")
     tile = cache.build_arco_cache_tile(
         ds,
