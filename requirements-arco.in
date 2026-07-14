@@ -1,0 +1,8 @@
+dask[array,distributed]
+gcsfs
+matplotlib
+numpy
+pytest
+scipy
+xarray
+zarr

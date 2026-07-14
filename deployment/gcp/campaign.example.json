@@ -1,0 +1,23 @@
+{
+  "campaign_id": "replace-with-campaign-id",
+  "domain": {
+    "allow_bottom_overflow": true,
+    "margin_n": 1,
+    "region": "pnw_bartusek",
+    "zg_bottom": "surface_pressure",
+    "zg_top_pa": 70000
+  },
+  "season": {
+    "end_month_day": "10-31",
+    "start_month_day": "05-01"
+  },
+  "staging": {
+    "attempt_timeout_seconds": 10800,
+    "include_benchmark_variables": false,
+    "time_chunk": "month"
+  },
+  "years": {
+    "end": 2025,
+    "start": 1940
+  }
+}
