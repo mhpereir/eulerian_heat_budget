@@ -94,6 +94,12 @@ Use that digest URI for submission. Tags such as `latest` are rejected.
   --parallelism 1
 ```
 
+Batch uses a 40 GB `pd-balanced` boot disk per worker by default. This leaves
+ample scratch space for the observed approximately 4.5 GB yearly cache while
+requiring 200 GB of SSD quota at the default parallelism of five. Override it
+with `--boot-disk-gb` if later measurements show that a campaign needs more
+scratch space.
+
 The submission command validates the campaign, records its normalized JSON and
 rendered job JSON in the bucket, then submits the Batch job. A campaign ID
 cannot be reused with different parameters.
@@ -102,8 +108,11 @@ Inspect job state and task logs with:
 
 ```bash
 gcloud batch jobs describe JOB_ID --location us-central1
+JOB_UID="$(gcloud batch jobs describe JOB_ID \
+  --location us-central1 \
+  --format='value(uid)')"
 gcloud logging read \
-  'labels."goog-batch-job-id"="JOB_ID"' \
+  "logName=\"projects/eulerian-heat-budget/logs/batch_task_logs\" AND labels.job_uid=\"${JOB_UID}\"" \
   --project eulerian-heat-budget \
   --limit 100
 ```

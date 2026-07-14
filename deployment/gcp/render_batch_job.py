@@ -25,7 +25,7 @@ def render_job(
     service_account_email: str,
     job_id: str,
     parallelism: int = 5,
-    boot_disk_gb: int = 100,
+    boot_disk_gb: int = 40,
 ) -> dict[str, Any]:
     if not IMAGE_DIGEST_PATTERN.fullmatch(image_uri):
         raise ValueError("image_uri must be pinned with an @sha256:<64 hex> digest.")
@@ -73,6 +73,8 @@ def render_job(
                             },
                             "mountPath": mount_path,
                             "mountOptions": [
+                                "-o",
+                                "allow_other",
                                 "--implicit-dirs",
                                 "--uid=10001",
                                 "--gid=10001",
@@ -139,7 +141,7 @@ def main() -> None:
     parser.add_argument("--service-account-email", required=True)
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--parallelism", type=int, default=5)
-    parser.add_argument("--boot-disk-gb", type=int, default=100)
+    parser.add_argument("--boot-disk-gb", type=int, default=40)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--normalized-campaign-output", type=Path)
     args = parser.parse_args()

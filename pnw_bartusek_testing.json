@@ -1,5 +1,5 @@
 {
-  "campaign_id": "replace-with-campaign-id",
+  "campaign_id": "pnw-bartusek-test",
   "domain": {
     "allow_bottom_overflow": true,
     "margin_n": 1,
@@ -17,7 +17,7 @@
     "time_chunk": "month"
   },
   "years": {
-    "end": 2025,
+    "end": 1945,
     "start": 1940
   }
 }

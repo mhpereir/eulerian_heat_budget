@@ -289,7 +289,6 @@ def test_render_job_uses_one_digest_pinned_task_per_year():
         service_account_email="batch@example-project.iam.gserviceaccount.com",
         job_id="test-campaign-job",
         parallelism=2,
-        boot_disk_gb=100,
     )
 
     group = job["taskGroups"][0]
@@ -302,6 +301,8 @@ def test_render_job_uses_one_digest_pinned_task_per_year():
     }
     assert group["taskSpec"]["environment"]["variables"]["DASK_NUM_WORKERS"] == "2"
     assert group["taskSpec"]["volumes"][0]["mountOptions"] == [
+        "-o",
+        "allow_other",
         "--implicit-dirs",
         "--uid=10001",
         "--gid=10001",
@@ -309,7 +310,7 @@ def test_render_job_uses_one_digest_pinned_task_per_year():
         "--dir-mode=0770",
     ]
     assert job["allocationPolicy"]["instances"][0]["policy"]["machineType"] == "e2-standard-2"
-    assert job["allocationPolicy"]["instances"][0]["policy"]["bootDisk"]["sizeGb"] == 100
+    assert job["allocationPolicy"]["instances"][0]["policy"]["bootDisk"]["sizeGb"] == 40
 
     with pytest.raises(ValueError, match="digest"):
         render_job(

@@ -9,7 +9,7 @@ CAMPAIGN_FILE=""
 IMAGE_URI=""
 JOB_ID=""
 PARALLELISM=5
-BOOT_DISK_GB=100
+BOOT_DISK_GB=40
 
 usage() {
   echo "Usage: $0 --campaign FILE --image-uri URI@sha256:DIGEST [--job-id ID] [--project ID] [--region REGION] [--bucket NAME] [--service-account NAME] [--parallelism N] [--boot-disk-gb N]" >&2
