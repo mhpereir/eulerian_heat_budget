@@ -469,7 +469,7 @@ def test_staged_retrieval_chunks_day_windows():
     ]
 
 
-def test_staged_retrieval_preserves_native_chunks_until_after_selection(monkeypatch):
+def test_staged_retrieval_avoids_store_wide_dask_graph(monkeypatch):
     canonical = _canonical_dataset()
     source = canonical[["T", "u", "v", "w", "sp"]].rename(
         {
@@ -481,6 +481,8 @@ def test_staged_retrieval_preserves_native_chunks_until_after_selection(monkeypa
         }
     )
     observed = {}
+    materialized = []
+    original_load = xr.DataArray.load
 
     def fake_open(source_cfg, *, chunks="auto"):
         observed["open_chunks"] = chunks
@@ -490,8 +492,13 @@ def test_staged_retrieval_preserves_native_chunks_until_after_selection(monkeypa
         observed["rechunk"] = rechunk
         return canonical
 
+    def tracked_load(data_array, **kwargs):
+        materialized.append(data_array.name)
+        return original_load(data_array, **kwargs)
+
     monkeypatch.setattr(staged_arco_retrieval.io, "_open_arco_zarr_with_retry", fake_open)
     monkeypatch.setattr(staged_arco_retrieval.io, "standardize_era5_dataset", fake_standardize)
+    monkeypatch.setattr(xr.DataArray, "load", tracked_load)
 
     tile = staged_arco_retrieval._build_tile_from_arco(
         _source_cfg(),
@@ -499,7 +506,8 @@ def test_staged_retrieval_preserves_native_chunks_until_after_selection(monkeypa
         include_benchmark_variables=False,
     )
 
-    assert observed == {"open_chunks": {}, "rechunk": False}
+    assert observed == {"open_chunks": None, "rechunk": False}
+    assert materialized == ["T", "w", "sp", "u_wall", "v_wall"]
     assert tile.sizes["lat"] < canonical.sizes["lat"]
     assert tile.sizes["lon"] < canonical.sizes["lon"]
 
