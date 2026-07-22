@@ -370,7 +370,7 @@ Wait for the Batch job to reach `SUCCEEDED`, then download to a fresh local
 directory on a POSIX filesystem:
 
 ```bash
-export CACHE_ROOT="${PWD}/data/${CAMPAIGN_ID}"
+export CACHE_ROOT="${HOME}/work/google_cloud/ehb-campaigns/data/${CAMPAIGN_ID}"
 test ! -e "${CACHE_ROOT}"
 mkdir -p "${CACHE_ROOT}"
 
