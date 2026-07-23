@@ -1,10 +1,12 @@
-import sys
-import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+import multiprocessing
+from multiprocessing.connection import Connection
 from pathlib import Path
 import signal
-import threading
+import sys
+import time
+import traceback
 
 PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
 if PROJECT_ROOT not in sys.path:
@@ -13,6 +15,30 @@ if PROJECT_ROOT not in sys.path:
 from scripts import run_budget
 from src import cli, config, io, specs
 from src_arco import cache, variables
+
+
+CHILD_EXIT_GRACE_SECONDS = 10.0
+CHILD_POLL_SECONDS = 0.25
+
+
+class _ChildStageAttemptError(RuntimeError):
+    def __init__(
+        self,
+        error_type: str,
+        message: str,
+        remote_traceback: str,
+        *,
+        transient: bool,
+    ):
+        self.error_type = error_type
+        self.message = message
+        self.remote_traceback = remote_traceback
+        self.transient = transient
+        super().__init__(f"{error_type}: {message}\nChild traceback:\n{remote_traceback}")
+
+
+class _UnexpectedChildExit(RuntimeError):
+    pass
 
 
 def _log_info(message: str) -> None:
@@ -120,7 +146,7 @@ def main() -> None:
                 continue
 
             _log_info(f"staging ARCO ERA5 {chunk_start} to {chunk_end}")
-            tile_path, tile = _stage_window_with_retry(
+            tile_path, metadata = _stage_window_with_retry(
                 cache_root,
                 source_cfg,
                 request,
@@ -129,7 +155,7 @@ def main() -> None:
             )
             _log_info(
                 f"wrote staged tile {tile_path} "
-                f"sizes={dict(tile.sizes)} variables={list(tile.data_vars)}"
+                f"sizes={dict(metadata.sizes)} variables={list(metadata.variables)}"
             )
 
 
@@ -154,40 +180,37 @@ def _stage_window_with_retry(
                 f"for {source_cfg.time_start} to {source_cfg.time_end} "
                 f"starting (timeout={attempt_timeout_seconds:.0f}s)"
             )
-            with _stage_attempt_time_limit(attempt_timeout_seconds):
-                tile = _build_tile_from_arco(
-                    source_cfg,
-                    request,
-                    include_benchmark_variables=include_benchmark_variables,
-                )
-                _log_info(
-                    f"writing staged tile to local cache root {cache_root} "
-                    f"for {source_cfg.time_start} to {source_cfg.time_end}"
-                )
-                tile_path = cache.write_tile(
-                    cache_root,
-                    tile,
-                    source_cfg,
-                    request,
-                    include_benchmark_variables=include_benchmark_variables,
-                )
+            tile_path, metadata = _run_stage_attempt_in_child(
+                cache_root,
+                source_cfg,
+                request,
+                include_benchmark_variables=include_benchmark_variables,
+                timeout_seconds=attempt_timeout_seconds,
+            )
             _log_info(
                 f"ARCO stage/write attempt {attempt}/{max_attempts} completed "
                 f"in {_elapsed_seconds(attempt_started)}"
             )
-            return tile_path, tile
+            return tile_path, metadata
         except Exception as exc:
-            if not io._is_transient_arco_open_error(exc) or attempt == max_attempts:
+            transient = (
+                exc.transient
+                if isinstance(exc, _ChildStageAttemptError)
+                else io._is_transient_arco_open_error(exc)
+            )
+            error_summary = _attempt_error_summary(exc)
+            if not transient or attempt == max_attempts:
                 _log_info(
                     f"ARCO stage/write attempt {attempt}/{max_attempts} failed "
                     f"after {_elapsed_seconds(attempt_started)} without retry: "
-                    f"{type(exc).__name__}: {exc}"
+                    f"{error_summary}"
                 )
                 raise
 
             delay_seconds = base_delay_seconds * (2 ** (attempt - 1))
             _log_info(
-                f"ARCO stage/write attempt {attempt}/{max_attempts} failed with a transient error: {exc}. "
+                f"ARCO stage/write attempt {attempt}/{max_attempts} failed with a transient error: "
+                f"{error_summary}. "
                 f"Elapsed={_elapsed_seconds(attempt_started)}. Retrying in {delay_seconds:.0f} seconds..."
             )
             time.sleep(delay_seconds)
@@ -195,32 +218,228 @@ def _stage_window_with_retry(
     raise RuntimeError("ARCO stage/write retry loop exhausted unexpectedly.")
 
 
+def _attempt_error_summary(exc: Exception) -> str:
+    if isinstance(exc, _ChildStageAttemptError):
+        return f"{exc.error_type}: {exc.message}"
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _run_stage_attempt_in_child(
+    cache_root: Path,
+    source_cfg: specs.DataSourceConfig,
+    request: specs.DomainRequest,
+    *,
+    include_benchmark_variables: bool,
+    timeout_seconds: float | None,
+    process_context=None,
+    worker=None,
+    child_exit_grace_seconds: float = CHILD_EXIT_GRACE_SECONDS,
+) -> tuple[Path, cache._TileWriteMetadata]:
+    # The child owns remote-backed computation only. The parent does not
+    # promote or register its temporary store until that process is gone.
+    context = process_context or multiprocessing.get_context("spawn")
+    child_worker = worker or _stage_attempt_worker
+    tmp_path = cache._create_temporary_tile_path(
+        cache_root,
+        source_cfg,
+        request,
+        include_benchmark_variables=include_benchmark_variables,
+    )
+    receive_conn, send_conn = context.Pipe(duplex=False)
+    process = context.Process(
+        target=child_worker,
+        args=(
+            send_conn,
+            str(cache_root),
+            str(tmp_path),
+            source_cfg,
+            request,
+            include_benchmark_variables,
+        ),
+        name=f"arco-stage-{source_cfg.time_start or 'unbounded'}",
+    )
+
+    try:
+        with _sigterm_as_system_exit():
+            process.start()
+            send_conn.close()
+            _log_info(f"started ARCO stage/write child pid={process.pid}")
+            message = _wait_for_child_message(
+                process,
+                receive_conn,
+                timeout_seconds=timeout_seconds,
+            )
+            _reap_child_after_message(
+                process,
+                grace_seconds=child_exit_grace_seconds,
+            )
+
+            status = message.get("status")
+            if status == "error":
+                raise _ChildStageAttemptError(
+                    str(message.get("error_type", "Exception")),
+                    str(message.get("message", "")),
+                    str(message.get("traceback", "")),
+                    transient=bool(message.get("transient", False)),
+                )
+            if status != "success" or not isinstance(message.get("metadata"), cache._TileWriteMetadata):
+                raise RuntimeError(f"Invalid ARCO stage/write child response: {message!r}")
+
+            metadata = message["metadata"]
+            tile_path = cache._commit_temporary_tile(
+                cache_root,
+                tmp_path,
+                metadata,
+                source_cfg,
+                request,
+                include_benchmark_variables=include_benchmark_variables,
+            )
+            return tile_path, metadata
+    finally:
+        send_conn.close()
+        receive_conn.close()
+        if process.pid is not None:
+            _terminate_and_reap_child(
+                process,
+                grace_seconds=child_exit_grace_seconds,
+            )
+        cache._remove_temporary_tile(
+            tmp_path,
+            reason="after child attempt cleanup",
+        )
+
+
+def _stage_attempt_worker(
+    send_conn: Connection,
+    cache_root: str,
+    tmp_path: str,
+    source_cfg: specs.DataSourceConfig,
+    request: specs.DomainRequest,
+    include_benchmark_variables: bool,
+) -> None:
+    try:
+        tile = _build_tile_from_arco(
+            source_cfg,
+            request,
+            include_benchmark_variables=include_benchmark_variables,
+        )
+        _log_info(
+            f"writing staged tile to local cache root {cache_root} "
+            f"for {source_cfg.time_start} to {source_cfg.time_end}"
+        )
+        metadata = cache._write_temporary_tile(
+            cache_root,
+            tmp_path,
+            tile,
+            source_cfg,
+            request,
+            include_benchmark_variables=include_benchmark_variables,
+        )
+        send_conn.send({"status": "success", "metadata": metadata})
+    except Exception as exc:
+        send_conn.send(
+            {
+                "status": "error",
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+                "traceback": traceback.format_exc(),
+                "transient": io._is_transient_arco_open_error(exc),
+            }
+        )
+    finally:
+        send_conn.close()
+
+
+def _wait_for_child_message(
+    process,
+    receive_conn: Connection,
+    *,
+    timeout_seconds: float | None,
+) -> dict:
+    deadline = (
+        None
+        if timeout_seconds is None or timeout_seconds <= 0
+        else time.monotonic() + float(timeout_seconds)
+    )
+
+    while True:
+        if deadline is None:
+            poll_seconds = CHILD_POLL_SECONDS
+        else:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                if receive_conn.poll(0):
+                    return _receive_child_message(receive_conn, process=process)
+                raise TimeoutError(
+                    f"ARCO stage/write attempt exceeded {float(timeout_seconds):.0f} seconds"
+                )
+            poll_seconds = min(CHILD_POLL_SECONDS, remaining)
+
+        if receive_conn.poll(poll_seconds):
+            return _receive_child_message(receive_conn, process=process)
+
+        if not process.is_alive():
+            if receive_conn.poll(0):
+                return _receive_child_message(receive_conn, process=process)
+            process.join()
+            raise _UnexpectedChildExit(
+                f"ARCO stage/write child pid={process.pid} exited without a result "
+                f"(exitcode={process.exitcode})"
+            )
+
+
+def _receive_child_message(receive_conn: Connection, *, process) -> dict:
+    try:
+        message = receive_conn.recv()
+    except EOFError as exc:
+        process.join()
+        raise _UnexpectedChildExit(
+            f"ARCO stage/write child pid={process.pid} closed its result pipe "
+            f"without a message (exitcode={process.exitcode})"
+        ) from exc
+    if not isinstance(message, dict):
+        raise RuntimeError(f"Invalid ARCO stage/write child message: {message!r}")
+    return message
+
+
+def _reap_child_after_message(process, *, grace_seconds: float) -> None:
+    process.join(grace_seconds)
+    if not process.is_alive():
+        return
+    _log_info(
+        f"ARCO stage/write child pid={process.pid} did not exit within "
+        f"{grace_seconds:.0f}s after reporting its result; terminating it"
+    )
+    _terminate_and_reap_child(process, grace_seconds=grace_seconds)
+
+
+def _terminate_and_reap_child(process, *, grace_seconds: float) -> None:
+    if not process.is_alive():
+        process.join()
+        return
+    process.terminate()
+    process.join(grace_seconds)
+    if process.is_alive():
+        _log_info(
+            f"ARCO stage/write child pid={process.pid} did not terminate within "
+            f"{grace_seconds:.0f}s; killing it"
+        )
+        process.kill()
+        process.join()
+
+
 @contextmanager
-def _stage_attempt_time_limit(timeout_seconds: float | None):
-    if timeout_seconds is None or timeout_seconds <= 0:
-        yield
-        return
+def _sigterm_as_system_exit():
+    previous_handler = signal.getsignal(signal.SIGTERM)
 
-    if threading.current_thread() is not threading.main_thread():
-        yield
-        return
+    def _raise_system_exit(signum, frame):
+        raise SystemExit(128 + signum)
 
-    timeout_seconds = float(timeout_seconds)
-    previous_handler = signal.getsignal(signal.SIGALRM)
-    previous_timer = signal.getitimer(signal.ITIMER_REAL)
-
-    def _raise_timeout(signum, frame):
-        raise TimeoutError(f"ARCO stage/write attempt exceeded {timeout_seconds:.0f} seconds")
-
-    signal.signal(signal.SIGALRM, _raise_timeout)
-    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    signal.signal(signal.SIGTERM, _raise_system_exit)
     try:
         yield
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0.0)
-        signal.signal(signal.SIGALRM, previous_handler)
-        if previous_timer[0] > 0:
-            signal.setitimer(signal.ITIMER_REAL, previous_timer[0], previous_timer[1])
+        signal.signal(signal.SIGTERM, previous_handler)
 
 
 def _iter_time_windows(args):

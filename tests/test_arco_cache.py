@@ -1,5 +1,10 @@
 import importlib
+import multiprocessing
+import os
+import signal
 import sys
+import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -17,6 +22,81 @@ from src_arco import cache, selection, variables
 
 
 staged_arco_retrieval = importlib.import_module("scripts.staged_arco_retrieval")
+
+
+def _tile_write_metadata() -> cache._TileWriteMetadata:
+    return cache._TileWriteMetadata(
+        sizes=(("time", 1), ("level", 1), ("lat", 1), ("lon", 1)),
+        variables=("dummy",),
+        time_start="1940-06-01T00:00:00.000000000",
+        time_end="1940-06-01T00:00:00.000000000",
+        lat_min=1.0,
+        lat_max=1.0,
+        lon_min=11.0,
+        lon_max=11.0,
+        level_min=80000.0,
+        level_max=80000.0,
+    )
+
+
+def _spawn_success_worker(send_conn, cache_root, tmp_path, source_cfg, request, include_benchmark_variables):
+    (Path(tmp_path) / "child.pid").write_text(str(os.getpid()))
+    send_conn.send({"status": "success", "metadata": _tile_write_metadata()})
+    send_conn.close()
+
+
+def _spawn_lingering_success_worker(
+    send_conn,
+    cache_root,
+    tmp_path,
+    source_cfg,
+    request,
+    include_benchmark_variables,
+):
+    _spawn_success_worker(
+        send_conn,
+        cache_root,
+        tmp_path,
+        source_cfg,
+        request,
+        include_benchmark_variables,
+    )
+    time.sleep(60)
+
+
+def _spawn_timeout_worker(send_conn, cache_root, tmp_path, source_cfg, request, include_benchmark_variables):
+    (Path(cache_root) / "timeout-child.pid").write_text(str(os.getpid()))
+    time.sleep(60)
+
+
+def _spawn_delayed_success_worker(
+    send_conn,
+    cache_root,
+    tmp_path,
+    source_cfg,
+    request,
+    include_benchmark_variables,
+):
+    time.sleep(0.2)
+    _spawn_success_worker(
+        send_conn,
+        cache_root,
+        tmp_path,
+        source_cfg,
+        request,
+        include_benchmark_variables,
+    )
+
+
+def _spawn_unexpected_exit_worker(
+    send_conn,
+    cache_root,
+    tmp_path,
+    source_cfg,
+    request,
+    include_benchmark_variables,
+):
+    os._exit(7)
 
 
 def _request() -> DomainRequest:
@@ -360,31 +440,128 @@ def test_write_tile_does_not_hold_cache_lock_during_zarr_write(monkeypatch, tmp_
     assert events == ["enter", "exit"]
 
 
+def test_temporary_tile_write_requires_parent_commit(monkeypatch, tmp_path):
+    source_cfg = _source_cfg()
+    request = _request()
+    tile = cache.build_arco_cache_tile(
+        _canonical_dataset(),
+        request,
+        include_benchmark_variables=False,
+    )
+    _patch_to_zarr_creates_store(monkeypatch)
+    temporary_path = cache._create_temporary_tile_path(
+        tmp_path,
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+
+    metadata = cache._write_temporary_tile(
+        tmp_path,
+        temporary_path,
+        tile,
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+
+    assert temporary_path.exists()
+    assert not cache.exact_tile_exists(
+        tmp_path,
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+
+    tile_path = cache._commit_temporary_tile(
+        tmp_path,
+        temporary_path,
+        metadata,
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+
+    assert tile_path.exists()
+    assert not temporary_path.exists()
+    assert cache.exact_tile_exists(
+        tmp_path,
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+
+
+def test_parent_commit_removes_concurrent_duplicate_temporary_tile(monkeypatch, tmp_path):
+    source_cfg = _source_cfg()
+    request = _request()
+    tile = cache.build_arco_cache_tile(
+        _canonical_dataset(),
+        request,
+        include_benchmark_variables=False,
+    )
+    _patch_to_zarr_creates_store(monkeypatch)
+    temporary_paths = [
+        cache._create_temporary_tile_path(
+            tmp_path,
+            source_cfg,
+            request,
+            include_benchmark_variables=False,
+        )
+        for _ in range(2)
+    ]
+    metadata = [
+        cache._write_temporary_tile(
+            tmp_path,
+            path,
+            tile,
+            source_cfg,
+            request,
+            include_benchmark_variables=False,
+        )
+        for path in temporary_paths
+    ]
+
+    first_path = cache._commit_temporary_tile(
+        tmp_path,
+        temporary_paths[0],
+        metadata[0],
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+    second_path = cache._commit_temporary_tile(
+        tmp_path,
+        temporary_paths[1],
+        metadata[1],
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+
+    assert first_path == second_path
+    assert first_path.exists()
+    assert not any(path.exists() for path in temporary_paths)
+
+
 def test_staged_arco_retrieval_retries_transient_write_failures(monkeypatch, tmp_path):
     source_cfg = _source_cfg()
     request = _request()
-    tile = xr.Dataset({"dummy": xr.DataArray([1.0], dims=("time",))})
-    build_calls = []
-    write_calls = []
+    attempt_calls = []
     sleeps = []
 
-    def fake_build_tile_from_arco(*args, **kwargs):
-        build_calls.append((args, kwargs))
-        return tile
-
-    def fake_write_tile(*args, **kwargs):
-        write_calls.append((args, kwargs))
-        if len(write_calls) == 1:
+    def fake_run_stage_attempt(*args, **kwargs):
+        attempt_calls.append((args, kwargs))
+        if len(attempt_calls) == 1:
             raise OSError("Temporary failure in name resolution")
-        return tmp_path / "tile.zarr"
+        return tmp_path / "tile.zarr", _tile_write_metadata()
 
-    monkeypatch.setattr(staged_arco_retrieval, "_build_tile_from_arco", fake_build_tile_from_arco)
-    monkeypatch.setattr(staged_arco_retrieval.cache, "write_tile", fake_write_tile)
+    monkeypatch.setattr(staged_arco_retrieval, "_run_stage_attempt_in_child", fake_run_stage_attempt)
     monkeypatch.setattr(staged_arco_retrieval.time, "sleep", lambda seconds: sleeps.append(seconds))
     monkeypatch.setattr(staged_arco_retrieval.config, "DEFAULT_ARCO_OPEN_MAX_ATTEMPTS", 2)
     monkeypatch.setattr(staged_arco_retrieval.config, "DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS", 3.0)
 
-    tile_path, staged_tile = staged_arco_retrieval._stage_window_with_retry(
+    tile_path, metadata = staged_arco_retrieval._stage_window_with_retry(
         tmp_path,
         source_cfg,
         request,
@@ -392,32 +569,29 @@ def test_staged_arco_retrieval_retries_transient_write_failures(monkeypatch, tmp
     )
 
     assert tile_path == tmp_path / "tile.zarr"
-    assert staged_tile is tile
-    assert len(build_calls) == 2
-    assert len(write_calls) == 2
+    assert metadata == _tile_write_metadata()
+    assert len(attempt_calls) == 2
     assert sleeps == [3.0]
 
 
 def test_staged_arco_retrieval_retries_stage_attempt_timeout(monkeypatch, tmp_path):
     source_cfg = _source_cfg()
     request = _request()
-    tile = xr.Dataset({"dummy": xr.DataArray([1.0], dims=("time",))})
-    build_calls = []
+    attempt_calls = []
     sleeps = []
 
-    def fake_build_tile_from_arco(*args, **kwargs):
-        build_calls.append((args, kwargs))
-        if len(build_calls) == 1:
+    def fake_run_stage_attempt(*args, **kwargs):
+        attempt_calls.append((args, kwargs))
+        if len(attempt_calls) == 1:
             raise TimeoutError("ARCO stage/write attempt exceeded 5 seconds")
-        return tile
+        return tmp_path / "tile.zarr", _tile_write_metadata()
 
-    monkeypatch.setattr(staged_arco_retrieval, "_build_tile_from_arco", fake_build_tile_from_arco)
-    monkeypatch.setattr(staged_arco_retrieval.cache, "write_tile", lambda *args, **kwargs: tmp_path / "tile.zarr")
+    monkeypatch.setattr(staged_arco_retrieval, "_run_stage_attempt_in_child", fake_run_stage_attempt)
     monkeypatch.setattr(staged_arco_retrieval.time, "sleep", lambda seconds: sleeps.append(seconds))
     monkeypatch.setattr(staged_arco_retrieval.config, "DEFAULT_ARCO_OPEN_MAX_ATTEMPTS", 2)
     monkeypatch.setattr(staged_arco_retrieval.config, "DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS", 3.0)
 
-    tile_path, staged_tile = staged_arco_retrieval._stage_window_with_retry(
+    tile_path, metadata = staged_arco_retrieval._stage_window_with_retry(
         tmp_path,
         source_cfg,
         request,
@@ -426,15 +600,213 @@ def test_staged_arco_retrieval_retries_stage_attempt_timeout(monkeypatch, tmp_pa
     )
 
     assert tile_path == tmp_path / "tile.zarr"
-    assert staged_tile is tile
-    assert len(build_calls) == 2
+    assert metadata == _tile_write_metadata()
+    assert len(attempt_calls) == 2
     assert sleeps == [3.0]
 
 
-def test_stage_attempt_time_limit_raises_timeout():
-    with pytest.raises(TimeoutError, match="exceeded 10 seconds"):
-        with staged_arco_retrieval._stage_attempt_time_limit(10.0):
-            staged_arco_retrieval.signal.raise_signal(staged_arco_retrieval.signal.SIGALRM)
+def test_staged_arco_retrieval_retries_child_classified_transient_error(monkeypatch, tmp_path):
+    attempt_calls = []
+    sleeps = []
+
+    def fake_run_stage_attempt(*args, **kwargs):
+        attempt_calls.append((args, kwargs))
+        if len(attempt_calls) == 1:
+            raise staged_arco_retrieval._ChildStageAttemptError(
+                "ClientConnectorError",
+                "cannot connect to host",
+                "remote traceback marker",
+                transient=True,
+            )
+        return tmp_path / "tile.zarr", _tile_write_metadata()
+
+    monkeypatch.setattr(staged_arco_retrieval, "_run_stage_attempt_in_child", fake_run_stage_attempt)
+    monkeypatch.setattr(staged_arco_retrieval.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(staged_arco_retrieval.config, "DEFAULT_ARCO_OPEN_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(staged_arco_retrieval.config, "DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS", 3.0)
+
+    tile_path, metadata = staged_arco_retrieval._stage_window_with_retry(
+        tmp_path,
+        _source_cfg(),
+        _request(),
+        include_benchmark_variables=False,
+    )
+
+    assert tile_path == tmp_path / "tile.zarr"
+    assert metadata == _tile_write_metadata()
+    assert len(attempt_calls) == 2
+    assert sleeps == [3.0]
+
+
+def test_child_timeout_terminates_reaps_and_cleans_attempt(tmp_path):
+    context = multiprocessing.get_context("spawn")
+    before = {process.pid for process in multiprocessing.active_children()}
+
+    with pytest.raises(TimeoutError, match="exceeded 3 seconds"):
+        staged_arco_retrieval._run_stage_attempt_in_child(
+            tmp_path,
+            _source_cfg(),
+            _request(),
+            include_benchmark_variables=False,
+            timeout_seconds=3.0,
+            process_context=context,
+            worker=_spawn_timeout_worker,
+            child_exit_grace_seconds=0.2,
+        )
+
+    marker_path = tmp_path / "timeout-child.pid"
+    assert marker_path.exists()
+    child_pid = int(marker_path.read_text())
+    assert {process.pid for process in multiprocessing.active_children()} == before
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+    assert not list((tmp_path / cache.TILES_DIR).glob(".*.tmp.zarr"))
+    assert not (tmp_path / cache.LOCK_DIR).exists()
+
+
+def test_successful_child_stuck_during_shutdown_is_reaped_and_committed(tmp_path):
+    tile_path, metadata = staged_arco_retrieval._run_stage_attempt_in_child(
+        tmp_path,
+        _source_cfg(),
+        _request(),
+        include_benchmark_variables=False,
+        timeout_seconds=5.0,
+        process_context=multiprocessing.get_context("spawn"),
+        worker=_spawn_lingering_success_worker,
+        child_exit_grace_seconds=0.2,
+    )
+
+    child_pid = int((tile_path / "child.pid").read_text())
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+    assert metadata == _tile_write_metadata()
+    assert cache.exact_tile_exists(
+        tmp_path,
+        _source_cfg(),
+        _request(),
+        include_benchmark_variables=False,
+    )
+    assert not list((tmp_path / cache.TILES_DIR).glob(".*.tmp.zarr"))
+
+
+def test_zero_timeout_still_uses_isolated_child(tmp_path):
+    tile_path, metadata = staged_arco_retrieval._run_stage_attempt_in_child(
+        tmp_path,
+        _source_cfg(),
+        _request(),
+        include_benchmark_variables=False,
+        timeout_seconds=0,
+        process_context=multiprocessing.get_context("spawn"),
+        worker=_spawn_delayed_success_worker,
+        child_exit_grace_seconds=0.2,
+    )
+
+    assert tile_path.exists()
+    assert metadata == _tile_write_metadata()
+
+
+def test_unexpected_child_exit_is_terminal_and_cleans_attempt(tmp_path):
+    with pytest.raises(staged_arco_retrieval._UnexpectedChildExit, match="without a message"):
+        staged_arco_retrieval._run_stage_attempt_in_child(
+            tmp_path,
+            _source_cfg(),
+            _request(),
+            include_benchmark_variables=False,
+            timeout_seconds=5.0,
+            process_context=multiprocessing.get_context("spawn"),
+            worker=_spawn_unexpected_exit_worker,
+            child_exit_grace_seconds=0.2,
+        )
+
+    assert not list((tmp_path / cache.TILES_DIR).glob(".*.tmp.zarr"))
+    assert not (tmp_path / cache.LOCK_DIR).exists()
+
+
+def test_parent_sigterm_reaps_child_and_cleans_attempt(tmp_path):
+    marker_path = tmp_path / "timeout-child.pid"
+
+    def terminate_parent_after_child_starts():
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            if marker_path.exists():
+                os.kill(os.getpid(), signal.SIGTERM)
+                return
+            time.sleep(0.05)
+
+    signal_thread = threading.Thread(target=terminate_parent_after_child_starts, daemon=True)
+    signal_thread.start()
+
+    with pytest.raises(SystemExit) as exc_info:
+        staged_arco_retrieval._run_stage_attempt_in_child(
+            tmp_path,
+            _source_cfg(),
+            _request(),
+            include_benchmark_variables=False,
+            timeout_seconds=30.0,
+            process_context=multiprocessing.get_context("spawn"),
+            worker=_spawn_timeout_worker,
+            child_exit_grace_seconds=0.2,
+        )
+
+    signal_thread.join()
+    assert exc_info.value.code == 128 + signal.SIGTERM
+    child_pid = int(marker_path.read_text())
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+    assert not list((tmp_path / cache.TILES_DIR).glob(".*.tmp.zarr"))
+    assert not (tmp_path / cache.LOCK_DIR).exists()
+
+
+def test_terminal_child_error_preserves_remote_context_without_retry(monkeypatch, tmp_path):
+    attempts = []
+
+    def fake_run_stage_attempt(*args, **kwargs):
+        attempts.append((args, kwargs))
+        raise staged_arco_retrieval._ChildStageAttemptError(
+            "ValueError",
+            "bad staged tile",
+            "remote traceback marker",
+            transient=False,
+        )
+
+    monkeypatch.setattr(staged_arco_retrieval, "_run_stage_attempt_in_child", fake_run_stage_attempt)
+
+    with pytest.raises(staged_arco_retrieval._ChildStageAttemptError) as exc_info:
+        staged_arco_retrieval._stage_window_with_retry(
+            tmp_path,
+            _source_cfg(),
+            _request(),
+            include_benchmark_variables=False,
+        )
+
+    assert len(attempts) == 1
+    assert "ValueError: bad staged tile" in str(exc_info.value)
+    assert "remote traceback marker" in str(exc_info.value)
+
+
+def test_stage_attempt_worker_serializes_transient_error(monkeypatch, tmp_path):
+    def fail_build(*args, **kwargs):
+        raise OSError("Temporary failure in name resolution")
+
+    monkeypatch.setattr(staged_arco_retrieval, "_build_tile_from_arco", fail_build)
+    receive_conn, send_conn = multiprocessing.Pipe(duplex=False)
+
+    staged_arco_retrieval._stage_attempt_worker(
+        send_conn,
+        str(tmp_path),
+        str(tmp_path / "unused.tmp.zarr"),
+        _source_cfg(),
+        _request(),
+        False,
+    )
+    message = receive_conn.recv()
+    receive_conn.close()
+
+    assert message["status"] == "error"
+    assert message["error_type"] == "OSError"
+    assert message["message"] == "Temporary failure in name resolution"
+    assert message["transient"] is True
+    assert "fail_build" in message["traceback"]
 
 
 def test_staged_retrieval_chunks_month_windows():
@@ -507,8 +879,7 @@ def test_staged_retrieval_main_stages_each_month_chunk(monkeypatch, tmp_path):
         attempt_timeout_seconds,
     ):
         staged_windows.append((source_cfg.time_start, source_cfg.time_end))
-        tile = xr.Dataset({"dummy": xr.DataArray([1.0], dims=("time",))})
-        return tmp_path / f"tile-{len(staged_windows)}.zarr", tile
+        return tmp_path / f"tile-{len(staged_windows)}.zarr", _tile_write_metadata()
 
     monkeypatch.setattr(staged_arco_retrieval, "parse_args", lambda: args)
     monkeypatch.setattr(
@@ -566,22 +937,30 @@ def test_staged_retrieval_skips_only_exact_existing_tile(monkeypatch, tmp_path):
             "--no-use-surface-variables",
         ]
     )
-    build_calls = []
+    stage_calls = []
 
-    def fake_build_tile_from_arco(*args, **kwargs):
-        build_calls.append((args, kwargs))
-        return cache.build_arco_cache_tile(
+    def fake_run_stage_attempt(*args, **kwargs):
+        stage_calls.append((args, kwargs))
+        tile = cache.build_arco_cache_tile(
             _canonical_dataset(),
             target_request,
             include_benchmark_variables=False,
         )
+        tile_path = cache.write_tile(
+            tmp_path,
+            tile,
+            source_cfg,
+            target_request,
+            include_benchmark_variables=False,
+        )
+        return tile_path, cache._tile_write_metadata(tile)
 
     monkeypatch.setattr(staged_arco_retrieval, "parse_args", lambda: args)
-    monkeypatch.setattr(staged_arco_retrieval, "_build_tile_from_arco", fake_build_tile_from_arco)
+    monkeypatch.setattr(staged_arco_retrieval, "_run_stage_attempt_in_child", fake_run_stage_attempt)
 
     staged_arco_retrieval.main()
 
-    assert len(build_calls) == 1
+    assert len(stage_calls) == 1
     assert cache.exact_tile_exists(
         tmp_path,
         source_cfg,
@@ -591,7 +970,7 @@ def test_staged_retrieval_skips_only_exact_existing_tile(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         staged_arco_retrieval,
-        "_build_tile_from_arco",
+        "_run_stage_attempt_in_child",
         lambda *args, **kwargs: pytest.fail("exact tile should have been skipped"),
     )
     staged_arco_retrieval.main()

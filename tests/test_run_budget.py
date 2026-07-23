@@ -808,6 +808,7 @@ def test_single_run_schedulers_share_cli_settings():
     assert "BASH_SOURCE" not in retrieval_scheduler
     assert "#PBS -o /home/mhpereir/eulerian_heat_budget/logs/" in run_scheduler
     assert "#PBS -o /home/mhpereir/eulerian_heat_budget/logs/" in retrieval_scheduler
+    assert "#PBS -l select=1:ncpus=8:mem=26gb" in retrieval_scheduler
     assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in retrieval_scheduler
     assert "/dev/null" not in run_scheduler
     assert "/dev/null" not in retrieval_scheduler
@@ -844,6 +845,7 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "source \"${SETTINGS_FILE}\"" in production_scheduler
     assert "source \"${SETTINGS_FILE}\"" in staging_scheduler
     assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in staging_scheduler
+    assert "#PBS -l select=1:ncpus=8:mem=26gb" in staging_scheduler
     assert "ehb_build_production_run_budget_args COMMON_RUN_ARGS" in production_scheduler
     assert "ehb_production_year_for_task \"${PBS_ARRAY_INDEX}\"" in production_scheduler
     assert "ehb_build_production_time_window \"${YEAR}\" TIME_START TIME_END" in production_scheduler

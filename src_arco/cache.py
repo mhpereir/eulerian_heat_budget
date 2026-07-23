@@ -52,6 +52,20 @@ class _TileRecord:
     created_at: str
 
 
+@dataclass(frozen=True)
+class _TileWriteMetadata:
+    sizes: tuple[tuple[str, int], ...]
+    variables: tuple[str, ...]
+    time_start: str | None
+    time_end: str | None
+    lat_min: float
+    lat_max: float
+    lon_min: float
+    lon_max: float
+    level_min: float
+    level_max: float
+
+
 def init_cache_root(cache_root: str | Path) -> Path:
     root = Path(cache_root)
     (root / TILES_DIR).mkdir(parents=True, exist_ok=True)
@@ -156,46 +170,136 @@ def write_tile(
     if tile_path.exists():
         with _cache_write_lock(root):
             if tile_path.exists():
-                _register_tile(root, tile_id, rel_path, tile, source_cfg, request, include_benchmark_variables)
+                _register_tile(
+                    root,
+                    tile_id,
+                    rel_path,
+                    _tile_write_metadata(tile),
+                    source_cfg,
+                    request,
+                    include_benchmark_variables,
+                )
                 return tile_path
 
     tmp_path = _new_tmp_tile_path(root, tile_id)
+    try:
+        metadata = _write_temporary_tile(
+            root,
+            tmp_path,
+            tile,
+            source_cfg,
+            request,
+            include_benchmark_variables=include_benchmark_variables,
+        )
+        return _commit_temporary_tile(
+            root,
+            tmp_path,
+            metadata,
+            source_cfg,
+            request,
+            include_benchmark_variables=include_benchmark_variables,
+        )
+    except Exception as exc:
+        _remove_temporary_tile(
+            tmp_path,
+            reason=f"after {type(exc).__name__}: {exc}",
+        )
+        raise
+
+
+def _create_temporary_tile_path(
+    cache_root: str | Path,
+    source_cfg: specs.DataSourceConfig,
+    request: specs.DomainRequest,
+    *,
+    include_benchmark_variables: bool,
+) -> Path:
+    root = init_cache_root(cache_root)
+    tile_id = tile_id_for_request(
+        source_cfg,
+        request,
+        include_benchmark_variables=include_benchmark_variables,
+    )
+    return _new_tmp_tile_path(root, tile_id)
+
+
+def _write_temporary_tile(
+    cache_root: str | Path,
+    tmp_path: str | Path,
+    tile: xr.Dataset,
+    source_cfg: specs.DataSourceConfig,
+    request: specs.DomainRequest,
+    *,
+    include_benchmark_variables: bool,
+) -> _TileWriteMetadata:
+    root = Path(cache_root)
+    tile_id = tile_id_for_request(
+        source_cfg,
+        request,
+        include_benchmark_variables=include_benchmark_variables,
+    )
+    tmp_path = _validated_tmp_tile_path(root, tmp_path, tile_id)
+
     _log_cache_write(f"normalizing zarr chunks for tile {tile_id}")
     tile_to_write = _normalize_zarr_chunks(tile, source_cfg)
-    try:
-        write_started = time.monotonic()
-        _log_cache_write(f"writing temporary zarr store {tmp_path}")
-        tile_to_write.to_zarr(str(tmp_path), mode="w")
-        _log_cache_write(
-            f"finished temporary zarr store {tmp_path} "
-            f"in {time.monotonic() - write_started:.1f}s"
-        )
-        with _cache_write_lock(root):
-            if tile_path.exists():
-                _log_cache_write(f"tile {tile_id} already exists; removing temporary zarr store")
-                shutil.rmtree(tmp_path)
-            else:
-                _log_cache_write(f"promoting temporary zarr store to {tile_path}")
-                tmp_path.replace(tile_path)
-            _register_tile(
-                root,
-                tile_id,
-                rel_path,
-                tile_to_write,
-                source_cfg,
-                request,
-                include_benchmark_variables,
-            )
-            _log_cache_write(f"registered tile {tile_id}")
-    except Exception as exc:
-        if tmp_path.exists():
-            _log_cache_write(
-                f"removing failed temporary zarr store {tmp_path} "
-                f"after {type(exc).__name__}: {exc}"
-            )
+    metadata = _tile_write_metadata(tile_to_write)
+    write_started = time.monotonic()
+    _log_cache_write(f"writing temporary zarr store {tmp_path}")
+    tile_to_write.to_zarr(str(tmp_path), mode="w")
+    _log_cache_write(
+        f"finished temporary zarr store {tmp_path} "
+        f"in {time.monotonic() - write_started:.1f}s"
+    )
+    return metadata
+
+
+def _commit_temporary_tile(
+    cache_root: str | Path,
+    tmp_path: str | Path,
+    metadata: _TileWriteMetadata,
+    source_cfg: specs.DataSourceConfig,
+    request: specs.DomainRequest,
+    *,
+    include_benchmark_variables: bool,
+) -> Path:
+    root = init_cache_root(cache_root)
+    tile_id = tile_id_for_request(
+        source_cfg,
+        request,
+        include_benchmark_variables=include_benchmark_variables,
+    )
+    tmp_path = _validated_tmp_tile_path(root, tmp_path, tile_id)
+    rel_path = Path(TILES_DIR) / f"{tile_id}.zarr"
+    tile_path = root / rel_path
+
+    with _cache_write_lock(root):
+        if tile_path.exists():
+            _log_cache_write(f"tile {tile_id} already exists; removing temporary zarr store")
             shutil.rmtree(tmp_path)
-        raise
+        else:
+            if not tmp_path.exists():
+                raise FileNotFoundError(f"Temporary staged tile does not exist: {tmp_path}")
+            _log_cache_write(f"promoting temporary zarr store to {tile_path}")
+            tmp_path.replace(tile_path)
+        _register_tile(
+            root,
+            tile_id,
+            rel_path,
+            metadata,
+            source_cfg,
+            request,
+            include_benchmark_variables,
+        )
+        _log_cache_write(f"registered tile {tile_id}")
     return tile_path
+
+
+def _remove_temporary_tile(tmp_path: str | Path, *, reason: str) -> None:
+    path = Path(tmp_path)
+    if not path.exists():
+        return
+    _log_cache_write(f"removing temporary zarr store {path} {reason}")
+    shutil.rmtree(path)
 
 
 def cache_has_coverage(
@@ -760,7 +864,7 @@ def _register_tile(
     root: Path,
     tile_id: str,
     rel_path: Path,
-    tile: xr.Dataset,
+    metadata: _TileWriteMetadata,
     source_cfg: specs.DataSourceConfig,
     request: specs.DomainRequest,
     include_benchmark_variables: bool,
@@ -778,20 +882,35 @@ def _register_tile(
             (
                 tile_id,
                 str(rel_path),
-                _coord_min_as_str(tile, "time"),
-                _coord_max_as_str(tile, "time"),
-                float(tile["lat"].min().values),
-                float(tile["lat"].max().values),
-                float(tile["lon"].min().values),
-                float(tile["lon"].max().values),
-                float(tile["level"].min().values),
-                float(tile["level"].max().values),
+                metadata.time_start,
+                metadata.time_end,
+                metadata.lat_min,
+                metadata.lat_max,
+                metadata.lon_min,
+                metadata.lon_max,
+                metadata.level_min,
+                metadata.level_max,
                 1 if include_benchmark_variables else 0,
                 json.dumps(asdict(request), sort_keys=True),
                 json.dumps(asdict(source_cfg), sort_keys=True),
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
+
+
+def _tile_write_metadata(tile: xr.Dataset) -> _TileWriteMetadata:
+    return _TileWriteMetadata(
+        sizes=tuple((str(dim), int(size)) for dim, size in tile.sizes.items()),
+        variables=tuple(str(name) for name in tile.data_vars),
+        time_start=_coord_min_as_str(tile, "time"),
+        time_end=_coord_max_as_str(tile, "time"),
+        lat_min=float(tile["lat"].min().values),
+        lat_max=float(tile["lat"].max().values),
+        lon_min=float(tile["lon"].min().values),
+        lon_max=float(tile["lon"].max().values),
+        level_min=float(tile["level"].min().values),
+        level_max=float(tile["level"].max().values),
+    )
 
 
 def _coord_min_as_str(ds: xr.Dataset, coord: str) -> str | None:
@@ -818,6 +937,16 @@ def _new_tmp_tile_path(root: Path, tile_id: str) -> Path:
         dir=root / TILES_DIR,
     )
     return Path(tmp_dir)
+
+
+def _validated_tmp_tile_path(root: Path, tmp_path: str | Path, tile_id: str) -> Path:
+    path = Path(tmp_path)
+    expected_parent = (root / TILES_DIR).resolve()
+    if path.parent.resolve() != expected_parent:
+        raise ValueError(f"Temporary staged tile must be inside {expected_parent}: {path}")
+    if not path.name.startswith(f".{tile_id}.") or not path.name.endswith(".tmp.zarr"):
+        raise ValueError(f"Unexpected temporary staged tile name for {tile_id}: {path.name}")
+    return path
 
 
 class _cache_write_lock:
