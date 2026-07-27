@@ -29,6 +29,31 @@ may be added inside a backend directory when that backend needs extra rules.
 - Keep the runtime checkout on a named, clean Git commit. Do not run production
   science from uncommitted source changes.
 
+## Shared local environment
+
+- Use the local Mamba environment named `dev_env` for compilation checks, unit
+  and regression tests, and small scientific prototypes.
+- Activate it explicitly with `mamba activate dev_env`, then print or inspect
+  `sys.executable` before recording validation results.
+- Treat `environment.yml` and any backend-specific locked requirements as the
+  dependency contracts. Do not resolve a missing package by silently using the
+  base environment or by making an unrecorded environment-only change.
+- The local `dev_env` is intended to mirror the Python environments used on
+  Venus, Alliance HPC, and the Google container image. Use it as the first
+  cross-platform compatibility gate, not as proof that a remote scheduler or
+  container workflow will succeed.
+- Keep platform validation intact: OpenPBS on Venus, Slurm on Alliance, and the
+  container build and smoke-test gates for Google.
+
+Minimal local validation starts with:
+
+```bash
+mamba activate dev_env
+python -c "import sys; print(sys.executable)"
+python -m pytest -q
+python scripts/run_budget.py --help
+```
+
 ## Project boundaries
 
 - Keep scientific implementation in `src/` and orchestration in `scripts/`.
