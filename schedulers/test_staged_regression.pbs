@@ -1,9 +1,9 @@
 #!/bin/bash
-#PBS -N ehb_path_configuration
+#PBS -N ehb_staged_regression
 #PBS -l select=1:ncpus=1:mem=4gb
 #PBS -l walltime=00:10:00
 #PBS -j oe
-#PBS -o logs/path_configuration_smoke.log
+#PBS -o logs/staged_regression.log
 
 set -euo pipefail
 
@@ -37,9 +37,9 @@ if [[ -n "$worktree_status" ]]; then
 fi
 
 job_token=${PBS_JOBID%%.*}
-job_tmp="/local/scratch/$USER/$job_token/ehb-path-configuration"
+job_tmp="/local/scratch/$USER/$job_token/ehb-staged-regression"
 case "$job_tmp" in
-  /local/scratch/?*/?*/ehb-path-configuration) ;;
+  /local/scratch/?*/?*/ehb-staged-regression) ;;
   *)
     echo "Refusing unsafe temporary path: $job_tmp" >&2
     exit 2
@@ -55,6 +55,7 @@ trap cleanup EXIT
 export EHB_DATA_ROOT="$job_tmp/input"
 export EHB_OUTPUT_ROOT="$job_tmp/output"
 export TMPDIR="$job_tmp/tmp"
+export MPLCONFIGDIR="$job_tmp/matplotlib"
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
@@ -75,10 +76,7 @@ printf 'EHB_OUTPUT_ROOT=%s\n' "$EHB_OUTPUT_ROOT"
 cd "$project_root"
 "$python_executable" --version
 "$python_executable" -m pip check
-"$python_executable" -m pytest -q \
-  tests/test_path_configuration.py \
-  tests/test_run_budget.py \
-  tests/test_run_outputs.py
+"$python_executable" -m pytest -q
 "$python_executable" scripts/run_budget.py --help >/dev/null
 
 printf 'finished=%s\n' "$(date -Is)"
