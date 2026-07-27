@@ -36,6 +36,16 @@
 
 ## Development and validation
 
+- Use the local Mamba environment named `dev_env` for compilation checks, unit
+  tests, local consolidation checks, and small prototypes. Activate it
+  explicitly and confirm `sys.executable` before recording results.
+- The local `dev_env` is intended to mirror the environments used on Venus and
+  Alliance HPC and the Python environment built into the Google runtime image.
+  It is the first compatibility gate, not a substitute for Cloud Build or Batch
+  validation.
+- Treat `requirements-arco.txt` as authoritative for this branch. If `dev_env`
+  lacks a required package or differs from the lock, repair the declared
+  environment rather than silently falling back to base or bypassing a test.
 - Keep production image builds on a clean worktree with a committed `HEAD`.
   Never use `--allow-dirty` for production.
 - Run focused tests for changed campaign, renderer, retrieval, manifest, resume,
@@ -44,6 +54,7 @@
   locked in `requirements-arco.txt`:
 
   ```bash
+  mamba activate dev_env
   python -m pytest -q
   ```
 
