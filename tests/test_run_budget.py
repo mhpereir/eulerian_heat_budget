@@ -997,6 +997,9 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "ehb_build_staged_campaign_init_args" in settings
     assert "ehb_year_shard_root" in settings
     assert "ehb_require_consolidated_staged_cache" in settings
+    assert "ehb_require_venus_production_checkout" in settings
+    assert "ehb_verify_production_submission_checkout" in settings
+    assert "refs/heads/production_development_staged" in settings
     assert "schedule_run_budget_production.sh" in settings
     assert "schedule_staged_arco_retrieval_production.sh" in settings
     assert "SETTINGS_FILE=\"${PRODUCTION_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/production_run_cli_settings.sh}\"" in production_scheduler
@@ -1025,6 +1028,14 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert 'LOG_DIR="${LOG_DIR:-${EHB_LOG_ROOT}/${REGION}/${RUN_ID}}"' in settings
     assert '-o "${LOG_DIR}/"' in submission_script
     assert '-o "${LOG_DIR}/"' in run_submission_script
+    assert (
+        "EXPECTED_COMMIT=$(ehb_verify_production_submission_checkout)"
+        in submission_script
+    )
+    assert (
+        "EXPECTED_COMMIT=$(ehb_verify_production_submission_checkout)"
+        in run_submission_script
+    )
     assert "schedule_run_budget_production.sh" in run_submission_script
     assert "CAMPAIGN_ID=${CAMPAIGN_ID}" in submission_script
     assert "STAGED_CACHE_ROOT=${STAGED_CACHE_ROOT}" in submission_script
@@ -1118,22 +1129,111 @@ printf 'CAMPAIGN_ARGS=%s\n' "${CAMPAIGN_ARGS[*]}"
     assert "staged campaign is not consolidated" in incomplete.stderr
 
 
-def test_staged_production_submission_links_consolidation_to_array(tmp_path):
-    scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    fake_git = fake_bin / "git"
-    fake_git.write_text(
+def _write_fake_production_git(path: Path) -> None:
+    path.write_text(
         """#!/bin/bash
 case "$*" in
-  *"rev-parse HEAD"*) printf '%040d\\n' 0 ;;
-  *"rev-parse @{u}"*) printf '%040d\\n' 0 ;;
-  *"status --porcelain"*) exit 0 ;;
+  *"rev-parse --show-toplevel"*)
+    printf '%s\\n' "${PROJECT_ROOT:?}"
+    ;;
+  *"symbolic-ref --quiet --short HEAD"*)
+    if [[ "${FAKE_DETACHED:-0}" == 1 ]]; then exit 1; fi
+    printf '%s\\n' "${FAKE_BRANCH:-production_development_staged}"
+    ;;
+  *"rev-parse --abbrev-ref --symbolic-full-name @{upstream}"*)
+    printf '%s\\n' "${FAKE_UPSTREAM:-origin/production_development_staged}"
+    ;;
+  *"status --porcelain"*)
+    printf '%s' "${FAKE_STATUS:-}"
+    ;;
+  *"rev-parse HEAD"*)
+    printf '%s\\n' "${FAKE_HEAD:-0000000000000000000000000000000000000000}"
+    ;;
+  *"ls-remote --exit-code origin refs/heads/production_development_staged"*)
+    printf '%s\\trefs/heads/production_development_staged\\n' \
+      "${FAKE_REMOTE_HEAD:-0000000000000000000000000000000000000000}"
+    ;;
   *) exit 2 ;;
 esac
 """,
         encoding="utf-8",
     )
+    path.chmod(0o755)
+
+
+@pytest.mark.parametrize(
+    ("checkout_parent", "branch", "head", "remote_head", "expected_error"),
+    [
+        (
+            "development",
+            "production_development_staged",
+            "0" * 40,
+            "0" * 40,
+            "must be below",
+        ),
+        (
+            "production",
+            "codex/extra-production-change",
+            "0" * 40,
+            "0" * 40,
+            "requires branch production_development_staged",
+        ),
+        (
+            "production",
+            "production_development_staged",
+            "1" * 40,
+            "0" * 40,
+            "is not the authoritative remote tip",
+        ),
+    ],
+)
+def test_venus_production_preflight_rejects_non_authoritative_checkout(
+    tmp_path, checkout_parent, branch, head, remote_head, expected_error
+):
+    scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_production_git(fake_bin / "git")
+    workspace_root = tmp_path / "eulerian-heat-budget"
+    project_root = workspace_root / checkout_parent / "eulerian_heat_budget-test"
+    project_root.mkdir(parents=True)
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "PROJECT_ROOT": str(project_root),
+            "EHB_WORKSPACE_ROOT": str(workspace_root),
+            "FAKE_BRANCH": branch,
+            "FAKE_HEAD": head,
+            "FAKE_REMOTE_HEAD": remote_head,
+        }
+    )
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                f"source {scheduler_dir / 'production_run_cli_settings.sh'}; "
+                "ehb_verify_production_submission_checkout"
+            ),
+        ],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
+    assert expected_error in result.stderr
+
+
+def test_staged_production_submission_links_consolidation_to_array(tmp_path):
+    scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_git = fake_bin / "git"
+    _write_fake_production_git(fake_git)
     fake_qsub = fake_bin / "qsub"
     fake_qsub.write_text(
         """#!/bin/bash
@@ -1150,11 +1250,15 @@ esac
     fake_qsub.chmod(0o755)
     qsub_log = tmp_path / "qsub.log"
     log_dir = tmp_path / "logs"
+    workspace_root = tmp_path / "eulerian-heat-budget"
+    project_root = workspace_root / "production" / "eulerian_heat_budget-test"
+    project_root.mkdir(parents=True)
     env = os.environ.copy()
     env.update(
         {
             "PATH": f"{fake_bin}:{env['PATH']}",
-            "PROJECT_ROOT": "/synthetic/eulerian_heat_budget",
+            "PROJECT_ROOT": str(project_root),
+            "EHB_WORKSPACE_ROOT": str(workspace_root),
             "SCHEDULER_DIR": str(scheduler_dir),
             "PRODUCTION_RUN_CLI_SETTINGS": str(
                 scheduler_dir / "production_run_cli_settings.sh"
@@ -1191,17 +1295,7 @@ def test_run_budget_production_submission_uses_external_paths(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_git = fake_bin / "git"
-    fake_git.write_text(
-        """#!/bin/bash
-case "$*" in
-  *"rev-parse HEAD"*) printf '%040d\\n' 0 ;;
-  *"rev-parse @{u}"*) printf '%040d\\n' 0 ;;
-  *"status --porcelain"*) exit 0 ;;
-  *) exit 2 ;;
-esac
-""",
-        encoding="utf-8",
-    )
+    _write_fake_production_git(fake_git)
     fake_qsub = fake_bin / "qsub"
     fake_qsub.write_text(
         """#!/bin/bash
@@ -1220,12 +1314,16 @@ echo "200[].venus"
     output_dir = tmp_path / "campaign-data" / "run-budget" / "alaska" / "run"
     log_dir = tmp_path / "campaign-data" / "logs" / "alaska" / "run"
     qsub_log = tmp_path / "qsub.log"
+    workspace_root = tmp_path / "eulerian-heat-budget"
+    project_root = workspace_root / "production" / "eulerian_heat_budget-test"
+    project_root.mkdir(parents=True)
 
     env = os.environ.copy()
     env.update(
         {
             "PATH": f"{fake_bin}:{env['PATH']}",
-            "PROJECT_ROOT": "/synthetic/eulerian_heat_budget",
+            "PROJECT_ROOT": str(project_root),
+            "EHB_WORKSPACE_ROOT": str(workspace_root),
             "SCHEDULER_DIR": str(scheduler_dir),
             "PRODUCTION_RUN_CLI_SETTINGS": str(
                 scheduler_dir / "production_run_cli_settings.sh"

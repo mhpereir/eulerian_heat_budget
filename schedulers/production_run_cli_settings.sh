@@ -68,6 +68,102 @@ ehb_require_external_production_paths() {
   done
 }
 
+ehb_require_venus_production_checkout() {
+  : "${PROJECT_ROOT:?PROJECT_ROOT must be set by the submission workflow}"
+
+  local required_branch="production_development_staged"
+  local project_root
+  local production_root
+  local git_root
+  local current_branch
+  local upstream_branch
+
+  project_root=$(readlink -m -- "${PROJECT_ROOT}")
+  production_root=$(readlink -m -- "${EHB_WORKSPACE_ROOT}/production")
+  case "${project_root}" in
+    "${production_root}/"*) ;;
+    *)
+      echo "[error] Venus production checkout must be below ${production_root}: ${project_root}" >&2
+      return 1
+      ;;
+  esac
+
+  if ! git_root=$(git -C "${project_root}" rev-parse --show-toplevel); then
+    echo "[error] PROJECT_ROOT is not a Git checkout: ${project_root}" >&2
+    return 1
+  fi
+  git_root=$(readlink -m -- "${git_root}")
+  if [[ "${git_root}" != "${project_root}" ]]; then
+    echo "[error] PROJECT_ROOT is not the Git root: ${project_root}" >&2
+    return 1
+  fi
+
+  if ! current_branch=$(git -C "${project_root}" symbolic-ref --quiet --short HEAD); then
+    echo "[error] Venus production checkout must use the named ${required_branch} branch." >&2
+    return 1
+  fi
+  if [[ "${current_branch}" != "${required_branch}" ]]; then
+    echo "[error] Venus production requires branch ${required_branch}, not ${current_branch}." >&2
+    return 1
+  fi
+
+  if ! upstream_branch=$(
+    git -C "${project_root}" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}'
+  ); then
+    echo "[error] ${required_branch} must track origin/${required_branch}." >&2
+    return 1
+  fi
+  if [[ "${upstream_branch}" != "origin/${required_branch}" ]]; then
+    echo "[error] Venus production upstream must be origin/${required_branch}, not ${upstream_branch}." >&2
+    return 1
+  fi
+}
+
+ehb_verify_production_submission_checkout() {
+  ehb_require_venus_production_checkout || return 1
+
+  local project_root
+  local required_ref="refs/heads/production_development_staged"
+  local actual_commit
+  local remote_commit
+  local remote_ref
+  local status_output
+
+  project_root=$(readlink -m -- "${PROJECT_ROOT}")
+  if ! status_output=$(
+    git -C "${project_root}" status --porcelain --untracked-files=normal
+  ); then
+    echo "[error] Could not inspect production checkout status: ${project_root}" >&2
+    return 1
+  fi
+  if [[ -n "${status_output}" ]]; then
+    echo "[error] Refusing to submit from a dirty checkout: ${project_root}" >&2
+    return 1
+  fi
+
+  if ! actual_commit=$(git -C "${project_root}" rev-parse HEAD); then
+    echo "[error] Could not resolve production checkout HEAD: ${project_root}" >&2
+    return 1
+  fi
+  if ! read -r remote_commit remote_ref < <(
+    git -C "${project_root}" ls-remote --exit-code origin "${required_ref}"
+  ); then
+    echo "[error] Could not resolve the live origin/production_development_staged tip." >&2
+    return 1
+  fi
+  if [[ "${remote_ref}" != "${required_ref}" || -z "${remote_commit}" ]]; then
+    echo "[error] origin did not return exactly ${required_ref}." >&2
+    return 1
+  fi
+  if [[ "${actual_commit}" != "${remote_commit}" ]]; then
+    echo "[error] Venus production checkout ${actual_commit} is not the authoritative remote tip ${remote_commit}." >&2
+    echo "[error] Integrate and push all intended commits to production_development_staged before submission." >&2
+    return 1
+  fi
+
+  printf '%s\n' "${actual_commit}"
+}
+
 ehb_require_staged_cache_root() {
   local context="$1"
 
@@ -93,13 +189,25 @@ ehb_verify_runtime_checkout() {
   : "${PROJECT_ROOT:?PROJECT_ROOT must be set by the submission workflow}"
   : "${EXPECTED_COMMIT:?EXPECTED_COMMIT must be set by the submission workflow}"
 
+  ehb_require_venus_production_checkout || return 1
+
   local actual_commit
-  actual_commit=$(git -C "${PROJECT_ROOT}" rev-parse HEAD)
+  local status_output
+  if ! actual_commit=$(git -C "${PROJECT_ROOT}" rev-parse HEAD); then
+    echo "[error] Could not resolve runtime checkout HEAD: ${PROJECT_ROOT}" >&2
+    return 1
+  fi
   if [[ "${actual_commit}" != "${EXPECTED_COMMIT}" ]]; then
     echo "[error] checkout commit ${actual_commit} does not match ${EXPECTED_COMMIT}" >&2
     return 1
   fi
-  if [[ -n "$(git -C "${PROJECT_ROOT}" status --porcelain --untracked-files=normal)" ]]; then
+  if ! status_output=$(
+    git -C "${PROJECT_ROOT}" status --porcelain --untracked-files=normal
+  ); then
+    echo "[error] Could not inspect runtime checkout status: ${PROJECT_ROOT}" >&2
+    return 1
+  fi
+  if [[ -n "${status_output}" ]]; then
     echo "[error] runtime checkout is dirty: ${PROJECT_ROOT}" >&2
     return 1
   fi

@@ -19,10 +19,12 @@ default workspace is:
 ```
 
 `campaign-data` may be a symlink to backed-up project storage. It must never
-point into a Git checkout. Production checkouts are commit-specific and must
-not change branch or commit while any associated PBS job is queued or running.
-Development checkouts remain independent and may be changed without affecting
-production.
+point into a Git checkout. Every Venus production checkout must be
+commit-specific, live below `~/eulerian-heat-budget/production/`, use the named
+`production_development_staged` branch, and track
+`origin/production_development_staged`. It must not change branch or commit
+while any associated PBS job is queued or running. Development checkouts remain
+independent and may be changed without affecting production.
 
 Production ARCO staging uses one immutable campaign directory and one isolated
 cache shard per year:
@@ -67,15 +69,31 @@ changes.
 
 ## Submit on Venus
 
-Commit and push the exact production branch, then fast-forward the clean Venus
-checkout. From that checkout:
+Integrate and push every intended production change onto
+`production_development_staged`, then create or fast-forward a clean,
+commit-specific Venus checkout below `~/eulerian-heat-budget/production/`.
+From that checkout:
 
 ```bash
-PROJECT_ROOT=/absolute/path/to/eulerian_heat_budget \
+PROJECT_ROOT=/home/USER/eulerian-heat-budget/production/eulerian_heat_budget-COMMIT \
   schedulers/submit_staged_arco_production.sh
 ```
 
-The submission wrapper refuses a dirty or unpushed checkout. It submits:
+The submission wrapper queries the live remote and requires all of these
+conditions without an override:
+
+- the checkout is below `${EHB_WORKSPACE_ROOT}/production/`;
+- the named branch is exactly `production_development_staged`;
+- its upstream is exactly `origin/production_development_staged`;
+- the checkout is clean; and
+- `HEAD` equals the live remote branch tip.
+
+An otherwise valid feature commit ahead of `production_development_staged` is
+intentionally rejected. Merge, validate, and push it to the authoritative
+branch first. Google Batch and Alliance Slurm use their separate authoritative
+branches and submission workflows; they do not bypass this Venus preflight.
+
+After preflight, the wrapper submits:
 
 1. the yearly retrieval array; and
 2. `schedule_consolidate_staged_arco_cache.sh` with an `afterok`
@@ -114,7 +132,7 @@ Submit the heat-budget array through its wrapper so the commit, external data
 paths, and PBS log destination are verified:
 
 ```bash
-PROJECT_ROOT=/absolute/path/to/commit-specific-checkout \
+PROJECT_ROOT=/home/USER/eulerian-heat-budget/production/eulerian_heat_budget-COMMIT \
   schedulers/submit_run_budget_production.sh
 ```
 

@@ -11,6 +11,7 @@ MAX_PARALLEL="${MAX_PARALLEL:-5}"
 
 source "${SETTINGS_FILE}"
 ehb_require_external_production_paths
+EXPECTED_COMMIT=$(ehb_verify_production_submission_checkout)
 ehb_require_consolidated_staged_cache
 
 if [[ ! -x "${QSUB_BIN}" ]]; then
@@ -24,17 +25,6 @@ fi
 mkdir -p "${LOG_DIR}" "${PRODUCTION_OUTPUT_DIR}"
 if [[ ! -w "${LOG_DIR}" || ! -w "${PRODUCTION_OUTPUT_DIR}" ]]; then
   echo "[error] production log or output directory is not writable." >&2
-  exit 2
-fi
-
-EXPECTED_COMMIT=$(git -C "${PROJECT_ROOT}" rev-parse HEAD)
-UPSTREAM_COMMIT=$(git -C "${PROJECT_ROOT}" rev-parse '@{u}')
-if [[ "${EXPECTED_COMMIT}" != "${UPSTREAM_COMMIT}" ]]; then
-  echo "[error] Refusing to submit an unpushed commit: ${EXPECTED_COMMIT}" >&2
-  exit 2
-fi
-if [[ -n "$(git -C "${PROJECT_ROOT}" status --porcelain --untracked-files=normal)" ]]; then
-  echo "[error] Refusing to submit from a dirty checkout: ${PROJECT_ROOT}" >&2
   exit 2
 fi
 
