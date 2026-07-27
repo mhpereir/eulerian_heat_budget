@@ -195,6 +195,31 @@ vertical coverage, benchmark availability, and the wall stencils required by
 the budget calculation. Complementary time tiles can be combined when their
 coverage is complete and consistent.
 
+Production staging uses an isolated campaign and shard layout:
+
+```text
+<staged-cache-base>/<campaign-id>/
+├── campaign.json
+├── cache.sqlite                 # written atomically by consolidation
+├── consolidation.json
+└── shards/
+    └── year=YYYY/
+        ├── cache.sqlite         # private to one retrieval task
+        ├── shard-manifest.json
+        ├── _SUCCESS.json
+        └── tiles/
+            └── <tile-id>.zarr/
+```
+
+Every yearly scheduler task writes only its own shard database and Zarr
+directory. It validates complete hourly coverage, records checksums and Git
+provenance, and writes `_SUCCESS.json` last. A dependent consolidation job
+requires every campaign year, verifies file hashes, cache schemas, campaign
+parameters, source metadata, time coordinates, and a common producer commit,
+then atomically replaces the campaign-level `cache.sqlite`. Its catalog paths
+refer into `shards/year=YYYY/`, so the ordinary staged-cache loader requires no
+scientific or data-schema special case.
+
 The current staged cache schema stores:
 
 - full selected `T`, `w`, and `sp`
@@ -368,13 +393,16 @@ eulerian_heat_budget/
 │   ├── schedule_run_budget.sh
 │   ├── schedule_run_budget_production.sh
 │   ├── schedule_run_budget*_slurm.sh    # DRAC staged tip
+│   ├── schedule_consolidate_staged_arco_cache.sh
 │   ├── schedule_staged_arco_retrieval*.sh
 │   ├── schedule_staged_arco_retrieval*_slurm.sh
+│   ├── submit_staged_arco_production.sh
 │   └── single_run_cli_settings          # staged tips
 ├── scripts/
 │   ├── closure_testing.py               # empty placeholder on some tips
-│   ├── consolidate_staged_arco_cache.py # Google staged tip
+│   ├── consolidate_staged_arco_cache.py # sharded staged tips
 │   ├── run_budget.py
+│   ├── staged_arco_campaign.py
 │   └── staged_arco_retrieval.py         # staged tips
 ├── src/
 │   ├── __init__.py
@@ -394,7 +422,10 @@ eulerian_heat_budget/
 ├── src_arco/                           # staged tips
 │   ├── __init__.py
 │   ├── cache.py
+│   ├── campaign.py
+│   ├── consolidation.py
 │   ├── selection.py
+│   ├── shard_artifacts.py
 │   └── variables.py
 └── tests/
     ├── test_arco_cache.py              # staged tips
@@ -406,6 +437,7 @@ eulerian_heat_budget/
     ├── test_io.py
     ├── test_run_budget.py
     ├── test_run_outputs.py
+    ├── test_staged_arco_shards.py        # sharded staged tips
     ├── test_update_run_catalog.py
     └── test_weights.py
 ```
@@ -520,6 +552,27 @@ Present on staged tips. Owns the indexed Zarr cache:
 - validates time, horizontal, vertical, wall, and benchmark coverage
 - raises `OfflineCoverageError` when a request cannot be satisfied
 - reconstructs the dataset without contacting ARCO
+
+### `src_arco/campaign.py`
+
+Present on sharded staged tips. Defines and validates the backend-neutral
+campaign contract, canonical JSON and identity hash, named or explicit domain,
+season, year range, staging settings, and immutable `campaign.json`
+initialization.
+
+### `src_arco/shard_artifacts.py`
+
+Present on sharded staged tips. Validates shard SQLite schemas and safe relative
+paths, builds per-file size and SHA-256 manifests, writes metadata atomically,
+validates `_SUCCESS.json`, and computes content signatures for duplicate-tile
+checks.
+
+### `src_arco/consolidation.py`
+
+Present on sharded staged tips. Validates yearly tile metadata and complete
+hourly coverage, finalizes individual shards, requires all campaign years and a
+single producer Git commit, rewrites tile paths into the campaign layout, and
+atomically publishes the combined cache catalog and consolidation summary.
 
 ### `src/validate.py`
 
@@ -703,11 +756,17 @@ It is a data-acquisition adapter and does not calculate the heat budget.
 
 ### `scripts/consolidate_staged_arco_cache.py`
 
-Present on the Google staged tip. It validates completed yearly cache shards,
-their manifests, file hashes, campaign identity, tile metadata, and complete
-hourly coverage. It then builds one combined `cache.sqlite` catalog whose tile
-paths refer to the consolidated cache layout. This is cache publication and
-integrity logic, not heat-budget logic.
+Present on sharded staged tips. This thin backend-neutral CLI calls
+`src_arco.consolidation` to validate completed yearly cache shards and publish
+the combined `cache.sqlite`. It is cache publication and integrity logic, not
+heat-budget logic.
+
+### `scripts/staged_arco_campaign.py`
+
+Present on sharded staged tips. Its `init` action creates or validates immutable
+campaign metadata. Its `finalize-year` action validates one yearly cache,
+records file hashes and scheduler/Git provenance, and writes the completion
+marker last.
 
 ### `cache_viz/visualize_staged_arco_cache.py`
 
@@ -1016,6 +1075,12 @@ Staged-tip addition:
   - retry and timeout behavior
   - equivalence between staged and full-input budget results
   - explicit rejection of unsupported staged surface variables
+- `tests/test_staged_arco_shards.py`
+  - immutable campaign initialization and legacy-root protection
+  - per-year shard completion and hourly-coverage validation
+  - atomic combined-catalog publication and failure preservation
+  - canonical-dataset and budget equivalence with the legacy cache layout
+  - missing-year and integrity rejection
 
 Google staged-tip addition:
 
@@ -1036,7 +1101,7 @@ Isolated cross-tip validation at this document update:
 - `drac_development_2_staged`: `120 passed`
 - `google_development_staged`: `139 passed` with one Matplotlib date-locator
   warning
-- `production_development_staged`: `137 passed`
+- `production_development_staged`: `147 passed`
 
 Branch-specific suites must pass before their corresponding retrieval or
 production deployment.

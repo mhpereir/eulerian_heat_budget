@@ -968,15 +968,26 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     settings = (scheduler_dir / "production_run_cli_settings.sh").read_text()
     production_scheduler = (scheduler_dir / "schedule_run_budget_production.sh").read_text()
     staging_scheduler = (scheduler_dir / "schedule_staged_arco_retrieval_production.sh").read_text()
+    consolidation_scheduler = (
+        scheduler_dir / "schedule_consolidate_staged_arco_cache.sh"
+    ).read_text()
+    submission_script = (
+        scheduler_dir / "submit_staged_arco_production.sh"
+    ).read_text()
 
     assert "START_YEAR=" in settings
     assert "END_YEAR=" in settings
+    assert "CAMPAIGN_ID=" in settings
+    assert "STAGED_CACHE_BASE_ROOT=" in settings
     assert "ZG_BOTTOM=" in settings
     assert "USE_SURFACE_AS_BOTTOM" not in settings
     assert "STAGED_ARCO_TIME_CHUNK=" in settings
     assert "STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS=" in settings
     assert "ehb_build_production_run_budget_args" in settings
     assert "ehb_build_production_staged_retrieval_args" in settings
+    assert "ehb_build_staged_campaign_init_args" in settings
+    assert "ehb_year_shard_root" in settings
+    assert "ehb_require_consolidated_staged_cache" in settings
     assert "schedule_run_budget_production.sh" in settings
     assert "schedule_staged_arco_retrieval_production.sh" in settings
     assert "SETTINGS_FILE=\"${PRODUCTION_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/production_run_cli_settings.sh}\"" in production_scheduler
@@ -985,39 +996,55 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "source \"${SETTINGS_FILE}\"" in staging_scheduler
     assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in staging_scheduler
     assert "#PBS -l select=1:ncpus=8:mem=8gb" in staging_scheduler
+    assert "#PBS -l walltime=48:00:00" in staging_scheduler
     assert "ehb_build_production_run_budget_args COMMON_RUN_ARGS" in production_scheduler
     assert "ehb_production_year_for_task \"${PBS_ARRAY_INDEX}\"" in production_scheduler
     assert "ehb_build_production_time_window \"${YEAR}\" TIME_START TIME_END" in production_scheduler
     assert "ehb_production_year_for_task \"${PBS_ARRAY_INDEX}\"" in staging_scheduler
     assert "ehb_build_production_time_window \"${YEAR}\" TIME_START TIME_END" in staging_scheduler
-    assert (
-        "ehb_build_production_staged_retrieval_args RETRIEVAL_ARGS "
-        "\"${TIME_START}\" \"${TIME_END}\""
-    ) in staging_scheduler
-    assert "python -u staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in staging_scheduler
+    assert "YEAR_CACHE_ROOT=$(ehb_year_shard_root \"${YEAR}\")" in staging_scheduler
+    assert "\"${YEAR_CACHE_ROOT}\"" in staging_scheduler
+    assert "staged_arco_campaign.py \"${CAMPAIGN_ARGS[@]}\"" in staging_scheduler
+    assert "staged_arco_campaign.py finalize-year" in staging_scheduler
+    assert "staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in staging_scheduler
+    assert "#PBS -l select=1:ncpus=1:mem=4gb" in consolidation_scheduler
+    assert "consolidate_staged_arco_cache.py" in consolidation_scheduler
+    assert "depend=afterokarray:${RETRIEVAL_JOB_ID}" in submission_script
+    assert "CAMPAIGN_ID=${CAMPAIGN_ID}" in submission_script
+    assert "STAGED_CACHE_ROOT=${STAGED_CACHE_ROOT}" in submission_script
 
     script = """
 set -euo pipefail
 source schedulers/production_run_cli_settings.sh
 YEAR=$(ehb_production_year_for_task 5)
 ehb_build_production_time_window "${YEAR}" TIME_START TIME_END
+YEAR_CACHE_ROOT=$(ehb_year_shard_root "${YEAR}")
 RUN_ARGS=()
 ehb_build_production_run_budget_args RUN_ARGS
 RETRIEVAL_ARGS=()
-ehb_build_production_staged_retrieval_args RETRIEVAL_ARGS "${TIME_START}" "${TIME_END}"
+ehb_build_production_staged_retrieval_args RETRIEVAL_ARGS "${TIME_START}" "${TIME_END}" "${YEAR_CACHE_ROOT}"
+CAMPAIGN_ARGS=()
+ehb_build_staged_campaign_init_args CAMPAIGN_ARGS
 printf 'YEAR=%s\n' "${YEAR}"
 printf 'TIME_START=%s\n' "${TIME_START}"
 printf 'TIME_END=%s\n' "${TIME_END}"
+printf 'YEAR_CACHE_ROOT=%s\n' "${YEAR_CACHE_ROOT}"
 printf 'RUN_ARGS=%s\n' "${RUN_ARGS[*]}"
 printf 'RETRIEVAL_ARGS=%s\n' "${RETRIEVAL_ARGS[*]}"
+printf 'CAMPAIGN_ARGS=%s\n' "${CAMPAIGN_ARGS[*]}"
 """
     env = os.environ.copy()
     env.update(
         {
+            "PROJECT_ROOT": PROJECT_ROOT,
             "PRODUCTION_OUTPUT_DIR": str(tmp_path / "production"),
             "STAGED_CACHE_ROOT": str(tmp_path / "cache"),
         }
     )
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+    for required in ("campaign.json", "cache.sqlite", "consolidation.json"):
+        (cache_root / required).touch()
 
     result = subprocess.run(
         ["bash", "-c", script],
@@ -1032,6 +1059,7 @@ printf 'RETRIEVAL_ARGS=%s\n' "${RETRIEVAL_ARGS[*]}"
     assert "YEAR=1945" in output
     assert "TIME_START=1945-05-01T00:00:00" in output
     assert "TIME_END=1945-10-31T23:00:00" in output
+    assert f"YEAR_CACHE_ROOT={tmp_path / 'cache'}/shards/year=1945" in output
     assert "--data-source staged_arco_cache" in output
     assert f"--production-output-dir {tmp_path / 'production'}" in output
     assert f"--staged-cache-root {tmp_path / 'cache'}" in output
@@ -1043,6 +1071,10 @@ printf 'RETRIEVAL_ARGS=%s\n' "${RETRIEVAL_ARGS[*]}"
     assert "--time-start 1945-05-01T00:00:00 --time-end 1945-10-31T23:00:00" in output
     assert "--stage-time-chunk month" in output
     assert "--stage-attempt-timeout-seconds 20800" in output
+    assert f"--cache-root {tmp_path / 'cache'}" in output
+    assert "--campaign-id alaska-surface-700hpa-1940-2025" in output
+    assert "--start-year 1940 --end-year 2025" in output
+    assert "--margin-n 1" in output
 
     pressure_env = env.copy()
     pressure_env.update({"ZG_BOTTOM": "pressure_level", "ZG_BOTTOM_PA": "85000"})
@@ -1057,6 +1089,81 @@ printf 'RETRIEVAL_ARGS=%s\n' "${RETRIEVAL_ARGS[*]}"
     pressure_output = pressure_result.stdout
     assert "--zg-bottom pressure_level" in pressure_output
     assert "--zg-bottom-pa 85000" in pressure_output
+
+    (cache_root / "consolidation.json").unlink()
+    incomplete = subprocess.run(
+        ["bash", "-c", script],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert incomplete.returncode != 0
+    assert "staged campaign is not consolidated" in incomplete.stderr
+
+
+def test_staged_production_submission_links_consolidation_to_array(tmp_path):
+    scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_git = fake_bin / "git"
+    fake_git.write_text(
+        """#!/bin/bash
+case "$*" in
+  *"rev-parse HEAD"*) printf '%040d\\n' 0 ;;
+  *"rev-parse @{u}"*) printf '%040d\\n' 0 ;;
+  *"status --porcelain"*) exit 0 ;;
+  *) exit 2 ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_qsub = fake_bin / "qsub"
+    fake_qsub.write_text(
+        """#!/bin/bash
+printf '%s\\n' "$*" >> "${QSUB_LOG:?}"
+case "$*" in
+  *schedule_staged_arco_retrieval_production.sh) echo "123[].venus" ;;
+  *schedule_consolidate_staged_arco_cache.sh) echo "124.venus" ;;
+  *) exit 2 ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    fake_qsub.chmod(0o755)
+    qsub_log = tmp_path / "qsub.log"
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "PROJECT_ROOT": "/synthetic/eulerian_heat_budget",
+            "SCHEDULER_DIR": str(scheduler_dir),
+            "PRODUCTION_RUN_CLI_SETTINGS": str(
+                scheduler_dir / "production_run_cli_settings.sh"
+            ),
+            "QSUB_BIN": str(fake_qsub),
+            "QSUB_LOG": str(qsub_log),
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(scheduler_dir / "submit_staged_arco_production.sh")],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    submitted = qsub_log.read_text(encoding="utf-8").splitlines()
+    assert len(submitted) == 2
+    assert "-J 0-85%5" in submitted[0]
+    assert "schedule_staged_arco_retrieval_production.sh" in submitted[0]
+    assert "-W depend=afterokarray:123[].venus" in submitted[1]
+    assert "schedule_consolidate_staged_arco_cache.sh" in submitted[1]
+    assert "retrieval_job_id=123[].venus" in result.stdout
+    assert "consolidation_job_id=124.venus" in result.stdout
 
 
 def _configure_main_stubs(monkeypatch, args):

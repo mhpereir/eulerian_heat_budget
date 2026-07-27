@@ -12,14 +12,18 @@ RUN_START_MONTH_DAY="${RUN_START_MONTH_DAY:-05-01}"
 RUN_END_MONTH_DAY="${RUN_END_MONTH_DAY:-10-31}"
 
 DATA_SOURCE="${DATA_SOURCE:-staged_arco_cache}"
-PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/alaska_surface_700hPa_1940_2025}"
+EHB_OUTPUT_ROOT="${EHB_OUTPUT_ROOT:-${PROJECT_ROOT:?PROJECT_ROOT must be set}/results}"
+PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-${EHB_OUTPUT_ROOT}/production/alaska_surface_700hPa_1940_2025}"
+CAMPAIGN_ID="${CAMPAIGN_ID:-alaska-surface-700hpa-1940-2025}"
 REGION="${REGION:-alaska}"
+MARGIN_N="${MARGIN_N:-1}"
 ZG_TOP_PA="${ZG_TOP_PA:-70000}"
 ZG_BOTTOM="${ZG_BOTTOM:-surface_pressure}"
 ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-}"
 ALLOW_BOTTOM_OVERFLOW="${ALLOW_BOTTOM_OVERFLOW:-1}"
 
-STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-/home/mhpereir/eulerian_heat_budget/results/staged_arco_cache/alaska-1940-2025}"
+STAGED_CACHE_BASE_ROOT="${STAGED_CACHE_BASE_ROOT:-${EHB_OUTPUT_ROOT}/staged_arco_cache}"
+STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-${STAGED_CACHE_BASE_ROOT}/${CAMPAIGN_ID}}"
 STAGED_ARCO_TIME_CHUNK="${STAGED_ARCO_TIME_CHUNK:-month}"
 STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS="${STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS:-20800}"
 
@@ -48,12 +52,40 @@ ehb_require_staged_cache_root() {
   fi
 }
 
+ehb_require_consolidated_staged_cache() {
+  ehb_require_staged_cache_root "production heat-budget calculation"
+  local required
+  for required in campaign.json cache.sqlite consolidation.json; do
+    if [[ ! -f "${STAGED_CACHE_ROOT}/${required}" ]]; then
+      echo "[error] staged campaign is not consolidated: ${STAGED_CACHE_ROOT}/${required}" >&2
+      return 1
+    fi
+  done
+}
+
+ehb_verify_runtime_checkout() {
+  : "${PROJECT_ROOT:?PROJECT_ROOT must be set by the submission workflow}"
+  : "${EXPECTED_COMMIT:?EXPECTED_COMMIT must be set by the submission workflow}"
+
+  local actual_commit
+  actual_commit=$(git -C "${PROJECT_ROOT}" rev-parse HEAD)
+  if [[ "${actual_commit}" != "${EXPECTED_COMMIT}" ]]; then
+    echo "[error] checkout commit ${actual_commit} does not match ${EXPECTED_COMMIT}" >&2
+    return 1
+  fi
+  if [[ -n "$(git -C "${PROJECT_ROOT}" status --porcelain --untracked-files=normal)" ]]; then
+    echo "[error] runtime checkout is dirty: ${PROJECT_ROOT}" >&2
+    return 1
+  fi
+}
+
 ehb_add_production_domain_args() {
   local target_array="$1"
   local -n args_ref="${target_array}"
 
   args_ref+=(
     --region "${REGION}"
+    --margin-n "${MARGIN_N}"
     --zg-bottom "${ZG_BOTTOM}"
     --zg-top-pa "${ZG_TOP_PA}"
   )
@@ -85,7 +117,7 @@ ehb_build_production_run_budget_args() {
   ehb_add_production_domain_args "${target_array}"
 
   if [[ "${DATA_SOURCE}" == "staged_arco_cache" ]]; then
-    ehb_require_staged_cache_root "DATA_SOURCE=staged_arco_cache"
+    ehb_require_consolidated_staged_cache
     args_ref+=(--staged-cache-root "${STAGED_CACHE_ROOT}")
   fi
 
@@ -106,17 +138,62 @@ ehb_build_production_staged_retrieval_args() {
   local target_array="$1"
   local time_start="$2"
   local time_end="$3"
+  local shard_root="$4"
   local -n args_ref="${target_array}"
 
   ehb_require_staged_cache_root "production staged ARCO retrieval"
+  if [[ -z "${shard_root}" ]]; then
+    echo "[error] production staged ARCO retrieval requires a yearly shard root." >&2
+    return 1
+  fi
   args_ref=(
-    --staged-cache-root "${STAGED_CACHE_ROOT}"
+    --staged-cache-root "${shard_root}"
     --time-start "${time_start}"
     --time-end "${time_end}"
   )
   ehb_add_production_domain_args "${target_array}"
   args_ref+=(--stage-time-chunk "${STAGED_ARCO_TIME_CHUNK}")
   args_ref+=(--stage-attempt-timeout-seconds "${STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS}")
+}
+
+ehb_year_shard_root() {
+  local year="$1"
+  printf "%s/shards/year=%04d\n" "${STAGED_CACHE_ROOT}" "${year}"
+}
+
+ehb_build_staged_campaign_init_args() {
+  local target_array="$1"
+  local -n args_ref="${target_array}"
+
+  args_ref=(
+    init
+    --cache-root "${STAGED_CACHE_ROOT}"
+    --campaign-id "${CAMPAIGN_ID}"
+    --start-year "${START_YEAR}"
+    --end-year "${END_YEAR}"
+    --start-month-day "${RUN_START_MONTH_DAY}"
+    --end-month-day "${RUN_END_MONTH_DAY}"
+    --region "${REGION}"
+    --margin-n "${MARGIN_N}"
+    --zg-top-pa "${ZG_TOP_PA}"
+    --zg-bottom "${ZG_BOTTOM}"
+    --time-chunk "${STAGED_ARCO_TIME_CHUNK}"
+    --attempt-timeout-seconds "${STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS}"
+  )
+  if [[ "${ZG_BOTTOM}" == "pressure_level" ]]; then
+    : "${ZG_BOTTOM_PA:?ZG_BOTTOM_PA must be set when ZG_BOTTOM=pressure_level}"
+    args_ref+=(--zg-bottom-pa "${ZG_BOTTOM_PA}")
+  fi
+  if ehb_bool_enabled "${ALLOW_BOTTOM_OVERFLOW}"; then
+    args_ref+=(--allow-bottom-overflow)
+  else
+    args_ref+=(--no-allow-bottom-overflow)
+  fi
+  if ehb_bool_enabled "${ENABLE_BENCHMARK_VARIABLES}"; then
+    args_ref+=(--include-benchmark-variables)
+  else
+    args_ref+=(--no-include-benchmark-variables)
+  fi
 }
 
 ehb_production_year_for_task() {
