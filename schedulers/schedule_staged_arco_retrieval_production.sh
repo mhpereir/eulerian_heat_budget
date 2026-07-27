@@ -21,6 +21,7 @@ SETTINGS_FILE="${PRODUCTION_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/production_run_cl
 source "${SETTINGS_FILE}"
 ehb_verify_runtime_checkout
 ehb_require_external_production_paths
+ehb_require_staged_run_manifest
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"

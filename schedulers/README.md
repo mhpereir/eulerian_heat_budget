@@ -32,6 +32,7 @@ cache shard per year:
 ```text
 campaign-data/staged-zarr/<region>/<campaign-id>/
 ├── campaign.json
+├── production_run.json
 ├── cache.sqlite
 ├── consolidation.json
 └── shards/year=YYYY/
@@ -44,6 +45,13 @@ campaign-data/staged-zarr/<region>/<campaign-id>/
 Each array task owns one `year=YYYY` directory. No retrieval task writes the
 campaign-level SQLite database. A dependent consolidation job validates every
 year and atomically publishes that database after all retrieval tasks succeed.
+
+Before `qsub`, the submission wrapper atomically creates or validates
+`production_run.json`. It records the normalized campaign settings and hash,
+ARCO source, authoritative Git branch and commit, checkout and output paths,
+Mamba environment, array shape, requested resources, and an appendable history
+of retrieval and consolidation job IDs. Resubmission is accepted only when the
+stored production identity is unchanged.
 
 ## Configure a campaign
 
@@ -100,7 +108,8 @@ After preflight, the wrapper submits:
    dependency on that array.
 
 It prints both PBS job IDs. Record them with the campaign ID, Git commit, cache
-root, log directory, and production configuration. The wrapper creates
+root, log directory, and production configuration. The wrapper also records
+both IDs in campaign-level `production_run.json`. It creates
 `${LOG_DIR}` under `campaign-data/logs/<region>/<run-id>/` and passes it to
 `qsub -o`, so PBS spool output and the scripts' detailed `tee` logs remain
 outside the Git checkout and the submission shell's working directory.

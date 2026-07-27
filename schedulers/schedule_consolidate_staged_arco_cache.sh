@@ -21,6 +21,7 @@ source "${SETTINGS_FILE}"
 ehb_verify_runtime_checkout
 ehb_require_external_production_paths
 ehb_require_staged_cache_root "staged ARCO shard consolidation"
+ehb_require_staged_run_manifest
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
@@ -42,6 +43,7 @@ echo "[info] expected commit: ${EXPECTED_COMMIT}"
 echo "[info] log file: ${LOGFILE}"
 echo "[info] settings file: ${SETTINGS_FILE}"
 echo "[info] campaign cache root: ${STAGED_CACHE_ROOT}"
+echo "[info] staged production manifest: ${STAGED_RUN_MANIFEST_PATH}"
 echo "[info] Venus Mamba environment: ${VENUS_MAMBA_ENV}"
 echo "[info] Python executable: ${PYTHON_EXECUTABLE}"
 

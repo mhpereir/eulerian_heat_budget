@@ -1,4 +1,5 @@
 import importlib
+import json
 import os
 import subprocess
 import sys
@@ -988,6 +989,7 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "EHB_RUN_BUDGET_ROOT=" in settings
     assert "EHB_LOG_ROOT=" in settings
     assert "STAGED_CACHE_BASE_ROOT=" in settings
+    assert "STAGED_RUN_MANIFEST_PATH=" in settings
     assert "ZG_BOTTOM=" in settings
     assert "USE_SURFACE_AS_BOTTOM" not in settings
     assert "STAGED_ARCO_TIME_CHUNK=" in settings
@@ -997,6 +999,7 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "ehb_build_staged_campaign_init_args" in settings
     assert "ehb_year_shard_root" in settings
     assert "ehb_require_consolidated_staged_cache" in settings
+    assert "ehb_require_staged_run_manifest" in settings
     assert "ehb_require_venus_production_checkout" in settings
     assert "ehb_verify_production_submission_checkout" in settings
     assert "refs/heads/production_development_staged" in settings
@@ -1025,6 +1028,13 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "#PBS -l select=1:ncpus=1:mem=4gb" in consolidation_scheduler
     assert "consolidate_staged_arco_cache.py" in consolidation_scheduler
     assert "depend=afterok:${RETRIEVAL_JOB_ID}" in submission_script
+    assert 'MANIFEST_ARGS[0]="prepare"' not in submission_script
+    assert 'MANIFEST_ARGS=("prepare" "${MANIFEST_ARGS[@]:3}")' in submission_script
+    assert '--retrieval-select "1:ncpus=8:mem=8gb"' in submission_script
+    assert '--retrieval-walltime "48:00:00"' in submission_script
+    assert '--consolidation-select "1:ncpus=1:mem=4gb"' in submission_script
+    assert '--consolidation-walltime "12:00:00"' in submission_script
+    assert "record-submission" in submission_script
     assert 'LOG_DIR="${LOG_DIR:-${EHB_LOG_ROOT}/${REGION}/${RUN_ID}}"' in settings
     assert '-o "${LOG_DIR}/"' in submission_script
     assert '-o "${LOG_DIR}/"' in run_submission_script
@@ -1153,6 +1163,9 @@ case "$*" in
     printf '%s\\trefs/heads/production_development_staged\\n' \
       "${FAKE_REMOTE_HEAD:-0000000000000000000000000000000000000000}"
     ;;
+  *"config --get remote.origin.url"*)
+    printf '%s\\n' "git@example.invalid:eulerian_heat_budget.git"
+    ;;
   *) exit 2 ;;
 esac
 """,
@@ -1266,6 +1279,8 @@ esac
             "QSUB_BIN": str(fake_qsub),
             "QSUB_LOG": str(qsub_log),
             "LOG_DIR": str(log_dir),
+            "PYTHON_EXECUTABLE": sys.executable,
+            "SCRIPT_DIR": str(Path(PROJECT_ROOT) / "scripts"),
         }
     )
 
@@ -1275,8 +1290,8 @@ esac
         env=env,
         text=True,
         capture_output=True,
-        check=True,
     )
+    assert result.returncode == 0, result.stderr
 
     submitted = qsub_log.read_text(encoding="utf-8").splitlines()
     assert len(submitted) == 2
@@ -1288,6 +1303,26 @@ esac
     assert "schedule_consolidate_staged_arco_cache.sh" in submitted[1]
     assert "retrieval_job_id=123[].venus" in result.stdout
     assert "consolidation_job_id=124.venus" in result.stdout
+    manifest_path = (
+        workspace_root
+        / "campaign-data"
+        / "staged-zarr"
+        / "alaska"
+        / "alaska-surface-700hpa-1940-2025"
+        / "production_run.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["git"]["branch"] == "production_development_staged"
+    assert manifest["git"]["commit"] == "0" * 40
+    assert manifest["campaign"]["configuration"]["domain"]["region"] == "alaska"
+    assert manifest["scheduler"]["array"]["max_parallel"] == 5
+    assert len(manifest["submissions"]) == 1
+    submission = manifest["submissions"][0]
+    assert submission["retrieval_job_id"] == "123[].venus"
+    assert submission["consolidation_job_id"] == "124.venus"
+    assert submission["dependency"] == "afterok:123[].venus"
+    assert submission["submission_host"]
+    assert submission["submitted_at"]
 
 
 def test_run_budget_production_submission_uses_external_paths(tmp_path):

@@ -85,6 +85,10 @@ that subtree.
 - Preserve normalized campaign configuration, source commit, environment,
   scheduler or service identity, shard manifests, success markers,
   consolidation summary, and scientific validation as run provenance.
+- For staged production, create `production_run.json` atomically at the
+  campaign root before submission. Record the authoritative branch and commit,
+  normalized settings, source, paths, runtime environment, requested
+  resources, and every retrieval and consolidation job pairing.
 - Run production work only from a named, clean commit. A queued job must verify
   the expected commit before computation.
 - On Venus, keep Git checkouts under

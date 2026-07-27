@@ -30,6 +30,7 @@ EHB_OUTPUT_ROOT="${EHB_OUTPUT_ROOT:-${EHB_RUN_BUDGET_ROOT}}"
 
 STAGED_CACHE_BASE_ROOT="${STAGED_CACHE_BASE_ROOT:-${EHB_STAGED_ZARR_ROOT}/${REGION}}"
 STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-${STAGED_CACHE_BASE_ROOT}/${CAMPAIGN_ID}}"
+STAGED_RUN_MANIFEST_PATH="${STAGED_RUN_MANIFEST_PATH:-${STAGED_CACHE_ROOT}/production_run.json}"
 PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-${EHB_RUN_BUDGET_ROOT}/${REGION}/${RUN_ID}}"
 LOG_DIR="${LOG_DIR:-${EHB_LOG_ROOT}/${REGION}/${RUN_ID}}"
 STAGED_ARCO_TIME_CHUNK="${STAGED_ARCO_TIME_CHUNK:-month}"
@@ -57,7 +58,7 @@ ehb_require_external_production_paths() {
   project_root=$(readlink -m -- "${PROJECT_ROOT}")
   local label
   local path
-  for label in STAGED_CACHE_ROOT PRODUCTION_OUTPUT_DIR LOG_DIR; do
+  for label in STAGED_CACHE_ROOT STAGED_RUN_MANIFEST_PATH PRODUCTION_OUTPUT_DIR LOG_DIR; do
     path=$(readlink -m -- "${!label}")
     case "${path}/" in
       "${project_root}/"*)
@@ -66,6 +67,13 @@ ehb_require_external_production_paths() {
         ;;
     esac
   done
+
+  local expected_manifest_path
+  expected_manifest_path=$(readlink -m -- "${STAGED_CACHE_ROOT}/production_run.json")
+  if [[ "$(readlink -m -- "${STAGED_RUN_MANIFEST_PATH}")" != "${expected_manifest_path}" ]]; then
+    echo "[error] STAGED_RUN_MANIFEST_PATH must be ${expected_manifest_path}." >&2
+    return 1
+  fi
 }
 
 ehb_require_venus_production_checkout() {
@@ -170,6 +178,13 @@ ehb_require_staged_cache_root() {
   if [[ -z "${STAGED_CACHE_ROOT:-}" ]]; then
     echo "[error] ${context} requires STAGED_CACHE_ROOT to point to a local indexed cache root." >&2
     echo "[error] Populate it first with scripts/staged_arco_retrieval.py from an internet-capable session." >&2
+    return 1
+  fi
+}
+
+ehb_require_staged_run_manifest() {
+  if [[ ! -f "${STAGED_RUN_MANIFEST_PATH}" ]]; then
+    echo "[error] staged production manifest is missing: ${STAGED_RUN_MANIFEST_PATH}" >&2
     return 1
   fi
 }
