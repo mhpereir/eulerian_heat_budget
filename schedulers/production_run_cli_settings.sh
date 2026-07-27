@@ -12,15 +12,14 @@ RUN_START_MONTH_DAY="${RUN_START_MONTH_DAY:-05-01}"
 RUN_END_MONTH_DAY="${RUN_END_MONTH_DAY:-10-31}"
 
 DATA_SOURCE="${DATA_SOURCE:-staged_arco_cache}"
-PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/eastern_canada_surface_700hPa_1940_2025}"
-REGION="${REGION:-eastern_canada}"
+PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-/home/mhpereir/eulerian_heat_budget/results/production/alaska_surface_700hPa_1940_2025}"
+REGION="${REGION:-alaska}"
 ZG_TOP_PA="${ZG_TOP_PA:-70000}"
 ZG_BOTTOM="${ZG_BOTTOM:-surface_pressure}"
 ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-}"
 ALLOW_BOTTOM_OVERFLOW="${ALLOW_BOTTOM_OVERFLOW:-1}"
 
-# STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-/home/mhpereir/eulerian_heat_budget/results/staged_arco_cache/production}"
-STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-/home/mhpereir/eulerian_heat_budget/results/staged_arco_cache/eastern-canada-1940-2025}"
+STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-/home/mhpereir/eulerian_heat_budget/results/staged_arco_cache/alaska-1940-2025}"
 STAGED_ARCO_TIME_CHUNK="${STAGED_ARCO_TIME_CHUNK:-month}"
 STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS="${STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS:-20800}"
 

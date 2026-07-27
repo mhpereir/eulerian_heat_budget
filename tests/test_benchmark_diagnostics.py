@@ -229,7 +229,11 @@ def test_fig1_benchmark_mass_continuity_plots_benchmark_scatter(tmp_path):
 
 
 def test_fig5_benchmark_comparison_plots_aligned_diagnostic_totals(tmp_path):
-    full_time = np.arange(5)
+    full_time = np.arange(
+        np.datetime64("1940-06-01"),
+        np.datetime64("1940-06-06"),
+        np.timedelta64(1, "D"),
+    )
     output_time = full_time[1:-1]
     faces = ("north", "south", "east", "west")
 

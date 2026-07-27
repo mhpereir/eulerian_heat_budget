@@ -947,7 +947,7 @@ def test_single_run_schedulers_share_cli_settings():
     assert "BASH_SOURCE" not in retrieval_scheduler
     assert "#PBS -o /home/mhpereir/eulerian_heat_budget/logs/" in run_scheduler
     assert "#PBS -o /home/mhpereir/eulerian_heat_budget/logs/" in retrieval_scheduler
-    assert "#PBS -l select=1:ncpus=8:mem=26gb" in retrieval_scheduler
+    assert "#PBS -l select=1:ncpus=8:mem=8gb" in retrieval_scheduler
     assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in retrieval_scheduler
     assert "/dev/null" not in run_scheduler
     assert "/dev/null" not in retrieval_scheduler
@@ -984,7 +984,7 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "source \"${SETTINGS_FILE}\"" in production_scheduler
     assert "source \"${SETTINGS_FILE}\"" in staging_scheduler
     assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in staging_scheduler
-    assert "#PBS -l select=1:ncpus=8:mem=26gb" in staging_scheduler
+    assert "#PBS -l select=1:ncpus=8:mem=8gb" in staging_scheduler
     assert "ehb_build_production_run_budget_args COMMON_RUN_ARGS" in production_scheduler
     assert "ehb_production_year_for_task \"${PBS_ARRAY_INDEX}\"" in production_scheduler
     assert "ehb_build_production_time_window \"${YEAR}\" TIME_START TIME_END" in production_scheduler
@@ -1035,7 +1035,7 @@ printf 'RETRIEVAL_ARGS=%s\n' "${RETRIEVAL_ARGS[*]}"
     assert "--data-source staged_arco_cache" in output
     assert f"--production-output-dir {tmp_path / 'production'}" in output
     assert f"--staged-cache-root {tmp_path / 'cache'}" in output
-    assert "--region eastern_canada" in output
+    assert "--region alaska" in output
     assert "--zg-top-pa 70000" in output
     assert "--zg-bottom surface_pressure" in output
     assert "--diagnostic-plots" in output

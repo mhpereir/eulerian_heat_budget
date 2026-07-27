@@ -80,6 +80,57 @@ def test_open_arco_zarr_does_not_retry_non_transient_errors(monkeypatch):
     assert calls["count"] == 1
 
 
+def test_open_arco_zarr_accepts_native_chunk_strategy(monkeypatch):
+    observed = {}
+    dataset = xr.Dataset(
+        {"temperature": xr.DataArray([1.0], dims=("time",))},
+        coords={"time": [0]},
+    )
+
+    def fake_open_zarr(*args, **kwargs):
+        observed.update(kwargs)
+        return dataset
+
+    monkeypatch.setattr(io.xr, "open_zarr", fake_open_zarr)
+
+    out = io._open_arco_zarr_with_retry(_arco_cfg(), chunks={})
+
+    assert out is dataset
+    assert observed["chunks"] == {}
+
+
+def test_standardize_can_preserve_source_chunks(monkeypatch):
+    dataset = xr.Dataset(
+        {
+            "T": xr.DataArray(
+                [[[[300.0]]]],
+                dims=("time", "level", "lat", "lon"),
+                attrs={"units": "K"},
+            ),
+            "u": xr.DataArray([[[[1.0]]]], dims=("time", "level", "lat", "lon")),
+            "v": xr.DataArray([[[[2.0]]]], dims=("time", "level", "lat", "lon")),
+            "w": xr.DataArray([[[[0.0]]]], dims=("time", "level", "lat", "lon")),
+            "sp": xr.DataArray([[[100000.0]]], dims=("time", "lat", "lon")),
+        },
+        coords={
+            "time": ["1940-06-01T00:00:00"],
+            "level": [100000.0],
+            "lat": [45.0],
+            "lon": [-130.0],
+        },
+    )
+    dataset["level"].attrs["units"] = "Pa"
+
+    def fail_chunk(*args, **kwargs):
+        pytest.fail("standardization unexpectedly rechunked the source dataset")
+
+    monkeypatch.setattr(xr.Dataset, "chunk", fail_chunk)
+
+    out = io.standardize_era5_dataset(dataset, _arco_cfg(), rechunk=False)
+
+    assert set(out.data_vars) == {"T", "u", "v", "w", "sp"}
+
+
 def test_load_arco_benchmark_fluxes_uses_retrying_open(monkeypatch):
     calls = {"count": 0}
     dataset = xr.Dataset(

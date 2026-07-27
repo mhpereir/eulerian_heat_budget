@@ -219,6 +219,12 @@ Staging and consolidation can be launched by PBS, Slurm, or Google adapters.
 Those queueing and transfer mechanisms do not change the cache or heat-budget
 contracts.
 
+The staged retrieval path opens the global ARCO store with `chunks=None` so
+xarray does not construct a store-wide Dask graph. It applies the requested
+time, horizontal, vertical, and wall-only selections first, materializes the
+selected variables one at a time, and applies the configured Dask/Zarr chunks
+only to the compact tile being written.
+
 ### 3.4 Data-Source Selection
 
 `--data-source` is explicit in the active `run_budget` implementations. The
@@ -687,6 +693,8 @@ Present on staged tips. It:
 - accepts the shared domain, pressure, time, and benchmark options
 - expands production year ranges into seasonal windows
 - optionally splits requests into daily or monthly staging chunks
+- avoids a store-wide Dask graph while selecting compact staged data
+- materializes selected tile variables before normalizing their Zarr chunks
 - retries recognized transient open or write failures
 - writes indexed compact Zarr tiles
 - skips only an exact tile already registered in the cache
@@ -1028,8 +1036,7 @@ Isolated cross-tip validation at this document update:
 - `drac_development_2_staged`: `120 passed`
 - `google_development_staged`: `139 passed` with one Matplotlib date-locator
   warning
-- `production_development_staged`: `119 passed` with one Matplotlib
-  date-locator warning
+- `production_development_staged`: `137 passed`
 
 Branch-specific suites must pass before their corresponding retrieval or
 production deployment.

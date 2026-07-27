@@ -525,7 +525,11 @@ def _build_tile_from_arco(
 
     build_started = time.monotonic()
     _log_info(f"opening ARCO zarr store {source_cfg.arco_path}")
-    ds = io._open_arco_zarr_with_retry(source_cfg)
+    # Do not construct a Dask graph for the complete multi-petabyte ARCO store.
+    # The store has one full-globe chunk per variable and hour, so even native
+    # Dask chunking creates enough graph metadata to exhaust a small VM before
+    # any variable or regional selection is applied.
+    ds = io._open_arco_zarr_with_retry(source_cfg, chunks=None)
     _log_info(f"opened ARCO zarr store in {_elapsed_seconds(build_started)}")
     _log_info(f"selecting ARCO source variables: {list(var_map)}")
     ds = ds[list(var_map.keys())]
@@ -535,7 +539,7 @@ def _build_tile_from_arco(
     _log_info(f"renaming ARCO variables to staged schema: {list(var_map.values())}")
     ds = ds.rename(var_map)
     _log_info("standardizing ARCO dataset metadata and chunks")
-    ds = io.standardize_era5_dataset(ds, source_cfg)
+    ds = io.standardize_era5_dataset(ds, source_cfg, rechunk=False)
     _log_info("building wall-only staged tile metadata")
     tile = cache.build_arco_cache_tile(
         ds,
@@ -546,6 +550,9 @@ def _build_tile_from_arco(
         f"built staged tile metadata in {_elapsed_seconds(build_started)} "
         f"sizes={dict(tile.sizes)} variables={list(tile.data_vars)}"
     )
+    for variable_name in tuple(tile.data_vars):
+        _log_info(f"materializing selected staged variable {variable_name}")
+        tile[variable_name] = tile[variable_name].load()
     return tile
 
 

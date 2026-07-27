@@ -65,7 +65,7 @@ def _publication_figsize(width: str = "single", aspect: float = SINGLE_PANEL_ASP
 
 
 def _date_locator_formatter():
-    locator = mdates.AutoDateLocator(minticks=3, maxticks=5)
+    locator = mdates.AutoDateLocator(minticks=3, maxticks=7)
     formatter = mdates.ConciseDateFormatter(locator)
     return locator, formatter
 

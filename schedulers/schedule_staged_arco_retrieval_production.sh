@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -N ehb_stage_arco_prod
 #PBS -J 0-85%5
-#PBS -l select=1:ncpus=8:mem=26gb
+#PBS -l select=1:ncpus=8:mem=8gb
 #PBS -j oe
 #PBS -o /home/mhpereir/eulerian_heat_budget/logs/
 
