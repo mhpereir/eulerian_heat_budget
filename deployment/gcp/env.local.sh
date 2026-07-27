@@ -8,14 +8,16 @@ export SERVICE_ACCOUNT_NAME="ehb-batch-retrieval"
 
 # Operator and campaign configuration
 export CAMPAIGN_CONFIG_DIR="${HOME}/work/google_cloud/ehb-campaigns"
-export CAMPAIGN_FILE="${CAMPAIGN_CONFIG_DIR}/eastern-canada-1940-2025.json"
-export CANARY_FILE="${CAMPAIGN_CONFIG_DIR}/eastern-canada-canary.json"
+export CAMPAIGN_FILE="${CAMPAIGN_CONFIG_DIR}/gulf-usa-1940-2025-surface-700hpa.json"
+export CANARY_FILE="${CAMPAIGN_CONFIG_DIR}/gulf-usa-canary-2025-surface-700hpa.json"
 
 export CAMPAIGN_ID="$(python3 -m deployment.gcp.campaign \
   "${CAMPAIGN_FILE}" \
   --print-campaign-id)"
 
-
+export CANARY_ID="$(python3 -m deployment.gcp.campaign \
+  "${CANARY_FILE}" \
+  --print-campaign-id)"
 
 ## How to recover IMAGE_URI from previous log:
 # export BUILD_LOG="/tmp/ehb-cloud-build-20260716-172507.log"

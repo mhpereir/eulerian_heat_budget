@@ -23,17 +23,18 @@ The operator needs:
   their IAM policies;
 - the Google Cloud CLI with an authenticated account;
 - Git and Python 3 on the build and submission host;
-- Docker on the consolidation host if using the recommended image-based
-  consolidation command;
+- an existing Python environment on the consolidation host containing the
+  dependencies locked in `requirements-arco.txt`;
 - a POSIX filesystem with enough free space for the downloaded campaign; and
 - a clean Git worktree with a committed `HEAD` for a production image build.
 
 The setup script grants its submitter Batch Job Editor, Service Account User on
 the runtime service account, and Storage Object User on the campaign bucket. It
-does not grant Logging Viewer or local Artifact Registry pull access. An
-operator who needs task logs must already have `roles/logging.viewer`. A
-principal pulling the private image for local consolidation must already have
-Artifact Registry Reader or an equivalent permission.
+does not grant Logging Viewer or Artifact Registry Reader to the operator. Task
+logs require `roles/logging.viewer`, and resolving the pushed image digest
+requires `roles/artifactregistry.reader` or an equivalent permission. Local
+consolidation runs directly in the existing Python environment and requires
+neither Docker nor Artifact Registry access.
 
 Authenticate and define the deployment values:
 
@@ -91,9 +92,9 @@ account, append:
 The script is intentionally safe to rerun. It fails instead of silently using
 a bucket in a different region or a non-Docker Artifact Registry repository.
 
-If the operator does not inherit log-view and image-pull permissions from a
+If the operator does not inherit log-view and image-read permissions from a
 broader role, an administrator can grant the two narrowly scoped roles used by
-the monitoring and local consolidation commands:
+monitoring and immutable image-digest resolution:
 
 ```bash
 export OPERATOR_PRINCIPAL="user:operator@example.com"
@@ -264,21 +265,19 @@ gcloud storage rsync \
   --project "${PROJECT_ID}" \
   --recursive
 
-gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
-
-docker run --rm \
-  --user "$(id -u):$(id -g)" \
-  --entrypoint python \
-  --mount type=bind,src="${CANARY_CACHE_ROOT}",dst=/data \
-  "${IMAGE_URI}" \
-  scripts/consolidate_staged_arco_cache.py --cache-root /data
+export EHB_PYTHON="${EHB_PYTHON:-python3}"
+"${EHB_PYTHON}" -c 'import numpy, xarray, zarr'
+"${EHB_PYTHON}" scripts/consolidate_staged_arco_cache.py \
+  --cache-root "${CANARY_CACHE_ROOT}"
 
 test -f "${CANARY_CACHE_ROOT}/cache.sqlite"
 test -f "${CANARY_CACHE_ROOT}/consolidation.json"
 ```
 
-Using the host UID and GID is important because the consolidator atomically
-writes both root metadata files into the bind-mounted directory.
+Run the command from the repository root. `EHB_PYTHON` must resolve to the
+existing environment containing the dependencies locked in
+`requirements-arco.txt`. The consolidator writes both root metadata files
+atomically into `CANARY_CACHE_ROOT`.
 
 ## 6. Submit the full production campaign
 
@@ -389,22 +388,17 @@ If the transfer is interrupted, keep the partial directory and rerun only the
 `gcloud storage rsync` command. The fresh-directory check is for the first
 download, not for a transfer resume.
 
-Authenticate Docker to Artifact Registry and run the exact production image
-with its entrypoint overridden:
+Run the consolidator directly with the existing Python environment:
 
 ```bash
-gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
-
-docker run --rm \
-  --user "$(id -u):$(id -g)" \
-  --entrypoint python \
-  --mount type=bind,src="${CACHE_ROOT}",dst=/data \
-  "${IMAGE_URI}" \
-  scripts/consolidate_staged_arco_cache.py --cache-root /data
+export EHB_PYTHON="${EHB_PYTHON:-python3}"
+"${EHB_PYTHON}" -c 'import numpy, xarray, zarr'
+"${EHB_PYTHON}" scripts/consolidate_staged_arco_cache.py \
+  --cache-root "${CACHE_ROOT}"
 
 test -f "${CACHE_ROOT}/cache.sqlite"
 test -f "${CACHE_ROOT}/consolidation.json"
-python3 -m json.tool "${CACHE_ROOT}/consolidation.json"
+"${EHB_PYTHON}" -m json.tool "${CACHE_ROOT}/consolidation.json"
 ```
 
 Consolidation is successful only after every expected year, success marker,
@@ -417,7 +411,8 @@ has passed validation. The command atomically writes:
   summary.
 
 The command is resumable and may be rerun after a partial local transfer. It
-does not rewrite the Zarr stores.
+does not rewrite the Zarr stores. Record the repository commit, resolved Python
+executable, and environment dependency state with the campaign provenance.
 
 Optionally publish the two small combined metadata files so future downloads
 already contain them:

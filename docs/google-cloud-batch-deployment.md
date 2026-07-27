@@ -156,9 +156,10 @@ When `--submitter` is absent, setup resolves the first active `gcloud` account
 and constructs `user:ACCOUNT`. Pass an explicit IAM principal for service
 accounts, groups, or a different user.
 
-Logging Viewer is not granted. Artifact Registry Reader is not granted to the
-submitter. Those permissions are needed separately when the operator reads logs
-or pulls the image onto a consolidation host.
+Logging Viewer and Artifact Registry Reader are not granted to the submitter.
+They are needed separately when the operator reads logs or resolves the pushed
+image digest. Local consolidation runs in an existing Python environment and
+does not require the submitter to pull the runtime image.
 
 ### Idempotence and failure policy
 
@@ -638,15 +639,18 @@ For the full historical campaign, choose a consolidation host with reliable
 networking and sufficient local disk. A fresh destination directory prevents
 old local years from being mistaken for campaign content.
 
-### Container-based execution
+### Existing Python environment
 
-Using the same digest-pinned image guarantees the same locked Python, Xarray,
-and Zarr versions as retrieval. The image's normal entrypoint must be overridden
-with Python. The runbook also overrides the container UID/GID with the host
-values so atomic writes to the bind mount succeed.
+Run `scripts/consolidate_staged_arco_cache.py` directly from the repository root
+with an existing Python environment containing the dependencies locked in
+`requirements-arco.txt`. Docker and Artifact Registry access are not required
+for local consolidation.
 
-The consolidation host must authenticate Docker to the regional Artifact
-Registry and have read permission on the repository.
+Use the consolidator source corresponding to the retrieval image, or a reviewed
+compatible commit. Record the repository commit, resolved Python executable,
+and environment dependency state with the campaign provenance. The cache root
+must be writable because the consolidator atomically replaces `cache.sqlite`
+and `consolidation.json`.
 
 ### Validation algorithm
 
@@ -778,7 +782,8 @@ Parallelism multiplies VM, vCPU, and persistent-disk demand.
 | Consolidator reports missing year | Batch is incomplete or download did not finish. | Confirm job/tasks and markers, rerun `gcloud storage rsync`, then rerun consolidation. |
 | Consolidator reports checksum mismatch | Download corruption, cloud object mutation, or incomplete transfer. | Redownload the affected campaign into a clean directory and investigate object provenance. |
 | Consolidator reports incomplete hourly coverage | A shard's tiles have a time gap despite publication metadata. | Treat the shard as invalid, remove or isolate its cloud prefix with operator approval, and resubmit the same campaign. |
-| Docker consolidation cannot write output | Bind-mounted directory is not writable by container user. | Run with `--user "$(id -u):$(id -g)"` as shown in the runbook. |
+| Consolidator cannot import a dependency | The selected Python environment is incomplete or not active. | Use the existing environment containing the packages locked in `requirements-arco.txt`, then rerun the import check and consolidation. |
+| Consolidator cannot write output | The downloaded campaign root is not writable. | Correct ownership or permissions on the explicit cache root, then rerun consolidation. |
 | Offline budget loader rejects cache | Calculation request differs from staged coverage or asks for unsupported surface fields. | Align calculation parameters with `campaign.json` and keep surface variables disabled. |
 
 ## Change-management checklist
