@@ -1,48 +1,375 @@
-# Eulerian Heat Budget - Current Code Outline
+# Eulerian Heat Budget - Shared Code Outline
 
-March 31st, 2026
+July 26, 2026
 
-## 1. Purpose
+## 1. Purpose And Scope
 
-This document describes the code as it exists today in this repository. It is a code-faithful reference for the current Eulerian heat-budget workflow in pressure coordinates, including the runtime pipeline, module boundaries, data contracts, outputs, and the present state of the test suite.
+This document is the code-faithful architectural reference for the Eulerian
+heat-budget workflow in pressure coordinates. It describes the shared
+scientific calculation, input adapters, runtime modes, data contracts, output
+schema, and test coverage represented across these active branch tips:
 
-The implementation currently computes volume-integrated temperature storage, advective fluxes, and adiabatic heating over a regional control volume, then diagnoses a residual diabatic term from those pieces.
+- `production_development`
+- `production_development_staged`
+- `drac_development_2_staged`
+- `google_development_staged`
 
-## 2. Runtime Pipeline
+The branch tips have different scheduler, data-retrieval, deployment, region,
+and machine-path adapters. Those differences must remain outside the shared
+heat-budget calculation. Once an input adapter has returned the canonical
+dataset, `scripts/run_budget.py`, `src/budget.py`, and the scientific modules
+use the same calculation and output contracts.
 
-The current end-to-end flow is:
+The implementation computes volume-integrated temperature storage,
+temperature-anomaly advection, adiabatic heating, and a residual diabatic term
+over a regional control volume. It also preserves mass-closure, geometric,
+per-face, and benchmark diagnostics needed by downstream analysis.
 
-1. `src/cli.py` parses command-line inputs.
-2. `scripts/run_budget.py` combines CLI values with defaults from `src/config.py` and constructs:
+`docs/Eulerian Heat Budget - Reformulation.md` is the source of truth for the
+physics. This document records how those definitions are represented in code.
+
+## 2. Physical And Sign Contracts
+
+### 2.1 Heat Advection
+
+Heat advection is positive when heat is carried into the control volume.
+Equivalently, if `n` is the outward unit normal,
+
+```text
+A = - integral_A T' (U dot n) dA
+```
+
+where
+
+```text
+T' = T - T_domain_avg
+```
+
+The signed `advection_term` and every `flux_contribution_<face>` use this
+positive-into-domain convention:
+
+- inward transport is positive on every face
+- outward transport is negative on every face
+- for positive `u`, `v`, and `w`, the face multipliers are positive on west,
+  south, and top and negative on east, north, and bottom
+- reversing a face-normal velocity reverses its signed contribution
+
+The fixed-pressure bottom face is present only when
+`DomainSpec.zg_bottom == "pressure_level"`. A surface-pressure bottom is a
+moving material boundary and does not produce a separate bottom advective
+face.
+
+### 2.2 Diabatic Residual
+
+The code defines
+
+```text
+S = A + C + D
+```
+
+with:
+
+- `S = dT_dt`, the domain-volume-scaled tendency of `T_domain_avg`
+- `A = advection_term`, positive into the domain
+- `C = adiabatic_term`
+- `D = diabatic_term`
+
+The diagnosed diabatic residual is therefore:
+
+```text
+D = S - A - C
+```
+
+`src/terms.py::compute_diabatic_term()` implements this expression, and
+`src/budget.py::calculate_budget()` passes `dT_dt`, `advection_term`, and
+`adiabatic_term` in that order.
+
+### 2.3 Mass Closure And Heat-Error Diagnostics
+
+`net_mass_advection` is positive into the domain. The implemented mass-closure
+residual is:
+
+```text
+delta_M = net_mass_advection - dV_dt
+```
+
+Positive `delta_M` means that the calculated net inflow exceeds the calculated
+rate of control-volume growth.
+
+The code retains two heat-scaled forms for downstream analysis:
+
+```text
+residual_heat  = delta_M * T_domain_avg
+advection_error = delta_M * T_scale
+```
+
+`T_scale` is the root-mean-square temperature-anomaly scale computed from
+`T - T_domain_avg`. `residual_heat` is a diagnostic output and is not added to
+the diabatic residual. `advection_error` is used as the current
+advection-related uncertainty scale in result plots.
+
+### 2.4 Benchmark Sign Normalization
+
+ARCO benchmark fluxes are converted to the output-file convention before they
+are merged into the budget result. All `benchmark_mass_flux_*` and
+`benchmark_heat_flux_*` output fields are positive into the domain, including
+their per-face values.
+
+## 3. ERA5 Data-Access Modes
+
+The shared calculation supports three data-access patterns. Backend launchers
+may arrange files or queue retrieval differently, but they must select one of
+these adapters and produce the canonical dataset described in Section 7.
+
+### 3.1 Pre-downloaded ERA5
+
+Data-source kind:
+
+```text
+local_era5
+```
+
+This path reads component NetCDF files from a configured local directory:
+
+- `T.nc`
+- `ux.nc`
+- `uy.nc`
+- `uz.nc`
+- `sfp.nc`
+
+When surface variables are enabled, it also reads:
+
+- `surface_temperature.nc`
+- `surface_ux.nc`
+- `surface_uy.nc`
+
+On the portable branch, the directory comes from `--local-data-path` or
+`EHB_DATA_ROOT`. Backend tips may inject the same path through their local
+configuration or scheduler wrapper. Machine-specific paths are not part of the
+scientific contract.
+
+### 3.2 Streamed ARCO ERA5
+
+Data-source kind:
+
+```text
+arco_era5
+```
+
+This path opens the public ARCO ERA5 Zarr store and reads the requested
+variables, time range, and spatial domain through xarray and GCS-compatible
+storage. It supports retry with exponential backoff for recognized transient
+open failures.
+
+Core ARCO fields are renamed to the internal schema:
+
+```text
+temperature                 -> T
+u_component_of_wind         -> u
+v_component_of_wind         -> v
+vertical_velocity           -> w
+surface_pressure            -> sp
+```
+
+Optional surface variables and vertically integrated benchmark mass and heat
+fluxes can also be streamed when requested.
+
+### 3.3 Staged ARCO Zarr Cache
+
+Data-source kind on the staged branch tips:
+
+```text
+staged_arco_cache
+```
+
+This is a two-phase workflow:
+
+1. `scripts/staged_arco_retrieval.py` streams selected ARCO data and writes
+   compact local Zarr tiles.
+2. `scripts/run_budget.py` reads those tiles without requiring ARCO or other
+   network access.
+
+The cache is indexed by `cache.sqlite` and stores tiles under `tiles/`. Cache
+selection validates source identity, requested time coverage, horizontal and
+vertical coverage, benchmark availability, and the wall stencils required by
+the budget calculation. Complementary time tiles can be combined when their
+coverage is complete and consistent.
+
+The current staged cache schema stores:
+
+- full selected `T`, `w`, and `sp`
+- compact `u_wall` and `v_wall` arrays containing the required lateral
+  velocity stencils
+- optional compact benchmark wall fluxes
+- pressure bounds and cache metadata
+
+`src_arco.selection` reconstructs canonical `u` and `v` arrays before the
+dataset enters the shared validation and budget pipeline. Interior velocity
+locations that are not required by the wall-flux calculation can remain
+missing.
+
+Current staged-cache constraints:
+
+- `--staged-cache-root` is required
+- staged surface variables `T2m`, `u10`, and `v10` are not implemented
+- benchmark variables must have been included during staging before
+  `--include-benchmark-variables` can be used offline
+
+Staging and consolidation can be launched by PBS, Slurm, or Google adapters.
+Those queueing and transfer mechanisms do not change the cache or heat-budget
+contracts.
+
+### 3.4 Data-Source Selection
+
+`--data-source` is explicit in the active `run_budget` implementations. The
+legacy `DEFAULT_DATA_SOURCE` constant exists on the branch tips but is not used
+to replace an omitted CLI value. An unsupported or omitted source therefore
+fails during `DataSourceConfig` construction rather than silently selecting a
+different access method.
+
+## 4. Runtime Pipelines
+
+### 4.1 Shared Heat-Budget Calculation
+
+After CLI and output-mode resolution, the calculation flow is:
+
+1. `src/cli.py` parses domain, surface, source, time, diagnostic, and output
+   options.
+2. `scripts/run_budget.py` constructs:
    - `specs.DomainRequest`
    - `specs.SurfaceBehaviour`
    - `specs.DataSourceConfig`
-3. `src/run_outputs.py` creates a run directory and resolves git provenance for the run metadata.
-4. `src/io.py` loads ERA5 data from either local files or ARCO Zarr and standardizes it to the internal schema.
-5. `src/validate.py` enforces the canonical dataset schema.
-6. `src/grid.py::determine_domain()` crops the domain and returns:
+3. `src/io.py` dispatches to the selected ERA5 adapter and standardizes its
+   result.
+4. `src/validate.py` enforces the canonical loaded-dataset schema.
+5. Optional benchmark flux inputs are loaded from streamed ARCO or the staged
+   cache.
+6. `src/grid.py::determine_domain()` returns:
    - `ds_domain`
    - `ds_halo`
    - `DomainSpec`
-7. `src/grid.py` builds geometric areas and cell volumes.
-8. `src/weights.py` builds face and volume occupancy weights using the resolved control-volume boundaries and surface-pressure logic.
-9. `src/terms.py` prepares face-centered advection inputs and computes storage, advection, adiabatic, and residual diabatic terms.
-10. `src/budget.py::calculate_budget()` assembles the final budget dataset and optional diagnostics.
-11. `src/plot_diagnostics.py` and `src/plot_results.py` write diagnostic and summary figures.
-12. `src/run_outputs.py::write_run_info()` stores a `run_info.json` record alongside the plots.
+7. `src/grid.py` constructs horizontal areas, vertical wall areas, line
+   elements, and pressure-coordinate cell volumes.
+8. `src/weights.py` constructs horizontal-face, vertical-wall, and volume
+   occupancy weights.
+9. `src/terms.py` computes storage, volume, temperature-average, advection,
+   adiabatic, mass-closure, and benchmark terms.
+10. `src/budget.py::calculate_budget()` assembles and computes the output
+    dataset.
+11. Diagnostic and summary plots are written only when diagnostic plotting is
+    enabled.
+12. A second constant-temperature calculation is run only when the
+    constant-temperature test is enabled.
 
-## 3. Repository Structure
+The scientific path from canonical dataset through `calculate_budget()` is
+independent of the scheduler and data-retrieval backend.
+
+### 4.2 Ad Hoc Runs
+
+For an ad hoc run:
+
+- `src/run_outputs.py::prepare_run_paths()` creates a unique run directory
+- `run_info.json` records request, source, resolved domain, surface behavior,
+  CLI arguments, scheduler context, and git provenance
+- plots are optional
+- NetCDF output is optional through `--write-netcdf`
+- the optional constant-temperature NetCDF result is stored separately
+- `--overwrite-output` controls explicit replacement of existing NetCDF output
+
+The default portable output root comes from `--output-root`,
+`EHB_OUTPUT_ROOT`, or the repository-local `results/` fallback.
+
+### 4.3 Production Manifest Initialization
+
+`--init-production-manifest` with `--production-output-dir`,
+`--production-start-year`, and `--production-end-year` writes
+`production_run.json` and exits before loading ERA5 data.
+
+The manifest records campaign-wide request, source, surface behavior, output
+layout, scheduler context, CLI arguments, and git provenance.
+
+### 4.4 Production Year Runs
+
+A production calculation:
+
+- requires an existing `production_run.json`
+- requires `time_start` and `time_end` within one calendar year
+- writes `annual/heat_budget_<year>.nc`
+- uses `plots/<year>/` when plots are enabled
+- refuses to replace existing output unless overwrite was explicitly allowed
+- does not write an ad hoc `run_info.json` for each year
+
+Queue-array construction and campaign submission remain backend-specific.
+
+### 4.5 Dask Client
+
+The executable entrypoint parses arguments before or as part of starting a
+local Dask distributed client, depending on the branch-tip wrapper. The shared
+worker settings are currently:
+
+- `n_workers=4`
+- `threads_per_worker=1`
+- `processes=True`
+- `memory_limit="8GB"`
+
+The portable entrypoint closes the client through a context manager. Backend
+tips may rely on process termination after `main()` returns.
+
+## 5. Repository Structure
+
+The following tree is the union of the shared implementation and the active
+staged/backend additions. Items marked as branch-specific are not expected on
+every tip.
 
 ```text
 eulerian_heat_budget/
+├── .dockerignore                       # Google staged tip
+├── AGENTS.md
+├── Dockerfile                          # Google staged tip
+├── README.md
+├── environment.yml
+├── pytest.ini
+├── requirements-arco.in                # Google staged tip
+├── requirements-arco.txt               # Google staged tip
+├── archive/
+│   └── scripts/
+│       └── update_run_catalog.py
+├── bugs/
+│   └── fixed/
+│       └── staged_arco_cache_vertical_tile_bug_report.md
+├── cache_viz/
+│   └── visualize_staged_arco_cache.py
+├── deployment/                         # backend-specific
+│   └── gcp/                            # Google staged tip
+│       ├── README.md
+│       ├── build_arco_image.sh
+│       ├── campaign.example.json
+│       ├── campaign.py
+│       ├── render_batch_job.py
+│       ├── run_yearly_retrieval.py
+│       ├── setup_batch_resources.sh
+│       ├── shard_artifacts.py
+│       └── submit_arco_batch.sh
 ├── docs/
-│   └── code_outline.md
-├── logs/
-├── results/
+│   ├── Eulerian Heat Budget - Reformulation.md
+│   ├── README.md                        # Google staged tip
+│   ├── code_outline.md
+│   └── google-cloud-batch-deployment.md # Google staged tip
+├── notebooks/
+│   └── check_pbl_colab.ipynb
 ├── schedulers/
-│   └── schedule_run_budget.sh
+│   ├── production_run_cli_settings.sh   # staged tips
+│   ├── schedule_run_budget.sh
+│   ├── schedule_run_budget_production.sh
+│   ├── schedule_run_budget*_slurm.sh    # DRAC staged tip
+│   ├── schedule_staged_arco_retrieval*.sh
+│   ├── schedule_staged_arco_retrieval*_slurm.sh
+│   └── single_run_cli_settings          # staged tips
 ├── scripts/
-│   └── run_budget.py
+│   ├── closure_testing.py               # empty placeholder on some tips
+│   ├── consolidate_staged_arco_cache.py # Google staged tip
+│   ├── run_budget.py
+│   └── staged_arco_retrieval.py         # staged tips
 ├── src/
 │   ├── __init__.py
 │   ├── budget.py
@@ -58,442 +385,431 @@ eulerian_heat_budget/
 │   ├── terms.py
 │   ├── validate.py
 │   └── weights.py
+├── src_arco/                           # staged tips
+│   ├── __init__.py
+│   ├── cache.py
+│   ├── selection.py
+│   └── variables.py
 └── tests/
+    ├── test_arco_cache.py              # staged tips
+    ├── test_benchmark_diagnostics.py
     ├── test_budget_closure.py
+    ├── test_gcp_batch_deployment.py    # Google staged tip
     ├── test_grid.py
     ├── test_integrals.py
+    ├── test_io.py
+    ├── test_run_budget.py
     ├── test_run_outputs.py
+    ├── test_update_run_catalog.py
     └── test_weights.py
 ```
 
-## 4. Module Reference
+Generated data, caches, credentials, logs, and calculation results are not part
+of the implementation contract and should remain outside version control.
+
+## 6. Module Responsibilities
 
 ### `src/config.py`
 
-Defines project constants and runtime defaults:
+Defines physical constants and branch-local runtime defaults:
 
-- Physical constants: `g`, `R_value`, `R_earth`, `cp`
-- Default data-source settings:
-  - `DEFAULT_DATA_SOURCE`
-  - `DEFAULT_LOCAL_PATH`, read from `EHB_DATA_ROOT`
-  - `DEFAULT_ARCO_PATH`
-  - `DEFAULT_ARCO_TOKEN`
-  - `DEFAULT_TIME_START`
-  - `DEFAULT_TIME_END`
-- Default domain settings:
-  - `REGIONS`
-  - `DEFAULT_MARGIN_N`
-  - `DEFAULT_ZG_TOP_PA`
-  - `DEFAULT_ZG_BOT_MODE`
-  - `DEFAULT_ZG_BOT_PA`
-- Surface-behaviour defaults:
-  - `DEFAULT_ALLOW_BOTTOM_OVERFLOW`
-  - `DEFAULT_USE_SURFACE_VARIABLES`
-  - `DEFAULT_SURFACE_VARIABLE_MODE`
-- Output and Dask defaults:
-  - `DEFAULT_OUTPUT_ROOT`, read from `EHB_OUTPUT_ROOT` with a repository-local
-    `results/` fallback
-  - `DEFAULT_CHUNKS_3D1`
-  - chunk-size helpers `n_time`, `n_lat`, `n_lon`
+- physical constants: `g`, `R_value`, `R_earth`, `cp`
+- local and ARCO paths and tokens
+- ARCO retry and staging timeout controls where supported
+- time-window defaults
+- named region bounding boxes
+- margin and vertical-boundary defaults
+- surface-behavior defaults
+- output-root or plot-root defaults
+- Dask chunk sizes
+- default plotting and constant-temperature controls
 
-`config.py` does not perform calculations; it is the central source of default values used by the entrypoint.
+Branch tips may carry different regions and filesystem defaults. These are
+configuration differences, not changes to the scientific API.
 
 ### `src/specs.py`
 
-Defines the dataclass-based contracts used throughout the run:
+Defines the immutable dataclass contracts:
 
 - `DataSourceConfig`
-  - selects `local_era5` or `arco_era5`
-  - stores source paths, ARCO token, chunking, and time window
+  - `local_era5`
+  - `arco_era5`
+  - `staged_arco_cache` on staged tips
+  - paths, token, chunks, staged cache root, and time window
 - `DomainRequest`
-  - stores requested bounding box, margin, top pressure, and bottom-boundary mode
+  - requested bounding box
+  - cell margin
+  - top pressure
+  - bottom-boundary mode and optional fixed pressure
 - `SurfaceBehaviour`
-  - stores bottom-overflow behavior
-  - toggles optional surface-variable use
-  - stores `surface_variable_mode`
+  - bottom-overflow behavior
+  - optional surface-variable behavior
 - `DomainSpec`
-  - stores resolved lat/lon bounds actually used after cropping
-  - stores resolved top and bottom control-volume pressures
-  - includes validation for bottom-boundary consistency
-
-This module is the canonical definition of what the domain request, resolved domain, data source, and surface treatment mean in the current codebase.
+  - resolved horizontal and vertical control-volume boundaries
+  - validation for bottom-boundary consistency
 
 ### `src/cli.py`
 
-Builds the command-line parser. It currently parses:
+Builds the shared heat-budget parser. Across the active tips it covers:
 
-- Horizontal domain selection: `--region`, or all of `--lat-min`, `--lat-max`, `--lon-min`, `--lon-max`
-- Horizontal margin: `--margin-n`
-- Vertical control-volume settings:
-  - `--zg-top-pa`
-  - `--zg-bottom`
-  - `--zg-bottom-pa`
-- Surface behavior:
-  - `--allow-bottom-overflow` / `--no-allow-bottom-overflow`
-  - `--use-surface-variables` / `--no-use-surface-variables`
-  - `--surface-variable-mode`
-- Data source and time window:
-  - `--data-source`
-  - `--time-start`
-  - `--time-end`
-- Benchmark diagnostics:
-  - `--include-benchmark-variables`
+- named or explicit horizontal domains
+- margin and vertical boundaries
+- bottom-overflow and surface-variable behavior
+- explicit data-source selection
+- local input and staged-cache paths where supported
+- time selection
+- benchmark diagnostics
+- diagnostic plots
+- constant-temperature testing
+- ad hoc NetCDF output
+- production output and manifest initialization
+- explicit output overwrite
 
-The parser mostly returns `None` defaults. `scripts/run_budget.py` is responsible for validating domain selection and filling unspecified runtime values from `config.py`.
+Staging scripts extend this parser with staging-only controls such as campaign
+season bounds, time-chunk size, and staging-attempt timeout.
 
 ### `src/io.py`
 
-Loads and standardizes input data. Current responsibilities are:
+Owns the boundary between external data formats and the canonical dataset.
+Responsibilities include:
 
-- `load_dataset()`
-  - dispatches to `_load_local_era5()` or `_load_arco_era5()`
-- Local ERA5 load path:
-  - loads `T`, `u`, `v`, `w`, and `sp`
-  - optionally loads `T2m`, `u10`, and `v10`
-  - merges component datasets
-- ARCO ERA5 load path:
-  - opens the ARCO Zarr store
-  - renames ERA5 variable names to the internal schema
-  - optionally includes surface variables
-- `standardize_era5_dataset()`
-  - renames common external coordinate names to `time`, `level`, `lat`, `lon`
-  - drops auxiliary coordinates such as `number`, `expver`, `step`, and `surface`
-  - enforces canonical dimension ordering
-  - converts pressure levels to Pa when needed
-  - converts temperature units to Kelvin when needed
-  - normalizes longitudes into `[-180, 180]`
-  - applies the requested time slice
-  - chunks the dataset for Dask workflows
+- dispatching among pre-downloaded, streamed ARCO, and staged-cache adapters
+- loading local ERA5 component files
+- opening ARCO Zarr with transient-failure retry
+- loading streamed benchmark fluxes
+- loading staged core and benchmark datasets where available
+- renaming coordinates and variables
+- dropping non-contract auxiliary coordinates
+- converting pressure levels to Pa
+- converting temperatures to Kelvin
+- enforcing coordinate order and dimension order
+- normalizing longitudes to `[-180, 180]`
+- applying the requested time slice
+- applying Dask chunks
 
-The current internal variable names expected downstream are:
+The staged-tip signature also receives `DomainRequest`, because offline cache
+coverage and wall reconstruction are request-dependent.
 
-- Required 4D fields: `T`, `u`, `v`, `w`
-- Required 3D field: `sp`
-- Optional surface fields: `T2m`, `u10`, `v10`
+### `src_arco/variables.py`
+
+Present on staged tips. Defines shared maps for ARCO core and benchmark
+variables and enforces the current staged-cache restriction on surface
+variables.
+
+### `src_arco/selection.py`
+
+Present on staged tips. Selects staging extents, derives pressure bounds,
+builds compact wall-only tiles, computes required wall stencils, and
+reconstructs canonical core and benchmark datasets.
+
+### `src_arco/cache.py`
+
+Present on staged tips. Owns the indexed Zarr cache:
+
+- initializes the cache root and SQLite catalog
+- identifies tiles from normalized source and request metadata
+- writes tiles through temporary stores and a cache write lock
+- registers tile coverage
+- finds exact, covering, or complementary time tiles
+- validates time, horizontal, vertical, wall, and benchmark coverage
+- raises `OfflineCoverageError` when a request cannot be satisfied
+- reconstructs the dataset without contacting ARCO
 
 ### `src/validate.py`
 
-Performs strict validation of the standardized dataset:
+Strictly validates the canonical loaded dataset:
 
-- required dims exist: `time`, `level`, `lat`, `lon`
-- required 4D variables use dims `("time", "level", "lat", "lon")`
-- required 3D variable `sp` uses dims `("time", "lat", "lon")`
-- each coordinate is 1D over itself
-- levels are strictly decreasing
-- lat/lon are strictly increasing
-- temperature units are Kelvin
-- time spacing is regular when multiple time steps are present
+- required dimensions and variables
+- required variable dimension order
+- one-dimensional coordinates
+- non-empty required dimensions
+- strictly decreasing pressure levels
+- strictly increasing latitude and longitude
+- temperature in Kelvin
+- regular time spacing
 
-This module raises errors instead of coercing bad inputs, to prevent silent scientific mistakes.
+It raises errors instead of coercing data after the I/O boundary.
 
 ### `src/grid.py`
 
-Provides domain resolution and geometric operators.
+Resolves the domain and provides geometric operators:
 
-Current domain logic:
-
-- `determine_domain(ds, request, eager_loading=False)` interprets input `lat` and `lon` as cell-center coordinates.
-- Cell edges are reconstructed halfway between adjacent centers, with the outermost edges extrapolated by half of the nearest center spacing.
-- Cells whose centers lie inside the requested bbox are selected.
-- `margin_n` trims selected center cells from each horizontal boundary and must currently be at least `1`, because `ds_halo` is built using `margin_n - 1`.
-- The function returns:
-  - `ds_domain`: the interior control-volume grid
-  - `ds_halo`: the same domain with a one-cell horizontal pad, used for wall-flux and wall-weight calculations
-  - `DomainSpec`: resolved bounds and vertical boundary settings
-- The returned datasets retain the selected input centers as `lat` and `lon` and carry reconstructed bound metadata:
-  - `lat_start`, `lat_end`
-  - `lon_start`, `lon_end`
-  - `p_start`, `p_end`, `p_mid`
-  - `lat_cell_id`, `lon_cell_id`, `p_cell_id`
-
-Current geometry helpers:
-
-- `get_horizontal_cell_areas(ds)`
-  - returns top-face horizontal area `A_horizontal(lat, lon)` in `m2`
-- `get_vertical_cell_areas(ds)`
-  - returns wall areas:
-    - `A_east(level, lat)`
-    - `A_west(level, lat)`
-    - `A_south(level, lon)`
-    - `A_north(level, lon)`
-  - units are `m*Pa`
-- `get_cell_volumes(ds)`
+- `determine_domain()`
+  - treats input latitude and longitude as cell centers
+  - selects centers inside the requested bounding box
+  - applies `margin_n`
+  - constructs `ds_domain` and a one-cell `ds_halo`
+  - attaches horizontal and pressure bounds and cell IDs
+  - returns the resolved `DomainSpec`
+- `crop_to_target_grid()`
+  - aligns benchmark data to a target grid
+- `get_boundary_line_elements()`
+  - returns lateral boundary line elements
+- `get_horizontal_cell_areas()`
+  - returns `A_horizontal(lat, lon)` in `m2`
+- `get_vertical_cell_areas()`
+  - returns `A_east`, `A_west`, `A_south`, and `A_north` in `m*Pa`
+- `get_cell_volumes()`
   - returns `V_cell(level, lat, lon)` in `m2*Pa`
 
-The grid module currently handles only geometry and domain bookkeeping. It does not compute physics.
+`margin_n` must be at least one because the halo is built using
+`margin_n - 1`.
 
 ### `src/weights.py`
 
-Builds occupancy weights for the control volume.
+Builds occupancy weights:
 
-Current horizontal-face weights:
+- `area_weights_horizontal()`
+  - always returns binary `W_top`
+  - returns binary `W_bottom` for a fixed-pressure bottom
+- `area_weights_vertical()`
+  - returns fractional `W_east`, `W_west`, `W_south`, and `W_north`
+- `volume_weights()`
+  - returns fractional `W_volume`
 
-- `area_weights_horizontal(ds_domain, domain_spec)`
-  - always returns `W_top(time, lat, lon)`
-  - returns `W_bottom(time, lat, lon)` only when the bottom boundary is a fixed pressure level
-  - top and bottom weights are binary in the current implementation
-
-Current vertical-wall weights:
-
-- `area_weights_vertical(ds_halo, domain_spec, surface_spec)`
-  - returns:
-    - `W_east(time, level, lat)`
-    - `W_west(time, level, lat)`
-    - `W_south(time, level, lon)`
-    - `W_north(time, level, lon)`
-  - computes wall occupancy from halo-adjacent surface-pressure slices
-  - supports both bottom-boundary modes:
-    - `surface_pressure`
-    - `pressure_level`
-  - when `allow_bottom_overflow=True` and the bottom boundary follows surface pressure, bottom-layer wall weights may exceed `1`
-
-Current volume weights:
-
-- `volume_weights(ds_domain, domain_spec, surface_spec)`
-  - returns `W_volume(time, level, lat, lon)`
-  - computes overlap of each pressure layer with the active control-volume column
-  - supports the same bottom-boundary logic as the wall weights
-  - when `allow_bottom_overflow=True` and the bottom boundary follows surface pressure, the bottom-layer weight may exceed `1`
+Vertical and volume weights support both bottom-boundary modes. When
+`allow_bottom_overflow=True` with a surface-pressure bottom, the lowest-layer
+weight may exceed one to represent pressure depth below the lowest grid-cell
+edge.
 
 ### `src/integrals.py`
 
-Contains the current pure integration operators only:
+Contains pure xarray integration operators:
 
-- `area_integral(field_2d, area_2d, weights_2d)`
-- `volume_integral_pcoords(field_3d, volume_3d, weights_3d)`
+- `area_integral()`
+- `volume_integral_pcoords()`
 
-These functions operate on xarray arrays and sum over all non-time dimensions after multiplying the field by geometric factors and weights.
-
-Time differencing does not live here in the current code. It is implemented in `src/terms.py`.
+They multiply field, geometry, and occupancy weights and sum all non-time
+dimensions. Time differencing belongs to `src/terms.py`.
 
 ### `src/terms.py`
 
-Computes the physical terms and associated helpers.
+Computes physical and diagnostic terms:
 
-Current public helpers:
+- domain volume from weighted grid cells
+- direct true domain volume from horizontal area and top/bottom pressures
+- centered, forward, and backward time derivatives
+- storage
+- domain-average temperature
+- face-centered advective inputs
+- signed heat and mass advection
+- adiabatic heating
+- residual diabatic heating
+- ARCO benchmark face fluxes
+- benchmark aggregate and output diagnostics
 
-- `compute_domain_volume()`
-- `compute_time_derivative()`
-- `compute_storage()`
-- `prepare_advective_faces()`
-- `compute_advective_term()`
-- `compute_adiabatic_term()`
-- `compute_diabatic_term()`
-- `compute_T_domain_average()`
+The active advection path subtracts `T_domain_avg` before constructing heat
+fluxes. Optional surface fields are blended into the surface-adjacent layer
+only when surface-variable use is enabled.
 
-Important internal helper:
+`compute_advective_term()` returns:
 
-- `_adjust_surface_field()`
-  - blends model-level and surface variables in the surface-adjacent layer when `use_surface_variables=True`
-
-Current advection workflow:
-
-1. `prepare_advective_faces()` reduces the datasets to the variables needed for advection.
-2. In the standard budget path, `budget.calculate_budget()` first converts advection temperature inputs into anomalies relative to `T_domain_avg`.
-3. If surface variables are enabled, `prepare_advective_faces()` adjusts `u`, `v`, and `T` near the surface using `u10`, `v10`, and `T2m`.
-4. It constructs face-centered quantities on west, east, south, north, and top faces, and bottom when the bottom boundary is fixed pressure.
-5. `compute_advective_term()` integrates the signed face fluxes using geometric areas and area weights.
-
-Current outputs from `compute_advective_term()`:
-
-- always:
-  - `net_heat_advection`
-  - per-face `flux_contribution_*`
-- when `integral_diagnostics_flag=True`:
-  - `net_mass_advection`
-  - per-face `mass_flux_contribution_*`
-  - `abs_mass_advection_residual_fraction`
-
-Current thermodynamic terms:
-
-- `compute_storage()` computes the centered time derivative of volume-integrated temperature
-- `compute_adiabatic_term()` integrates `w * R * T / (cp * p)`
-- `compute_diabatic_term()` currently uses the code sign convention:
-  `D = S + A - C`
+- `net_heat_advection`
+- `flux_contribution_<face>`
+- `net_mass_advection` when integral diagnostics are enabled
+- `mass_flux_contribution_<face>` when integral diagnostics are enabled
+- `abs_mass_advection_residual_fraction` when integral diagnostics are enabled
 
 ### `src/budget.py`
 
-Orchestrates the full budget calculation.
+Orchestrates the calculation after data loading:
 
-Current `calculate_budget()` workflow:
+1. builds areas, volumes, and weights
+2. computes storage and both domain-volume estimates
+3. computes both volume tendencies
+4. computes `T_domain_avg`, `dT_dt`, and `dT_dt_2`
+5. subtracts `T_domain_avg` from the advection temperature inputs
+6. prepares and integrates signed face fluxes
+7. computes `T_scale`, `residual_heat`, and `advection_error`
+8. computes adiabatic and residual diabatic terms
+9. merges physical, closure, per-face, and optional benchmark outputs
+10. computes the final xarray dataset
+11. optionally writes diagnostic figures
 
-1. Builds geometric areas and cell volumes.
-2. Builds horizontal, vertical, and volume weights.
-3. Computes:
-   - storage term `d_dt_T`
-   - domain volume `domain_volume`
-   - volume tendency `dV_dt`
-   - domain-mean temperature `T_domain_avg`
-   - normalized temperature tendency diagnostics `dT_dt` and `dT_dt_2`
-4. Prepares advection inputs.
-5. Runs `prepare_advective_faces()` and `compute_advective_term()`.
-6. Estimates advection uncertainty as:
-   `advection_error = (dV_dt + net_mass_advection) * T_scale`
-7. Computes:
-   - `adiabatic_term`
-   - `diabatic_term`
-8. Assembles the output dataset.
-9. Optionally writes diagnostic figures through `plot_diagnostics.py`.
-
-Current output dataset fields are:
-
-- `d_dt_T`
-- `dT_dt`
-- `dT_dt_2`
-- `dV_dt`
-- `advection_term`
-- `advection_error`
-- `adiabatic_term`
-- `diabatic_term`
-- `T_domain_avg`
-- `domain_volume`
-- `T_scale`
-
-The current implementation also supports a constant-`T` diagnostic rerun through the `test_constant_T` argument.
+The module does not choose a scheduler or retrieve staged data.
 
 ### `src/run_outputs.py`
 
-Handles run metadata and output-path setup.
+Owns output paths, serialization, and provenance:
 
-Current responsibilities:
-
-- `resolve_run_id()`
-  - uses Slurm or PBS job and array-task IDs when available
-  - otherwise generates a manual timestamp-and-pid run id
-- `prepare_run_paths()`
-  - creates the run root and plot directory
-  - returns `RunPaths`
-- `resolve_git_provenance()`
-  - captures current branch, commit, and dirty state
-  - dirty-state checks are limited to tracked runtime sources under `src`,
-    `scripts`, `schedulers`, and `deployment`
-  - ignores generated noise such as `__pycache__` and `.pyc`
-- `write_run_info()`
-  - serializes run metadata into `run_info.json`
-
-Current run metadata includes:
-
-- run id and path information
-- resolved request and domain specs
-- source config
-- surface behavior
-- git provenance
-- raw CLI args
-- scheduler name, job ID, and array-task ID when available
-- backward-compatible `pbs_job_id` and `slurm_job_id` fields
+- scheduler-aware run IDs for PBS and Slurm
+- ad hoc run, plot, metadata, primary NetCDF, and constant-temperature paths
+- production root, manifest, annual NetCDF, and year-specific plot paths
+- output collision and overwrite checks
+- ad hoc `run_info.json`
+- production `production_run.json`
+- NetCDF writing with unsupported `None` attributes removed
+- named-branch git provenance
+- tracked runtime dirty-state detection
 
 ### `src/plot_diagnostics.py`
 
-Produces diagnostic figures written by `budget.calculate_budget()` when plotting is enabled.
-
-Current figure functions:
+Writes calculation diagnostics:
 
 - `fig1_mass_continuity()`
+- `fig1_benchmark_mass_continuity()`
 - `fig2_mass_advection_residual_timeseries()`
 - `fig3_advection_components_timeseries()`
 - `fig4_temperature_derivative_timeseries()`
-
-These focus on mass continuity, flux decomposition, accumulated residuals, and the relationship between different temperature-tendency diagnostics.
+- `fig5_benchmark_comparison()`
 
 ### `src/plot_results.py`
 
-Produces summary budget figures after a run completes.
-
-Current figure functions:
+Writes summary plots:
 
 - `plot_budget_terms_hourly()`
-  - hourly view with configurable rolling smoothing
 - `plot_budget_terms_day_bin()`
-  - daily-binned and daily-accumulated view
 - `plot_constant_T_results()`
-  - compares the advection-error estimate against the constant-`T` diagnostic rerun
 
-The current plotting code uses normalized quantities based on `domain_volume`, and it shades advection-related uncertainty using `advection_error` when available.
+The plots normalize by domain volume and use `advection_error` for the current
+advection and diabatic uncertainty shading.
 
 ### `scripts/run_budget.py`
 
-This is the current executable entrypoint.
+Is the common calculation entrypoint. It:
 
-Current responsibilities:
-
-- inserts the project root into `sys.path`
-- parses CLI arguments
-- builds `DomainRequest`, `SurfaceBehaviour`, and `DataSourceConfig`
-- prepares run directories and git provenance
-- loads and validates the source dataset
-- optionally loads ARCO benchmark flux variables when `--include-benchmark-variables` is set
-- includes the six net mass and heat flux series from diagnostic Figure 5.1 in
-  the returned and saved budget dataset when benchmark variables are loaded
-- resolves `ds_domain`, `ds_halo`, and `DomainSpec`
-- writes `run_info.json`
+- resolves CLI values into the dataclass contracts
+- selects ad hoc or production output behavior
+- writes or requires a production manifest
+- loads and validates the selected input adapter
+- resolves the domain
 - calls `budget.calculate_budget()`
-- writes summary plots
-- runs a second constant-`T` diagnostic budget calculation and plots that comparison
+- writes primary and optional constant-temperature outputs
+- writes optional plots
 
-Current runtime behavior under `__main__`:
+Backend versions may differ in how paths or the Dask client are initialized,
+but they must preserve the same canonical input and budget output contracts.
 
-- parses CLI arguments before starting a Dask distributed `Client`
-- closes the client when the run finishes
-- uses hard-coded worker settings:
-  - `n_workers=4`
-  - `threads_per_worker=1`
-  - `processes=True`
-  - `memory_limit="8GB"`
+### `scripts/staged_arco_retrieval.py`
 
-### `schedulers/schedule_run_budget.sh`
+Present on staged tips. It:
 
-This repository also includes a scheduler wrapper for launching the budget workflow in batch environments.
+- accepts the shared domain, pressure, time, and benchmark options
+- expands production year ranges into seasonal windows
+- optionally splits requests into daily or monthly staging chunks
+- retries recognized transient open or write failures
+- writes indexed compact Zarr tiles
+- skips only an exact tile already registered in the cache
 
-## 5. Data Contracts
+It is a data-acquisition adapter and does not calculate the heat budget.
 
-### 5.1 Canonical Loaded Dataset
+### `scripts/consolidate_staged_arco_cache.py`
 
-After `io.standardize_era5_dataset()`, downstream code expects:
+Present on the Google staged tip. It validates completed yearly cache shards,
+their manifests, file hashes, campaign identity, tile metadata, and complete
+hourly coverage. It then builds one combined `cache.sqlite` catalog whose tile
+paths refer to the consolidated cache layout. This is cache publication and
+integrity logic, not heat-budget logic.
 
-- coordinates:
-  - `time`
-  - `level`
-  - `lat`
-  - `lon`
-- required variables:
-  - `T(time, level, lat, lon)`
-  - `u(time, level, lat, lon)`
-  - `v(time, level, lat, lon)`
-  - `w(time, level, lat, lon)`
-  - `sp(time, lat, lon)`
-- optional variables:
-  - `T2m(time, lat, lon)`
-  - `u10(time, lat, lon)`
-  - `v10(time, lat, lon)`
+### `cache_viz/visualize_staged_arco_cache.py`
 
-Required coordinate conventions at this stage:
+Opens an indexed staged cache read-only and writes:
 
-- `level` in Pa
-- `level` strictly decreasing
-- `lat` and `lon` represent cell centers
-- `lat` strictly increasing
-- `lon` strictly increasing
-- longitudes normalized to `[-180, 180]`
+- `tiles.csv`, a sortable inventory of registered tiles and their coverage
+- `coverage_timeline.png`, grouped by region, vertical domain, and benchmark
+  availability
 
-### 5.2 Domain And Halo Datasets
+It reports catalog state and missing tile paths without modifying the cache.
+
+### `archive/scripts/update_run_catalog.py`
+
+Reconstructs a sortable CSV catalog for legacy single-run PBS results by
+combining `run_info.json` metadata with matching log-file exit status. It
+builds the full result in memory and replaces the output atomically.
+
+### `scripts/closure_testing.py`
+
+This tracked file is currently an empty placeholder on the tips where it is
+present. Closure coverage belongs to `tests/test_budget_closure.py`.
+
+### Google Batch Deployment Modules
+
+Present under `deployment/gcp/` on the Google staged tip:
+
+- `campaign.py`
+  - validates and normalizes campaign JSON
+  - resolves regions, yearly time windows, and task-to-year mappings
+- `render_batch_job.py`
+  - renders digest-pinned yearly Google Batch job specifications
+- `run_yearly_retrieval.py`
+  - runs one year's staged retrieval and publishes its shard
+- `shard_artifacts.py`
+  - builds and validates shard manifests, paths, file hashes, and tile
+    signatures
+- shell entrypoints
+  - build the retrieval image
+  - configure Batch resources
+  - submit the campaign
+
+### Scheduler And Deployment Adapters
+
+Files under `schedulers/` and `deployment/` may:
+
+- select PBS, Slurm, or Google queueing
+- map array tasks to years
+- provide backend paths and environment activation
+- stage or consolidate ARCO cache artifacts
+- submit retrieval and calculation jobs
+
+They must not redefine the scientific terms, signs, canonical dataset, staged
+cache schema, or budget output schema.
+
+## 7. Data Contracts
+
+### 7.1 Canonical Loaded Dataset
+
+After `io.standardize_era5_dataset()`, downstream code expects coordinates:
+
+- `time`
+- `level`
+- `lat`
+- `lon`
+
+Required variables:
+
+- `T(time, level, lat, lon)`
+- `u(time, level, lat, lon)`
+- `v(time, level, lat, lon)`
+- `w(time, level, lat, lon)`
+- `sp(time, lat, lon)`
+
+Optional surface variables:
+
+- `T2m(time, lat, lon)`
+- `u10(time, lat, lon)`
+- `v10(time, lat, lon)`
+
+Coordinate conventions:
+
+- `level` is in Pa and strictly decreasing
+- `lat` and `lon` are cell centers
+- `lat` and `lon` are strictly increasing
+- longitude is normalized to `[-180, 180]`
+- time spacing is regular
+
+The input adapter is no longer relevant once this contract has been
+established.
+
+### 7.2 Domain And Halo Datasets
 
 After `grid.determine_domain()`:
 
-- input horizontal coordinates are treated as cell centers and retained for the selected cells
-- horizontal cell bounds are reconstructed from adjacent centers
-- `ds_domain` is the interior control-volume grid used for volume integrals and top-face quantities
-- `ds_halo` carries a one-cell horizontal pad used for wall-face quantities
-- both datasets carry bound metadata:
-  - `lat_start`, `lat_end`
-  - `lon_start`, `lon_end`
-  - `p_start`, `p_end`, `p_mid`
-  - `lat_cell_id`, `lon_cell_id`, `p_cell_id`
+- `ds_domain` is the interior control-volume grid
+- `ds_halo` adds one horizontal cell around `ds_domain`
+- selected center coordinates remain `lat` and `lon`
+- bounds are reconstructed from adjacent centers
+- `DomainSpec` contains the actual resolved control-volume boundaries
 
-`DomainSpec` stores the resolved control-volume bounds actually used after snapping and margin application.
+Both datasets carry:
 
-### 5.3 Geometry And Weight Outputs
+- `lat_start`, `lat_end`
+- `lon_start`, `lon_end`
+- `p_start`, `p_end`, `p_mid`
+- `lat_cell_id`, `lon_cell_id`, `p_cell_id`
 
-Current geometry outputs:
+### 7.3 Geometry And Weights
+
+Geometry outputs:
 
 - `A_horizontal(lat, lon)`
 - `A_east(level, lat)`
@@ -502,7 +818,7 @@ Current geometry outputs:
 - `A_north(level, lon)`
 - `V_cell(level, lat, lon)`
 
-Current weight outputs:
+Weight outputs:
 
 - `W_top(time, lat, lon)`
 - optional `W_bottom(time, lat, lon)`
@@ -512,24 +828,71 @@ Current weight outputs:
 - `W_north(time, level, lon)`
 - `W_volume(time, level, lat, lon)`
 
-### 5.4 Budget Output Dataset
+### 7.4 Budget Output Dataset
 
-`budget.calculate_budget()` currently returns an `xarray.Dataset` containing:
+The entrypoint calls `calculate_budget()` with integral diagnostics enabled.
+Its primary result contains the following core, geometric, closure, and
+advection fields.
+
+Core temperature and volume fields:
 
 - `d_dt_T`
+  - centered derivative of the volume integral of `T`
 - `dT_dt`
+  - `domain_volume * d(T_domain_avg)/dt`
+  - used as `S` in the diabatic residual
 - `dT_dt_2`
+  - `d_dt_T - T_domain_avg * dV_dt`
+- `T_domain_avg`
+- `T_scale`
+- `domain_volume`
+  - volume from grid-cell geometry and occupancy weights
+- `domain_volume_true`
+  - direct horizontal integral of active pressure depth
 - `dV_dt`
+  - derivative of `domain_volume`
+- `dV_dt_true`
+  - derivative of `domain_volume_true`
+
+Heat-budget and closure fields:
+
 - `advection_term`
-- `advection_error`
+  - temperature-anomaly heat advection, positive into the domain
 - `adiabatic_term`
 - `diabatic_term`
-- `T_domain_avg`
-- `domain_volume`
-- `T_scale`
+  - `dT_dt - advection_term - adiabatic_term`
+- `net_mass_advection`
+  - positive into the domain
+- `residual_heat`
+  - `(net_mass_advection - dV_dt) * T_domain_avg`
+- `advection_error`
+  - `(net_mass_advection - dV_dt) * T_scale`
+- `abs_mass_advection_residual_fraction`
 
-When `--include-benchmark-variables` is set for an ARCO ERA5 run, the output
-also contains the six series plotted in diagnostic Figure 5.1:
+Per-face fields:
+
+- `flux_contribution_west`
+- `flux_contribution_east`
+- `flux_contribution_south`
+- `flux_contribution_north`
+- `flux_contribution_top`
+- optional `flux_contribution_bottom`
+- `mass_flux_contribution_west`
+- `mass_flux_contribution_east`
+- `mass_flux_contribution_south`
+- `mass_flux_contribution_north`
+- `mass_flux_contribution_top`
+- optional `mass_flux_contribution_bottom`
+
+All per-face contributions use the positive-into-domain sign convention.
+Surface-pressure runs contain 26 primary variables. Fixed-pressure-bottom runs
+add the two bottom-face fields for 28.
+
+### 7.5 Optional Benchmark Output
+
+When benchmark variables are available and
+`--include-benchmark-variables` is enabled, the result also contains seven
+aggregate diagnostic fields:
 
 - `benchmark_mass_flux_net`
 - `calculated_mass_flux_net_lateral`
@@ -537,17 +900,30 @@ also contains the six series plotted in diagnostic Figure 5.1:
 - `calculated_heat_flux_net_lateral_full`
 - `calculated_heat_flux_net_lateral_full_benchmark_mass`
 - `calculated_heat_flux_net_lateral`
+- `benchmark_heat_flux_net_lateral_prime`
 
-This output is the main input to the result-plotting functions.
+It also contains eight signed per-face benchmark fields:
 
-### 5.5 Run Metadata
+- `benchmark_mass_flux_north`
+- `benchmark_mass_flux_south`
+- `benchmark_mass_flux_east`
+- `benchmark_mass_flux_west`
+- `benchmark_heat_flux_north`
+- `benchmark_heat_flux_south`
+- `benchmark_heat_flux_east`
+- `benchmark_heat_flux_west`
 
-Each run writes `run_info.json` with the current structure:
+These 15 fields are retained in NetCDF output because downstream diagnostics
+need both aggregate and wall-resolved comparisons.
+
+### 7.6 Ad Hoc Run Metadata
+
+Ad hoc `run_info.json` contains:
 
 ```json
 {
   "run_id": "...",
-  "scheduler": "pbs or slurm",
+  "scheduler": "pbs, slurm, or null",
   "scheduler_job_id": "...",
   "scheduler_array_task_id": "...",
   "pbs_job_id": "...",
@@ -568,32 +944,130 @@ Each run writes `run_info.json` with the current structure:
 }
 ```
 
-## 6. Testing
+The scheduler fields are nullable for manual runs.
 
-The test suite is configured by the repository-level `pytest.ini` and is
-expected to collect cleanly from the repository root.
+### 7.7 Production Metadata And Layout
 
-Current test files:
+Production output uses:
 
-- `tests/test_grid.py`
-  - covers domain cropping, bounds metadata, horizontal areas, vertical areas, and cell volumes
-- `tests/test_weights.py`
-  - covers horizontal-face weights, vertical-wall weights, and volume weights
+```text
+<production-output-dir>/
+├── production_run.json
+├── annual/
+│   └── heat_budget_<year>.nc
+└── plots/
+    └── <year>/
+```
+
+`production_run.json` stores campaign-wide provenance. It is distinct from the
+ad hoc per-run metadata contract.
+
+## 8. Test Inventory
+
+The repository-level `pytest.ini` collects tests from `tests/` and excludes
+generated, archived, notebook, and result directories.
+
+Shared baseline tests:
+
+- `tests/test_benchmark_diagnostics.py`
+  - aggregate benchmark formulas
+  - per-face benchmark output schema and signs
+  - benchmark figures
 - `tests/test_budget_closure.py`
-  - covers mass and heat-advection closure behavior for idealized flows
-- `tests/test_run_outputs.py`
-  - covers run-path creation and git provenance / metadata serialization
+  - exact and analytic mass and heat-advection closure cases
+- `tests/test_grid.py`
+  - domain cropping, bounds, halo alignment, areas, and volumes
 - `tests/test_integrals.py`
   - currently empty
+- `tests/test_io.py`
+  - ARCO retry behavior and benchmark loading
+- `tests/test_run_budget.py`
+  - CLI resolution
+  - ad hoc and production modes
+  - NetCDF output
+  - plotting and constant-temperature controls
+  - benchmark dispatch
+- `tests/test_run_outputs.py`
+  - PBS and Slurm run IDs
+  - metadata and git provenance
+  - production paths and manifests
+  - NetCDF collision and serialization behavior
+- `tests/test_update_run_catalog.py`
+  - archived run-catalog reconstruction and failure safety
+- `tests/test_weights.py`
+  - horizontal, vertical, and volume weights
+  - direct true-volume and volume-tendency diagnostics
 
-Validated status for the project-contract change:
+Staged-tip addition:
 
-- `80 passed` under the `ehb-dev` environment declared in `environment.yml`
-- `python scripts/run_budget.py --help` exits without starting a Dask cluster
+- `tests/test_arco_cache.py`
+  - compact wall-only tile construction and reconstruction
+  - cache identity and coverage
+  - local offline loading
+  - time-tile mosaics and gap/conflict rejection
+  - benchmark cache enforcement
+  - retry and timeout behavior
+  - equivalence between staged and full-input budget results
+  - explicit rejection of unsupported staged surface variables
 
-## 7. Current Implementation Notes
+Google staged-tip addition:
 
-- The document describes current behavior, even where the implementation is transitional.
-- Commented-out legacy code in `terms.py` and `plot_results.py` is not part of the active API and is not treated as the current design.
-- The plotting modules live under `src/`, not under `scripts/`.
-- The main runtime entrypoint is `scripts/run_budget.py`, with `src/budget.py` acting as the orchestration layer used by that script.
+- `tests/test_gcp_batch_deployment.py`
+  - campaign normalization and validation
+  - digest-pinned yearly Batch rendering
+  - shard publication and completion markers
+  - cache consolidation, integrity, coverage, and path safety
+
+Validated portable baseline at this document update:
+
+- `81 passed` under the `ehb-dev` environment declared in `environment.yml`
+- `python scripts/run_budget.py --help` exits successfully without starting a
+  Dask cluster
+
+Isolated cross-tip validation at this document update:
+
+- `drac_development_2_staged`: `120 passed`
+- `google_development_staged`: `139 passed` with one Matplotlib date-locator
+  warning
+- `production_development_staged`: `119 passed` with one Matplotlib
+  date-locator warning
+
+Branch-specific suites must pass before their corresponding retrieval or
+production deployment.
+
+## 9. Shared Versus Branch-Specific Responsibilities
+
+The following are shared scientific contracts:
+
+- positive-into-domain heat and mass advection
+- diabatic and mass-closure formulas
+- canonical loaded dataset
+- domain, geometry, and weight definitions
+- staged cache schema and offline reconstruction on staged tips
+- budget output variable names and meanings
+- benchmark output signs and fields
+
+The following may vary by branch tip:
+
+- PBS, Slurm, or Google queueing
+- retrieval-job construction
+- deployment resources and container execution
+- configured regions
+- machine paths and environment activation
+- cache transfer and consolidation
+
+Backend code must terminate at the data-source or execution boundary. It must
+not fork the scientific implementation or reinterpret its signs and outputs.
+
+## 10. Current Implementation Notes
+
+- The main calculation entrypoint is `scripts/run_budget.py`.
+- `src/budget.py` orchestrates scientific modules after canonical data loading.
+- Plotting modules live under `src/`.
+- Legacy code inside inactive comments or string blocks is not part of the
+  active API.
+- The primary budget output is intentionally broader than the plotted fields
+  because wall, closure, true-volume, and benchmark variables are required by
+  downstream analysis.
+- A real-data workflow is validated only when its scheduler job, commit,
+  configuration, output path, and scientific checks are recorded.
