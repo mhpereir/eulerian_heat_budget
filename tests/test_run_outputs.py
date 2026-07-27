@@ -22,6 +22,7 @@ from src.run_outputs import (
     require_production_manifest,
     resolve_production_year,
     resolve_git_provenance,
+    resolve_scheduler_context,
     write_budget_result,
     write_production_manifest,
     write_run_info,
@@ -45,15 +46,17 @@ def _make_repo(tmp_path: Path) -> Path:
     (repo / "src").mkdir(parents=True)
     (repo / "scripts").mkdir()
     (repo / "schedulers").mkdir()
+    (repo / "deployment").mkdir()
 
     (repo / "src" / "tracked.py").write_text("VALUE = 1\n")
     (repo / "scripts" / "tracked.sh").write_text("#!/bin/bash\n")
     (repo / "schedulers" / "tracked.txt").write_text("tracked\n")
+    (repo / "deployment" / "tracked.txt").write_text("tracked\n")
 
     _git(repo, "init")
     _git(repo, "config", "user.name", "Test User")
     _git(repo, "config", "user.email", "test@example.com")
-    _git(repo, "add", "src", "scripts", "schedulers")
+    _git(repo, "add", "src", "scripts", "schedulers", "deployment")
     _git(repo, "commit", "-m", "initial")
     _git(repo, "branch", "-m", "test-branch")
     return repo
@@ -74,6 +77,27 @@ def test_prepare_run_paths_uses_pbs_jobid(tmp_path):
     assert Path(paths.metadata_path) == tmp_path / "2586030.venus" / "run_info.json"
     assert Path(paths.output_path) == tmp_path / "2586030.venus" / "heat_budget.nc"
     assert Path(paths.constant_t_output_path) == tmp_path / "2586030.venus" / "heat_budget_constant_T.nc"
+
+
+def test_prepare_run_paths_uses_slurm_array_job_and_task_ids(tmp_path):
+    paths = prepare_run_paths(
+        str(tmp_path),
+        env={"SLURM_JOB_ID": "987654", "SLURM_ARRAY_TASK_ID": "12"},
+    )
+
+    assert paths.run_id == "987654_task12"
+    assert Path(paths.run_root) == tmp_path / "987654_task12"
+
+
+def test_resolve_scheduler_context_supports_pbs_and_slurm():
+    assert resolve_scheduler_context({"PBS_JOBID": "2586030.venus"}) == (
+        "pbs",
+        "2586030.venus",
+        None,
+    )
+    assert resolve_scheduler_context(
+        {"SLURM_JOB_ID": "987654", "SLURM_ARRAY_TASK_ID": "12"}
+    ) == ("slurm", "987654", "12")
 
 
 def test_write_run_info_serializes_specs_to_json(tmp_path):
@@ -132,7 +156,11 @@ def test_write_run_info_serializes_specs_to_json(tmp_path):
     payload = json.loads(Path(metadata_path).read_text())
 
     assert payload["run_id"] == "2586030.venus"
+    assert payload["scheduler"] == "pbs"
+    assert payload["scheduler_job_id"] == "2586030.venus"
+    assert payload["scheduler_array_task_id"] is None
     assert payload["pbs_job_id"] == "2586030.venus"
+    assert payload["slurm_job_id"] is None
     assert payload["plot_dir"] == str(tmp_path / "2586030.venus" / "plots")
     assert payload["request"]["bbox"] == [40.0, 60.0, -130.0, -110.0]
     assert payload["source_spec"]["kind"] == "arco_era5"
@@ -298,6 +326,16 @@ def test_resolve_git_provenance_marks_tracked_runtime_changes_dirty(tmp_path):
     repo = _make_repo(tmp_path)
     tracked_file = repo / "src" / "tracked.py"
     tracked_file.write_text("VALUE = 2\n")
+
+    provenance = resolve_git_provenance(repo)
+
+    assert provenance.dirty is True
+
+
+def test_resolve_git_provenance_marks_deployment_changes_dirty(tmp_path):
+    repo = _make_repo(tmp_path)
+    deployment_file = repo / "deployment" / "tracked.txt"
+    deployment_file.write_text("changed\n")
 
     provenance = resolve_git_provenance(repo)
 

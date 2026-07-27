@@ -39,6 +39,8 @@ def test_cli_runtime_flags_default_to_none():
 
     assert args.diagnostic_plots is None
     assert args.constant_temperature_test is None
+    assert args.local_data_path is None
+    assert args.output_root is None
     assert args.include_benchmark_variables is False
     assert args.write_netcdf is False
 
@@ -104,6 +106,29 @@ def test_build_runtime_controls_use_config_defaults():
 
     assert diagnostic_plots is config.DEFAULT_DIAGNOSTIC_PLOTS
     assert constant_temperature_test is config.DEFAULT_CONSTANT_TEMPERATURE_TEST
+
+
+def test_build_local_data_source_uses_cli_path():
+    args = cli.parse_args(
+        [
+            "--data-source",
+            "local_era5",
+            "--local-data-path",
+            "/datasets/era5",
+        ]
+    )
+
+    source = run_budget.build_data_source_from_cli(args)
+
+    assert source.path_data == "/datasets/era5"
+
+
+def test_build_local_data_source_requires_configured_path(monkeypatch):
+    args = cli.parse_args(["--data-source", "local_era5"])
+    monkeypatch.setattr(config, "DEFAULT_LOCAL_PATH", None)
+
+    with pytest.raises(ValueError, match="--local-data-path or EHB_DATA_ROOT"):
+        run_budget.build_data_source_from_cli(args)
 
 
 def test_cli_runtime_flags_parse_explicit_values():
@@ -212,6 +237,22 @@ def test_build_production_options_rejects_write_netcdf_in_production_mode():
     )
 
     with pytest.raises(ValueError, match="--write-netcdf cannot be combined"):
+        run_budget.build_production_options_from_cli(args)
+
+
+def test_build_production_options_rejects_ad_hoc_output_root():
+    args = _parse_local_region_args(
+        "--production-output-dir",
+        "/tmp/production",
+        "--time-start",
+        "1940-01-01T00:00:00",
+        "--time-end",
+        "1940-12-31T23:00:00",
+        "--output-root",
+        "/tmp/ad-hoc",
+    )
+
+    with pytest.raises(ValueError, match="--output-root cannot be combined"):
         run_budget.build_production_options_from_cli(args)
 
 
@@ -712,6 +753,7 @@ def _configure_main_stubs(monkeypatch, args):
 def _configure_core_stubs(monkeypatch, args):
     ds_domain = _make_stub_domain_dataset()
 
+    monkeypatch.setattr(run_budget.config, "DEFAULT_LOCAL_PATH", "/tmp/test-data")
     monkeypatch.setattr(run_budget.cli, "parse_args", lambda: args)
     monkeypatch.setattr(run_budget.io, "load_dataset", lambda source_cfg, surface_specs: xr.Dataset())
     monkeypatch.setattr(run_budget.validate, "validate_schema", lambda ds: None)

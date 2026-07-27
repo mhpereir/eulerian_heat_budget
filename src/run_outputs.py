@@ -54,13 +54,33 @@ def resolve_run_id(
     pid: int | None = None,
 ) -> str:
     active_env = os.environ if env is None else env
-    pbs_job_id = active_env.get("PBS_JOBID")
-    if pbs_job_id:
-        return _sanitize_run_id(pbs_job_id)
+    scheduler, scheduler_job_id, array_task_id = resolve_scheduler_context(active_env)
+    if scheduler is not None and scheduler_job_id is not None:
+        run_id = scheduler_job_id
+        if array_task_id is not None:
+            run_id = f"{run_id}_task{array_task_id}"
+        return _sanitize_run_id(run_id)
 
     timestamp = (datetime.now() if now is None else now).strftime("%Y%m%dT%H%M%S")
     process_id = os.getpid() if pid is None else pid
     return f"manual_{timestamp}_pid{process_id}"
+
+
+def resolve_scheduler_context(
+    env: Mapping[str, str] | None = None,
+) -> tuple[str | None, str | None, str | None]:
+    """Return scheduler name, job ID, and optional array-task ID."""
+    active_env = os.environ if env is None else env
+
+    slurm_job_id = active_env.get("SLURM_JOB_ID")
+    if slurm_job_id:
+        return "slurm", slurm_job_id, active_env.get("SLURM_ARRAY_TASK_ID")
+
+    pbs_job_id = active_env.get("PBS_JOBID")
+    if pbs_job_id:
+        return "pbs", pbs_job_id, active_env.get("PBS_ARRAY_INDEX")
+
+    return None, None, None
 
 
 def prepare_run_paths(
@@ -129,10 +149,15 @@ def write_run_info(
 ) -> str:
     active_env = os.environ if env is None else env
     timestamp = datetime.now() if now is None else now
+    scheduler, scheduler_job_id, array_task_id = resolve_scheduler_context(active_env)
 
     payload = {
         "run_id": paths.run_id,
+        "scheduler": scheduler,
+        "scheduler_job_id": scheduler_job_id,
+        "scheduler_array_task_id": array_task_id,
         "pbs_job_id": active_env.get("PBS_JOBID"),
+        "slurm_job_id": active_env.get("SLURM_JOB_ID"),
         "generated_at": timestamp.isoformat(),
         "run_root": paths.run_root,
         "plot_dir": paths.plot_dir,
@@ -201,10 +226,15 @@ def write_production_manifest(
 
     active_env = os.environ if env is None else env
     timestamp = datetime.now() if now is None else now
+    scheduler, scheduler_job_id, array_task_id = resolve_scheduler_context(active_env)
 
     payload = {
         "generated_at": timestamp.isoformat(),
+        "scheduler": scheduler,
+        "scheduler_job_id": scheduler_job_id,
+        "scheduler_array_task_id": array_task_id,
         "pbs_job_id": active_env.get("PBS_JOBID"),
+        "slurm_job_id": active_env.get("SLURM_JOB_ID"),
         "production_start_year": production_start_year,
         "production_end_year": production_end_year,
         "root_dir": paths.root_dir,
@@ -261,7 +291,17 @@ def resolve_git_provenance(repo_dir: str | Path) -> GitProvenance:
 
     commit = _run_git_command(["git", "rev-parse", "HEAD"], cwd=repo_root)
     dirty_paths = _run_git_command(
-        ["git", "diff", "--name-only", "HEAD", "--", "src", "scripts", "schedulers"],
+        [
+            "git",
+            "diff",
+            "--name-only",
+            "HEAD",
+            "--",
+            "src",
+            "scripts",
+            "schedulers",
+            "deployment",
+        ],
         cwd=repo_root,
     ).splitlines()
     dirty = any(_is_runtime_source_change(path) for path in dirty_paths)

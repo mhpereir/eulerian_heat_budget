@@ -75,7 +75,7 @@ Defines project constants and runtime defaults:
 - Physical constants: `g`, `R_value`, `R_earth`, `cp`
 - Default data-source settings:
   - `DEFAULT_DATA_SOURCE`
-  - `DEFAULT_LOCAL_PATH`
+  - `DEFAULT_LOCAL_PATH`, read from `EHB_DATA_ROOT`
   - `DEFAULT_ARCO_PATH`
   - `DEFAULT_ARCO_TOKEN`
   - `DEFAULT_TIME_START`
@@ -91,7 +91,8 @@ Defines project constants and runtime defaults:
   - `DEFAULT_USE_SURFACE_VARIABLES`
   - `DEFAULT_SURFACE_VARIABLE_MODE`
 - Output and Dask defaults:
-  - `DEFAULT_PLOTS_OUTPUT`
+  - `DEFAULT_OUTPUT_ROOT`, read from `EHB_OUTPUT_ROOT` with a repository-local
+    `results/` fallback
   - `DEFAULT_CHUNKS_3D1`
   - chunk-size helpers `n_time`, `n_lat`, `n_lon`
 
@@ -357,14 +358,15 @@ Handles run metadata and output-path setup.
 Current responsibilities:
 
 - `resolve_run_id()`
-  - uses `PBS_JOBID` when available
+  - uses Slurm or PBS job and array-task IDs when available
   - otherwise generates a manual timestamp-and-pid run id
 - `prepare_run_paths()`
   - creates the run root and plot directory
   - returns `RunPaths`
 - `resolve_git_provenance()`
   - captures current branch, commit, and dirty state
-  - dirty-state checks are limited to tracked runtime sources under `src`, `scripts`, and `schedulers`
+  - dirty-state checks are limited to tracked runtime sources under `src`,
+    `scripts`, `schedulers`, and `deployment`
   - ignores generated noise such as `__pycache__` and `.pyc`
 - `write_run_info()`
   - serializes run metadata into `run_info.json`
@@ -377,7 +379,8 @@ Current run metadata includes:
 - surface behavior
 - git provenance
 - raw CLI args
-- `PBS_JOBID` when available
+- scheduler name, job ID, and array-task ID when available
+- backward-compatible `pbs_job_id` and `slurm_job_id` fields
 
 ### `src/plot_diagnostics.py`
 
@@ -429,7 +432,8 @@ Current responsibilities:
 
 Current runtime behavior under `__main__`:
 
-- starts a Dask distributed `Client`
+- parses CLI arguments before starting a Dask distributed `Client`
+- closes the client when the run finishes
 - uses hard-coded worker settings:
   - `n_workers=4`
   - `threads_per_worker=1`
@@ -543,7 +547,11 @@ Each run writes `run_info.json` with the current structure:
 ```json
 {
   "run_id": "...",
+  "scheduler": "pbs or slurm",
+  "scheduler_job_id": "...",
+  "scheduler_array_task_id": "...",
   "pbs_job_id": "...",
+  "slurm_job_id": "...",
   "generated_at": "...",
   "run_root": "...",
   "plot_dir": "...",
@@ -562,7 +570,8 @@ Each run writes `run_info.json` with the current structure:
 
 ## 6. Testing
 
-The current test suite is mixed: parts of it reflect the present implementation closely, and parts of it still carry path assumptions from the earlier `eulerian_heat_budget_surface` repository layout.
+The test suite is configured by the repository-level `pytest.ini` and is
+expected to collect cleanly from the repository root.
 
 Current test files:
 
@@ -577,15 +586,10 @@ Current test files:
 - `tests/test_integrals.py`
   - currently empty
 
-Observed status in this working tree:
+Validated status for the project-contract change:
 
-- `tests/test_grid.py` and `tests/test_weights.py` pass under:
-  `mamba run -n dev_env pytest -q tests/test_grid.py tests/test_weights.py`
-- `tests/test_budget_closure.py` also passes when run on its own
-- some test files still hard-code the old `eulerian_heat_budget_surface` path
-- because the suite mixes old and current import-root assumptions, not every test file cleanly validates this repository when collected together
-
-This means the testing section should be read as a description of current coverage, not as a claim that the whole suite is fully harmonized.
+- `80 passed` under the `ehb-dev` environment declared in `environment.yml`
+- `python scripts/run_budget.py --help` exits without starting a Dask cluster
 
 ## 7. Current Implementation Notes
 

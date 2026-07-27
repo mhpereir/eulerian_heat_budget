@@ -11,6 +11,7 @@ Defines:
 Contains minimal/no runtime logic.
 """
 
+import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -18,7 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # input dataset paths
 DEFAULT_DATA_SOURCE = "local_era5"
 
-DEFAULT_LOCAL_PATH = "/home/mhpereir/downloads-mhpereir/ERA5_zg_PNW"
+DEFAULT_LOCAL_PATH: str | None = os.environ.get("EHB_DATA_ROOT")
 DEFAULT_ARCO_PATH  = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3"
 DEFAULT_ARCO_TOKEN = "anon"
 DEFAULT_ARCO_OPEN_MAX_ATTEMPTS: int = 4
@@ -70,7 +71,10 @@ DEFAULT_SURFACE_VARIABLE_MODE = 'none' # 'none', 'combined', or 'diagnostic_only
 DEFAULT_ZG_BOT_PA: float = 600 * 100 # lower boundary pressure for geopotential height budget in Pa
 DEFAULT_ZG_TOP_PA: float = 700 * 100 # upper boundary pressure for geopotential height budget in Pa
 
-DEFAULT_PLOTS_OUTPUT:str = str(PROJECT_ROOT / "results" / "plots")
+DEFAULT_OUTPUT_ROOT: str = os.environ.get(
+    "EHB_OUTPUT_ROOT",
+    str(PROJECT_ROOT / "results"),
+)
 DEFAULT_DIAGNOSTIC_PLOTS: bool = False
 DEFAULT_CONSTANT_TEMPERATURE_TEST: bool = False
 
@@ -84,4 +88,3 @@ DEFAULT_CHUNKS_3D1 = {
     "lat": n_lat,
     "lon": n_lon,
 }
-
