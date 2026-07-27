@@ -38,18 +38,6 @@ cp: float       = 1.005e3 #specific heat capacity of air in [J/(kg*K)]
 # REGIONs (consistent with your threshold files)
 # Values are (lat_min, lat_max, lon_min, lon_max).
 REGIONS: dict[str, tuple[float, float, float, float]] = {
-    "canada":       (40, 70, -140, -60),
-    "canada_north": (55, 70, -140, -60),
-    "canada_south": (40, 55, -140, -60),
-    "west":         (40, 70, -140, -113.33),
-    "west_north":   (55, 70, -140, -113.33),
-    "west_south":   (40, 55, -140, -113.33),
-    "central":       (40, 70, -113.33, -88.66),
-    "central_north": (55, 70, -113.33, -88.66),
-    "central_south": (40, 55, -113.33, -88.66),
-    "east":       (40, 70, -88.66, -60),
-    "east_north": (55, 70, -88.66, -60),
-    "east_south": (40, 55, -88.66, -60),
     "pnw_bartusek": (40, 60, -130, -110),
     "pnw_hotz":     (49, 59, -125, -115),
     "ocean_test": (25, 45, -170, -150),
