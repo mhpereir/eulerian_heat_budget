@@ -3,30 +3,34 @@
 #PBS -J 0-85%5
 #PBS -l select=1:ncpus=8:mem=25gb
 #PBS -j oe
-#PBS -o /dev/null
-# PBS -o /home/mhpereir/eulerian_heat_budget/logs/
-
-LOGFILE="/home/mhpereir/eulerian_heat_budget/logs/${PBS_JOBID}_EHB_prod.log"
-exec > >(tee -a "${LOGFILE}") 2>&1
-
-
-export OMP_NUM_THREADS=1
-export MKL_NUM_THREADS=1
-export OPENBLAS_NUM_THREADS=1
-export NUMEXPR_NUM_THREADS=1
-
-export MAMBA_ROOT_PREFIX=/home/mhpereir/miniconda3
-source /home/mhpereir/miniconda3/etc/profile.d/mamba.sh
-mamba activate dev_env
 
 set -euo pipefail
 
-PROJECT_ROOT="${PROJECT_ROOT:-/home/mhpereir/eulerian_heat_budget}"
+PROJECT_ROOT="${PROJECT_ROOT:?PROJECT_ROOT must be supplied by the submission workflow}"
 SCHEDULER_DIR="${SCHEDULER_DIR:-${PROJECT_ROOT}/schedulers}"
 SCRIPT_DIR="${SCRIPT_DIR:-${PROJECT_ROOT}/scripts}"
 SETTINGS_FILE="${PRODUCTION_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/production_run_cli_settings.sh}"
 
 source "${SETTINGS_FILE}"
+ehb_verify_runtime_checkout
+ehb_require_external_production_paths
+
+JOB_ID="${PBS_JOBID:-manual}"
+mkdir -p "${LOG_DIR}"
+LOGFILE="${LOG_DIR}/${JOB_ID}_EHB_prod.log"
+exec > >(tee -a "${LOGFILE}") 2>&1
+
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
+export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
+
+export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-$HOME/miniconda3}"
+source "${MAMBA_ROOT_PREFIX}/etc/profile.d/mamba.sh"
+VENUS_MAMBA_ENV="${VENUS_MAMBA_ENV:-dev_env}"
+mamba activate "${VENUS_MAMBA_ENV}"
+PYTHON_EXECUTABLE=$(command -v python)
 
 mkdir -p "${PRODUCTION_OUTPUT_DIR}"
 
@@ -37,7 +41,7 @@ ehb_build_production_run_budget_args COMMON_RUN_ARGS
 
 initialize_manifest() {
   echo "[info] $(date -Is) initializing production manifest in ${PRODUCTION_OUTPUT_DIR}"
-  /usr/bin/time -v python run_budget.py \
+  /usr/bin/time -v "${PYTHON_EXECUTABLE}" run_budget.py \
     "${COMMON_RUN_ARGS[@]}" \
     --init-production-manifest \
     --production-start-year "${START_YEAR}" \
@@ -99,9 +103,14 @@ ensure_manifest
 
 echo "[info] $(date -Is) starting production year ${YEAR} on host $(hostname)"
 echo "[info] repo root: ${PROJECT_ROOT}"
+echo "[info] expected commit: ${EXPECTED_COMMIT}"
 echo "[info] settings file: ${SETTINGS_FILE}"
+echo "[info] log file: ${LOGFILE}"
+echo "[info] Venus Mamba environment: ${VENUS_MAMBA_ENV}"
+echo "[info] Python executable: ${PYTHON_EXECUTABLE}"
+echo "[info] staged cache root: ${STAGED_CACHE_ROOT}"
 echo "[info] output dir: ${PRODUCTION_OUTPUT_DIR}"
-/usr/bin/time -v python run_budget.py \
+/usr/bin/time -v "${PYTHON_EXECUTABLE}" run_budget.py \
   "${COMMON_RUN_ARGS[@]}" \
   --time-start "${TIME_START}" \
   --time-end "${TIME_END}"

@@ -52,6 +52,15 @@ may be added inside a backend directory when that backend needs extra rules.
 - Use `EHB_DATA_ROOT` or `--local-data-path` for local ERA5 inputs.
 - Use `EHB_OUTPUT_ROOT` or `--output-root` for ad hoc outputs.
 - Use `--production-output-dir` for production campaigns.
+- On Venus, keep Git checkouts under
+  `~/eulerian-heat-budget/{development,production}/` and keep all production
+  data under `~/eulerian-heat-budget/campaign-data/`.
+- Production staged caches, `run_budget` outputs, and logs must resolve outside
+  `PROJECT_ROOT`. Use the region-nested
+  `campaign-data/{staged-zarr,run-budget,logs}/<region>/` layout.
+- Run long production jobs from a commit-specific checkout under
+  `~/eulerian-heat-budget/production/`. Never switch the branch of a checkout
+  referenced by queued or running jobs.
 - Treat input datasets as read-only. Write small local experiments under
   ignored `tmp/`; write large remote intermediates and results to the storage
   location appropriate to the active backend.

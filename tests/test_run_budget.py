@@ -974,10 +974,19 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     submission_script = (
         scheduler_dir / "submit_staged_arco_production.sh"
     ).read_text()
+    run_submission_script = (
+        scheduler_dir / "submit_run_budget_production.sh"
+    ).read_text()
 
     assert "START_YEAR=" in settings
     assert "END_YEAR=" in settings
     assert "CAMPAIGN_ID=" in settings
+    assert "RUN_ID=" in settings
+    assert "EHB_WORKSPACE_ROOT=" in settings
+    assert "EHB_CAMPAIGN_DATA_ROOT=" in settings
+    assert "EHB_STAGED_ZARR_ROOT=" in settings
+    assert "EHB_RUN_BUDGET_ROOT=" in settings
+    assert "EHB_LOG_ROOT=" in settings
     assert "STAGED_CACHE_BASE_ROOT=" in settings
     assert "ZG_BOTTOM=" in settings
     assert "USE_SURFACE_AS_BOTTOM" not in settings
@@ -994,9 +1003,12 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "SETTINGS_FILE=\"${PRODUCTION_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/production_run_cli_settings.sh}\"" in staging_scheduler
     assert "source \"${SETTINGS_FILE}\"" in production_scheduler
     assert "source \"${SETTINGS_FILE}\"" in staging_scheduler
+    assert "ehb_verify_runtime_checkout" in production_scheduler
+    assert "ehb_require_external_production_paths" in production_scheduler
     assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in staging_scheduler
     assert "#PBS -l select=1:ncpus=8:mem=8gb" in staging_scheduler
     assert "#PBS -l walltime=48:00:00" in staging_scheduler
+    assert "#PBS -o /dev/null" not in production_scheduler
     assert "ehb_build_production_run_budget_args COMMON_RUN_ARGS" in production_scheduler
     assert "ehb_production_year_for_task \"${PBS_ARRAY_INDEX}\"" in production_scheduler
     assert "ehb_build_production_time_window \"${YEAR}\" TIME_START TIME_END" in production_scheduler
@@ -1009,7 +1021,11 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in staging_scheduler
     assert "#PBS -l select=1:ncpus=1:mem=4gb" in consolidation_scheduler
     assert "consolidate_staged_arco_cache.py" in consolidation_scheduler
-    assert "depend=afterokarray:${RETRIEVAL_JOB_ID}" in submission_script
+    assert "depend=afterok:${RETRIEVAL_JOB_ID}" in submission_script
+    assert 'LOG_DIR="${LOG_DIR:-${EHB_LOG_ROOT}/${REGION}/${RUN_ID}}"' in settings
+    assert '-o "${LOG_DIR}/"' in submission_script
+    assert '-o "${LOG_DIR}/"' in run_submission_script
+    assert "schedule_run_budget_production.sh" in run_submission_script
     assert "CAMPAIGN_ID=${CAMPAIGN_ID}" in submission_script
     assert "STAGED_CACHE_ROOT=${STAGED_CACHE_ROOT}" in submission_script
 
@@ -1133,6 +1149,7 @@ esac
     fake_git.chmod(0o755)
     fake_qsub.chmod(0o755)
     qsub_log = tmp_path / "qsub.log"
+    log_dir = tmp_path / "logs"
     env = os.environ.copy()
     env.update(
         {
@@ -1144,6 +1161,7 @@ esac
             ),
             "QSUB_BIN": str(fake_qsub),
             "QSUB_LOG": str(qsub_log),
+            "LOG_DIR": str(log_dir),
         }
     )
 
@@ -1159,11 +1177,83 @@ esac
     submitted = qsub_log.read_text(encoding="utf-8").splitlines()
     assert len(submitted) == 2
     assert "-J 0-85%5" in submitted[0]
+    assert f"-o {log_dir}/" in submitted[0]
     assert "schedule_staged_arco_retrieval_production.sh" in submitted[0]
-    assert "-W depend=afterokarray:123[].venus" in submitted[1]
+    assert "-W depend=afterok:123[].venus" in submitted[1]
+    assert f"-o {log_dir}/" in submitted[1]
     assert "schedule_consolidate_staged_arco_cache.sh" in submitted[1]
     assert "retrieval_job_id=123[].venus" in result.stdout
     assert "consolidation_job_id=124.venus" in result.stdout
+
+
+def test_run_budget_production_submission_uses_external_paths(tmp_path):
+    scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_git = fake_bin / "git"
+    fake_git.write_text(
+        """#!/bin/bash
+case "$*" in
+  *"rev-parse HEAD"*) printf '%040d\\n' 0 ;;
+  *"rev-parse @{u}"*) printf '%040d\\n' 0 ;;
+  *"status --porcelain"*) exit 0 ;;
+  *) exit 2 ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_qsub = fake_bin / "qsub"
+    fake_qsub.write_text(
+        """#!/bin/bash
+printf '%s\\n' "$*" >> "${QSUB_LOG:?}"
+echo "200[].venus"
+""",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    fake_qsub.chmod(0o755)
+
+    cache_root = tmp_path / "campaign-data" / "staged-zarr" / "alaska" / "campaign"
+    cache_root.mkdir(parents=True)
+    for required in ("campaign.json", "cache.sqlite", "consolidation.json"):
+        (cache_root / required).touch()
+    output_dir = tmp_path / "campaign-data" / "run-budget" / "alaska" / "run"
+    log_dir = tmp_path / "campaign-data" / "logs" / "alaska" / "run"
+    qsub_log = tmp_path / "qsub.log"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "PROJECT_ROOT": "/synthetic/eulerian_heat_budget",
+            "SCHEDULER_DIR": str(scheduler_dir),
+            "PRODUCTION_RUN_CLI_SETTINGS": str(
+                scheduler_dir / "production_run_cli_settings.sh"
+            ),
+            "QSUB_BIN": str(fake_qsub),
+            "QSUB_LOG": str(qsub_log),
+            "STAGED_CACHE_ROOT": str(cache_root),
+            "PRODUCTION_OUTPUT_DIR": str(output_dir),
+            "LOG_DIR": str(log_dir),
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(scheduler_dir / "submit_run_budget_production.sh")],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    submitted = qsub_log.read_text(encoding="utf-8")
+    assert "-J 0-85%5" in submitted
+    assert f"-o {log_dir}/" in submitted
+    assert "schedule_run_budget_production.sh" in submitted
+    assert f"STAGED_CACHE_ROOT={cache_root}" in submitted
+    assert f"PRODUCTION_OUTPUT_DIR={output_dir}" in submitted
+    assert "production_job_id=200[].venus" in result.stdout
 
 
 def _configure_main_stubs(monkeypatch, args):
