@@ -87,6 +87,20 @@ that subtree.
   consolidation summary, and scientific validation as run provenance.
 - Run production work only from a named, clean commit. A queued job must verify
   the expected commit before computation.
+- On Venus, keep Git checkouts under
+  `~/eulerian-heat-budget/{development,production}/` and keep all production
+  data under `~/eulerian-heat-budget/campaign-data/`.
+- Production staged caches, `run_budget` outputs, and logs must resolve outside
+  `PROJECT_ROOT`. Use the region-nested
+  `campaign-data/{staged-zarr,run-budget,logs}/<region>/` layout.
+- Run long production jobs from a commit-specific checkout under
+  `~/eulerian-heat-budget/production/`. Never switch the branch of a checkout
+  referenced by queued or running jobs.
+- Treat input datasets as read-only. Write small local experiments under
+  ignored `tmp/`; write large remote intermediates and results to the storage
+  location appropriate to the active backend.
+- Preserve or extend the run metadata whenever adding a scheduler, service, or
+  execution mode.
 
 ## Develop and validate locally
 
@@ -176,6 +190,19 @@ Use this pathway only for Venus execution, normally on
 `production_development_staged`.
 
 - Invoke the `venus-hpc` skill.
+- Treat `production_development_staged` as the only authoritative source branch
+  for Venus staged retrieval and production `run_budget` submissions.
+- Submit production work only from a clean, named
+  `production_development_staged` checkout below
+  `~/eulerian-heat-budget/production/`.
+- Before submission, verify that `HEAD`, the configured upstream, and the live
+  `origin/production_development_staged` tip are the same commit. Do not launch
+  from a feature branch or include commits ahead of the authoritative tip, even
+  intentionally. Integrate, validate, and push those commits to
+  `production_development_staged` first.
+- Treat `google_development_staged` and `drac_development_2_staged` as separate
+  backend authorities for their own Google Batch and Alliance Slurm workflows.
+  They do not bypass the Venus production-branch preflight.
 - Keep the local Git repository authoritative and use the shared Git remote to
   transport code.
 - Inspect legacy Venus work read-only before adopting it. Stop if Venus has

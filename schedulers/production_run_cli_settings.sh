@@ -12,9 +12,8 @@ RUN_START_MONTH_DAY="${RUN_START_MONTH_DAY:-05-01}"
 RUN_END_MONTH_DAY="${RUN_END_MONTH_DAY:-10-31}"
 
 DATA_SOURCE="${DATA_SOURCE:-staged_arco_cache}"
-EHB_OUTPUT_ROOT="${EHB_OUTPUT_ROOT:-${PROJECT_ROOT:?PROJECT_ROOT must be set}/results}"
-PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-${EHB_OUTPUT_ROOT}/production/alaska_surface_700hPa_1940_2025}"
 CAMPAIGN_ID="${CAMPAIGN_ID:-alaska-surface-700hpa-1940-2025}"
+RUN_ID="${RUN_ID:-${CAMPAIGN_ID}}"
 REGION="${REGION:-alaska}"
 MARGIN_N="${MARGIN_N:-1}"
 ZG_TOP_PA="${ZG_TOP_PA:-70000}"
@@ -22,8 +21,17 @@ ZG_BOTTOM="${ZG_BOTTOM:-surface_pressure}"
 ZG_BOTTOM_PA="${ZG_BOTTOM_PA:-}"
 ALLOW_BOTTOM_OVERFLOW="${ALLOW_BOTTOM_OVERFLOW:-1}"
 
-STAGED_CACHE_BASE_ROOT="${STAGED_CACHE_BASE_ROOT:-${EHB_OUTPUT_ROOT}/staged_arco_cache}"
+EHB_WORKSPACE_ROOT="${EHB_WORKSPACE_ROOT:-${HOME:?HOME must be set}/eulerian-heat-budget}"
+EHB_CAMPAIGN_DATA_ROOT="${EHB_CAMPAIGN_DATA_ROOT:-${EHB_WORKSPACE_ROOT}/campaign-data}"
+EHB_STAGED_ZARR_ROOT="${EHB_STAGED_ZARR_ROOT:-${EHB_CAMPAIGN_DATA_ROOT}/staged-zarr}"
+EHB_RUN_BUDGET_ROOT="${EHB_RUN_BUDGET_ROOT:-${EHB_CAMPAIGN_DATA_ROOT}/run-budget}"
+EHB_LOG_ROOT="${EHB_LOG_ROOT:-${EHB_CAMPAIGN_DATA_ROOT}/logs}"
+EHB_OUTPUT_ROOT="${EHB_OUTPUT_ROOT:-${EHB_RUN_BUDGET_ROOT}}"
+
+STAGED_CACHE_BASE_ROOT="${STAGED_CACHE_BASE_ROOT:-${EHB_STAGED_ZARR_ROOT}/${REGION}}"
 STAGED_CACHE_ROOT="${STAGED_CACHE_ROOT:-${STAGED_CACHE_BASE_ROOT}/${CAMPAIGN_ID}}"
+PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-${EHB_RUN_BUDGET_ROOT}/${REGION}/${RUN_ID}}"
+LOG_DIR="${LOG_DIR:-${EHB_LOG_ROOT}/${REGION}/${RUN_ID}}"
 STAGED_ARCO_TIME_CHUNK="${STAGED_ARCO_TIME_CHUNK:-month}"
 STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS="${STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS:-20800}"
 
@@ -40,6 +48,24 @@ ehb_bool_enabled() {
     1|true|TRUE|yes|YES|on|ON) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+ehb_require_external_production_paths() {
+  : "${PROJECT_ROOT:?PROJECT_ROOT must be set by the submission workflow}"
+
+  local project_root
+  project_root=$(readlink -m -- "${PROJECT_ROOT}")
+  local label
+  local path
+  for label in STAGED_CACHE_ROOT PRODUCTION_OUTPUT_DIR LOG_DIR; do
+    path=$(readlink -m -- "${!label}")
+    case "${path}/" in
+      "${project_root}/"*)
+        echo "[error] ${label} must be outside the Git checkout: ${path}" >&2
+        return 1
+        ;;
+    esac
+  done
 }
 
 ehb_require_staged_cache_root() {
