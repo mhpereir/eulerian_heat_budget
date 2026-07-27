@@ -896,14 +896,14 @@ printf 'RETRIEVAL_ARGS=%s\n' "${RETRIEVAL_ARGS[*]}"
     assert "--data-source staged_arco_cache" in output
     assert f"--production-output-dir {tmp_path / 'production'}" in output
     assert f"--staged-cache-root {tmp_path / 'cache'}" in output
-    assert "--region pnw_bartusek" in output
+    assert "--region eastern_canada" in output
     assert "--zg-top-pa 70000" in output
     assert "--zg-bottom surface_pressure" in output
     assert "--diagnostic-plots" in output
     assert "--no-constant-temperature-test" in output
     assert "--time-start 1945-05-01T00:00:00 --time-end 1945-10-31T23:00:00" in output
     assert "--stage-time-chunk month" in output
-    assert "--stage-attempt-timeout-seconds 10800" in output
+    assert "--stage-attempt-timeout-seconds 20800" in output
 
     pressure_env = env.copy()
     pressure_env.update({"ZG_BOTTOM": "pressure_level", "ZG_BOTTOM_PA": "85000"})
