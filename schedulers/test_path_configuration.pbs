@@ -1,0 +1,84 @@
+#!/bin/bash
+#PBS -N ehb_path_configuration
+#PBS -l select=1:ncpus=1:mem=4gb
+#PBS -l walltime=00:10:00
+#PBS -j oe
+#PBS -o logs/path_configuration_smoke.log
+
+set -euo pipefail
+
+printf 'job_id=%s\n' "${PBS_JOBID:?PBS_JOBID is not set}"
+printf 'host=%s\n' "$(hostname -f 2>/dev/null || hostname)"
+printf 'started=%s\n' "$(date -Is)"
+printf 'submission_directory=%s\n' "${PBS_O_WORKDIR:?PBS_O_WORKDIR is not set}"
+
+project_root=${PROJECT_ROOT:?PROJECT_ROOT is not set}
+expected_commit=${EXPECTED_COMMIT:?EXPECTED_COMMIT is not set}
+project_root=$(realpath -e -- "$project_root")
+
+git_root=$(git -C "$project_root" rev-parse --show-toplevel)
+if [[ "$git_root" != "$project_root" ]]; then
+  echo "PROJECT_ROOT is not the Git root: $project_root" >&2
+  exit 2
+fi
+
+actual_commit=$(git -C "$project_root" rev-parse HEAD)
+if [[ "$actual_commit" != "$expected_commit" ]]; then
+  echo "Commit mismatch: expected $expected_commit, found $actual_commit" >&2
+  exit 2
+fi
+
+worktree_status=$(git -C "$project_root" status \
+  --porcelain --untracked-files=normal)
+if [[ -n "$worktree_status" ]]; then
+  echo "Refusing to run from a dirty Git checkout:" >&2
+  printf '%s\n' "$worktree_status" >&2
+  exit 2
+fi
+
+job_token=${PBS_JOBID%%.*}
+job_tmp="/local/scratch/$USER/$job_token/ehb-path-configuration"
+case "$job_tmp" in
+  /local/scratch/?*/?*/ehb-path-configuration) ;;
+  *)
+    echo "Refusing unsafe temporary path: $job_tmp" >&2
+    exit 2
+    ;;
+esac
+
+mkdir -p -- "$job_tmp/input" "$job_tmp/output" "$job_tmp/tmp"
+cleanup() {
+  rm -rf -- "$job_tmp"
+}
+trap cleanup EXIT
+
+export EHB_DATA_ROOT="$job_tmp/input"
+export EHB_OUTPUT_ROOT="$job_tmp/output"
+export TMPDIR="$job_tmp/tmp"
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+python_executable="${EHB_PYTHON:-$HOME/.conda/envs/dev_env/bin/python}"
+if [[ ! -x "$python_executable" ]]; then
+  echo "Python environment is missing: $python_executable" >&2
+  exit 2
+fi
+
+printf 'project_root=%s\n' "$project_root"
+printf 'commit=%s\n' "$actual_commit"
+printf 'python=%s\n' "$python_executable"
+printf 'EHB_DATA_ROOT=%s\n' "$EHB_DATA_ROOT"
+printf 'EHB_OUTPUT_ROOT=%s\n' "$EHB_OUTPUT_ROOT"
+
+cd "$project_root"
+"$python_executable" --version
+"$python_executable" -m pip check
+"$python_executable" -m pytest -q \
+  tests/test_path_configuration.py \
+  tests/test_run_budget.py \
+  tests/test_run_outputs.py
+"$python_executable" scripts/run_budget.py --help >/dev/null
+
+printf 'finished=%s\n' "$(date -Is)"

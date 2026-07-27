@@ -14,7 +14,6 @@ from src import plot_results
 from src_arco import variables as arco_variables
 
 import logging
-from dask.distributed import Client
     
 
 from src import terms
@@ -106,9 +105,14 @@ def build_data_source_from_cli(
         time_end = time_end if time_end is not None else config.DEFAULT_TIME_END
 
     if args.data_source == "local_era5":
+        local_data_path = args.local_data_path or config.DEFAULT_LOCAL_PATH
+        if local_data_path is None:
+            raise ValueError(
+                "Local ERA5 runs require --local-data-path or EHB_DATA_ROOT."
+            )
         return specs.DataSourceConfig(
             kind="local_era5",
-            path_data=config.DEFAULT_LOCAL_PATH,
+            path_data=local_data_path,
             time_start=time_start,
             time_end=time_end,
         )
@@ -158,6 +162,9 @@ def build_production_options_from_cli(args) -> ProductionOptions | None:
             raise ValueError("--overwrite-output requires --write-netcdf or --production-output-dir.")
         return None
 
+    if args.output_root is not None:
+        raise ValueError("--output-root cannot be combined with --production-output-dir.")
+
     if args.write_netcdf:
         raise ValueError("--write-netcdf cannot be combined with --production-output-dir.")
 
@@ -194,8 +201,9 @@ def build_production_options_from_cli(args) -> ProductionOptions | None:
         overwrite_output=args.overwrite_output,
     )
 
-def main() -> None:
-    args = cli.parse_args()
+def main(args=None) -> None:
+    if args is None:
+        args = cli.parse_args()
     request = build_request_from_cli(args)
     SurfaceSpecs = build_surface_behaviour_from_cli(args)
     diagnostic_plots, constant_temperature_test = build_runtime_controls_from_cli(args)
@@ -247,7 +255,8 @@ def main() -> None:
         print(f"Saving yearly output to {yearly_output_path}")
         print(f"Saving plots to {plot_dir}")
     else:
-        ad_hoc_run_paths = run_outputs.prepare_run_paths(config.DEFAULT_PLOTS_OUTPUT)
+        output_root = args.output_root or config.DEFAULT_OUTPUT_ROOT
+        ad_hoc_run_paths = run_outputs.prepare_run_paths(output_root)
         plot_dir = ad_hoc_run_paths.plot_dir
         if args.write_netcdf:
             ad_hoc_output_path = run_outputs.require_output_path(
@@ -391,20 +400,16 @@ def main() -> None:
             plot_results.plot_constant_T_results(result, result_test, plot_dir=constant_t_plot_dir)
 
 if __name__ == "__main__":
-    
     logging.getLogger("distributed.shuffle._scheduler_plugin").setLevel(logging.ERROR)
-    logging.getLogger("distributed.shuffle._core").setLevel(logging.ERROR)  
+    logging.getLogger("distributed.shuffle._core").setLevel(logging.ERROR)
 
-    client = Client(
+    parsed_args = cli.parse_args()
+    from dask.distributed import Client
+
+    with Client(
         n_workers=4,
         threads_per_worker=1,
         processes=True,
         memory_limit="8GB",
-    )
-
-    # print(client)
-    # print("Dashboard:", client.dashboard_link)
-
-    main()
-
-    
+    ):
+        main(parsed_args)

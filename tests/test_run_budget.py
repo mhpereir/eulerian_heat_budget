@@ -41,6 +41,8 @@ def test_cli_runtime_flags_default_to_none():
 
     assert args.diagnostic_plots is None
     assert args.constant_temperature_test is None
+    assert args.local_data_path is None
+    assert args.output_root is None
     assert args.include_benchmark_variables is False
     assert args.write_netcdf is False
 
@@ -122,6 +124,39 @@ def test_build_runtime_controls_use_config_defaults():
 
     assert diagnostic_plots is config.DEFAULT_DIAGNOSTIC_PLOTS
     assert constant_temperature_test is config.DEFAULT_CONSTANT_TEMPERATURE_TEST
+
+
+def test_build_local_data_source_prefers_cli_path(monkeypatch):
+    monkeypatch.setattr(config, "DEFAULT_LOCAL_PATH", "/environment/era5")
+    args = cli.parse_args(
+        [
+            "--data-source",
+            "local_era5",
+            "--local-data-path",
+            "/cli/era5",
+        ]
+    )
+
+    source = run_budget.build_data_source_from_cli(args)
+
+    assert source.path_data == "/cli/era5"
+
+
+def test_build_local_data_source_uses_environment_default(monkeypatch):
+    monkeypatch.setattr(config, "DEFAULT_LOCAL_PATH", "/environment/era5")
+    args = cli.parse_args(["--data-source", "local_era5"])
+
+    source = run_budget.build_data_source_from_cli(args)
+
+    assert source.path_data == "/environment/era5"
+
+
+def test_build_local_data_source_requires_configured_path(monkeypatch):
+    monkeypatch.setattr(config, "DEFAULT_LOCAL_PATH", None)
+    args = cli.parse_args(["--data-source", "local_era5"])
+
+    with pytest.raises(ValueError, match="--local-data-path or EHB_DATA_ROOT"):
+        run_budget.build_data_source_from_cli(args)
 
 
 def test_build_data_source_accepts_staged_arco_cache():
@@ -277,6 +312,22 @@ def test_build_production_options_rejects_write_netcdf_in_production_mode():
         run_budget.build_production_options_from_cli(args)
 
 
+def test_build_production_options_rejects_ad_hoc_output_root():
+    args = _parse_local_region_args(
+        "--production-output-dir",
+        "/tmp/production",
+        "--time-start",
+        "1940-01-01T00:00:00",
+        "--time-end",
+        "1940-12-31T23:00:00",
+        "--output-root",
+        "/tmp/ad-hoc",
+    )
+
+    with pytest.raises(ValueError, match="--output-root cannot be combined"):
+        run_budget.build_production_options_from_cli(args)
+
+
 def test_build_production_options_rejects_overwrite_without_output_mode():
     args = _parse_local_region_args("--overwrite-output")
 
@@ -317,6 +368,75 @@ def test_main_default_run_skips_plots_and_constant_temperature(monkeypatch):
     assert calculate_calls[0]["benchmark_ds"] is None
     assert plot_calls == []
     assert written_outputs == []
+
+
+def test_main_ad_hoc_run_prefers_cli_output_root(monkeypatch):
+    args = _parse_local_region_args("--output-root", "/cli/output")
+    _configure_core_stubs(monkeypatch, args)
+    output_roots = []
+
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "prepare_run_paths",
+        lambda output_root: output_roots.append(output_root)
+        or run_budget.run_outputs.RunPaths(
+            run_id="test-run",
+            run_root="/tmp/test-run",
+            plot_dir="/tmp/test-plots",
+            metadata_path="/tmp/test-run/run_info.json",
+            output_path="/tmp/test-run/heat_budget.nc",
+            constant_t_output_path="/tmp/test-run/heat_budget_constant_T.nc",
+        ),
+    )
+    monkeypatch.setattr(
+        run_budget.budget,
+        "calculate_budget",
+        lambda *args, **kwargs: _make_stub_budget_result(),
+    )
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "write_run_info",
+        lambda *args, **kwargs: "/tmp/test-run/run_info.json",
+    )
+
+    run_budget.main()
+
+    assert output_roots == ["/cli/output"]
+
+
+def test_main_ad_hoc_run_uses_environment_output_root(monkeypatch):
+    args = _parse_local_region_args()
+    _configure_core_stubs(monkeypatch, args)
+    monkeypatch.setattr(config, "DEFAULT_OUTPUT_ROOT", "/environment/output")
+    output_roots = []
+
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "prepare_run_paths",
+        lambda output_root: output_roots.append(output_root)
+        or run_budget.run_outputs.RunPaths(
+            run_id="test-run",
+            run_root="/tmp/test-run",
+            plot_dir="/tmp/test-plots",
+            metadata_path="/tmp/test-run/run_info.json",
+            output_path="/tmp/test-run/heat_budget.nc",
+            constant_t_output_path="/tmp/test-run/heat_budget_constant_T.nc",
+        ),
+    )
+    monkeypatch.setattr(
+        run_budget.budget,
+        "calculate_budget",
+        lambda *args, **kwargs: _make_stub_budget_result(),
+    )
+    monkeypatch.setattr(
+        run_budget.run_outputs,
+        "write_run_info",
+        lambda *args, **kwargs: "/tmp/test-run/run_info.json",
+    )
+
+    run_budget.main()
+
+    assert output_roots == ["/environment/output"]
 
 
 def test_main_ad_hoc_write_netcdf_writes_primary_result(monkeypatch):
@@ -949,6 +1069,7 @@ def _configure_main_stubs(monkeypatch, args):
 def _configure_core_stubs(monkeypatch, args):
     ds_domain = _make_stub_domain_dataset()
 
+    monkeypatch.setattr(run_budget.config, "DEFAULT_LOCAL_PATH", "/tmp/test-data")
     monkeypatch.setattr(run_budget.cli, "parse_args", lambda: args)
     monkeypatch.setattr(run_budget.io, "load_dataset", lambda *args, **kwargs: xr.Dataset())
     monkeypatch.setattr(run_budget.validate, "validate_schema", lambda ds: None)

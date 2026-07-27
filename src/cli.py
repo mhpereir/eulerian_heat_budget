@@ -130,6 +130,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Data source to load input dataset from.",
     )
+    parser.add_argument(
+        "--local-data-path",
+        dest="local_data_path",
+        type=str,
+        default=None,
+        help=(
+            "Directory containing pre-downloaded local ERA5 files. "
+            "Overrides the EHB_DATA_ROOT environment variable."
+        ),
+    )
+    parser.add_argument(
+        "--output-root",
+        dest="output_root",
+        type=str,
+        default=None,
+        help=(
+            "Root directory for ad hoc run outputs. "
+            "Overrides the EHB_OUTPUT_ROOT environment variable."
+        ),
+    )
 
     parser.add_argument(
         "--staged-cache-root",
