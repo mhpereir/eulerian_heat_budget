@@ -1,0 +1,62 @@
+#!/bin/bash
+#PBS -N ehb_build_environment
+#PBS -l select=1:ncpus=2:mem=8gb
+#PBS -l walltime=01:00:00
+#PBS -j oe
+#PBS -o logs/build_test_environment.log
+
+set -euo pipefail
+
+printf 'job_id=%s\n' "${PBS_JOBID:?PBS_JOBID is not set}"
+printf 'host=%s\n' "$(hostname -f 2>/dev/null || hostname)"
+printf 'started=%s\n' "$(date -Is)"
+printf 'submission_directory=%s\n' "${PBS_O_WORKDIR:?PBS_O_WORKDIR is not set}"
+
+project_root=${PROJECT_ROOT:?PROJECT_ROOT is not set}
+expected_commit=${EXPECTED_COMMIT:?EXPECTED_COMMIT is not set}
+project_root=$(realpath -e -- "$project_root")
+
+git_root=$(git -C "$project_root" rev-parse --show-toplevel)
+if [[ "$git_root" != "$project_root" ]]; then
+  echo "PROJECT_ROOT is not the Git root: $project_root" >&2
+  exit 2
+fi
+
+actual_commit=$(git -C "$project_root" rev-parse HEAD)
+if [[ "$actual_commit" != "$expected_commit" ]]; then
+  echo "Commit mismatch: expected $expected_commit, found $actual_commit" >&2
+  exit 2
+fi
+
+worktree_status=$(git -C "$project_root" status \
+  --porcelain --untracked-files=normal)
+if [[ -n "$worktree_status" ]]; then
+  echo "Refusing to run from a dirty Git checkout:" >&2
+  printf '%s\n' "$worktree_status" >&2
+  exit 2
+fi
+
+conda_executable="${EHB_CONDA:-$HOME/miniconda3/bin/conda}"
+environment_prefix="${EHB_ENV_PREFIX:-$HOME/.conda/envs/ehb-dev}"
+if [[ ! -x "$conda_executable" ]]; then
+  echo "Conda executable is missing: $conda_executable" >&2
+  exit 2
+fi
+if [[ -e "$environment_prefix" ]]; then
+  echo "Refusing to replace existing environment: $environment_prefix" >&2
+  exit 2
+fi
+
+printf 'project_root=%s\n' "$project_root"
+printf 'commit=%s\n' "$actual_commit"
+printf 'conda=%s\n' "$conda_executable"
+printf 'environment_prefix=%s\n' "$environment_prefix"
+
+cd "$project_root"
+"$conda_executable" env create \
+  --prefix "$environment_prefix" \
+  --file environment.yml
+"$environment_prefix/bin/python" --version
+"$environment_prefix/bin/python" -m pip check
+
+printf 'finished=%s\n' "$(date -Is)"

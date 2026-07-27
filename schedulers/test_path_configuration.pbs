@@ -60,7 +60,7 @@ export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 
-python_executable="${EHB_PYTHON:-$HOME/.conda/envs/dev_env/bin/python}"
+python_executable="${EHB_PYTHON:-$HOME/.conda/envs/ehb-dev/bin/python}"
 if [[ ! -x "$python_executable" ]]; then
   echo "Python environment is missing: $python_executable" >&2
   exit 2
