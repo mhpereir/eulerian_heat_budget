@@ -69,6 +69,25 @@ def test_cli_parses_region():
     assert args.region == "pnw_bartusek"
 
 
+@pytest.mark.parametrize(
+    ("region", "expected_bbox"),
+    [
+        ("alaska", (59.5, 69.5, -160, -150)),
+        ("western_usa", (34, 44, -120, -110)),
+        ("central_usa", (36, 46, -105, -95)),
+        ("gulf_usa", (31, 41, -90, -80)),
+        ("western_eu", (43, 53, -2, 8)),
+        ("central_china", (25, 35, 105, 115)),
+    ],
+)
+def test_new_google_regions_resolve_to_expected_bbox(region, expected_bbox):
+    args = cli.parse_args(["--region", region])
+
+    request = run_budget.build_request_from_cli(args)
+
+    assert request.bbox == expected_bbox
+
+
 def test_build_request_uses_region_bbox():
     args = cli.parse_args(["--region", "pnw_bartusek"])
 
