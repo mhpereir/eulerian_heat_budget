@@ -968,8 +968,12 @@ def test_single_run_schedulers_share_cli_settings():
     assert "TIME_START=" in settings
     assert "ehb_build_run_budget_args" in settings
     assert "ehb_build_staged_arco_retrieval_args" in settings
-    assert "PROJECT_ROOT=\"${PROJECT_ROOT:-/home/mhpereir/eulerian_heat_budget}\"" in run_scheduler
-    assert "PROJECT_ROOT=\"${PROJECT_ROOT:-/home/mhpereir/eulerian_heat_budget}\"" in retrieval_scheduler
+    assert "PROJECT_ROOT=\"${PROJECT_ROOT:?PROJECT_ROOT must be supplied" in run_scheduler
+    assert "PROJECT_ROOT=\"${PROJECT_ROOT:?PROJECT_ROOT must be supplied" in retrieval_scheduler
+    assert "EXPECTED_COMMIT=\"${EXPECTED_COMMIT:?EXPECTED_COMMIT must be supplied" in run_scheduler
+    assert "EXPECTED_COMMIT=\"${EXPECTED_COMMIT:?EXPECTED_COMMIT must be supplied" in retrieval_scheduler
+    assert "PBS_WORKDIR=\"${PBS_O_WORKDIR:?PBS_O_WORKDIR is not set}\"" in run_scheduler
+    assert "PBS_WORKDIR=\"${PBS_O_WORKDIR:?PBS_O_WORKDIR is not set}\"" in retrieval_scheduler
     assert "SCHEDULER_DIR=\"${SCHEDULER_DIR:-${PROJECT_ROOT}/schedulers}\"" in run_scheduler
     assert "SCHEDULER_DIR=\"${SCHEDULER_DIR:-${PROJECT_ROOT}/schedulers}\"" in retrieval_scheduler
     assert "SETTINGS_FILE=\"${SINGLE_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/single_run_cli_settings}\"" in run_scheduler
@@ -978,9 +982,11 @@ def test_single_run_schedulers_share_cli_settings():
     assert "source \"${SETTINGS_FILE}\"" in retrieval_scheduler
     assert "BASH_SOURCE" not in run_scheduler
     assert "BASH_SOURCE" not in retrieval_scheduler
-    assert "#PBS -o /home/mhpereir/eulerian_heat_budget/logs/" in run_scheduler
-    assert "#PBS -o /home/mhpereir/eulerian_heat_budget/logs/" in retrieval_scheduler
+    assert "#PBS -o " not in run_scheduler
+    assert "#PBS -o " not in retrieval_scheduler
     assert "#PBS -l select=1:ncpus=8:mem=8gb" in retrieval_scheduler
+    assert "#PBS -l walltime=48:00:00" in run_scheduler
+    assert "#PBS -l walltime=48:00:00" in retrieval_scheduler
     assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in retrieval_scheduler
     assert "/dev/null" not in run_scheduler
     assert "/dev/null" not in retrieval_scheduler
@@ -990,8 +996,11 @@ def test_single_run_schedulers_share_cli_settings():
     assert retrieval_scheduler.index("exec > >(tee -a") < retrieval_scheduler.index(
         "source \"${SETTINGS_FILE}\""
     )
-    assert "python run_budget.py \"${RUN_ARGS[@]}\"" in run_scheduler
-    assert "python -u staged_arco_retrieval.py \"${RETRIEVAL_ARGS[@]}\"" in retrieval_scheduler
+    assert "\"${SCRIPT_DIR}/run_budget.py\" \"${RUN_ARGS[@]}\"" in run_scheduler
+    assert (
+        "\"${SCRIPT_DIR}/staged_arco_retrieval.py\" \"${RETRIEVAL_ARGS[@]}\""
+        in retrieval_scheduler
+    )
     assert "--stage-time-chunk \"${STAGED_ARCO_TIME_CHUNK}\"" in settings
     assert "--stage-attempt-timeout-seconds \"${STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS}\"" in settings
 
