@@ -488,17 +488,54 @@ needed to reproduce the comparison:
 | `benchmark_vithed` | Area integral of `vithed` | W |
 | `benchmark_thermal_content` | \((g/c_p)\int_A\mathtt{vithe}\,dA\) | \(\mathrm{K\,m^2\,Pa}\) |
 | `benchmark_storage_term` | Centered tendency of benchmark thermal content | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
+| `benchmark_T_domain_avg` | ERA5 thermal content divided by the exact surface-pressure volume | K |
+| `benchmark_mean_temperature_storage_term` | \(V_{\mathrm{true}}d\langle T\rangle_{\mathrm{ERA5}}/dt\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
+| `benchmark_volume_change_storage_term` | \(\langle T\rangle_{\mathrm{ERA5}}dV_{\mathrm{true}}/dt\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
 | `benchmark_adiabatic_term` | \((g/c_p)\int_A\mathtt{viec}\,dA\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
 | `benchmark_heat_flux_divergence` | \((g/c_p)\int_A\mathtt{vithed}\,dA\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
+| `benchmark_heat_flux_divergence_from_walls` | Negative of the inward-positive sum of ERA5 wall heat transports | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
 | `benchmark_mass_residual` | \(\mathcal{M}_{\mathrm{ERA5}}-(dV/dt)_{\mathrm{ERA5}}\) | \(\mathrm{m^2\,Pa\,s^{-1}}\) |
 | `benchmark_residual_heat` | \(\langle T\rangle\delta\mathcal{M}_{\mathrm{ERA5}}\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
 | `benchmark_diabatic_term_physical` | \(\mathcal{D}_{\mathrm{ERA5,res}}\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
 | `benchmark_diabatic_term` | \(\mathcal{D}_{0,\mathrm{ERA5}}\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
 | `calculated_diabatic_term_physical` | `diabatic_term - residual_heat` | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
+| `volume_change_storage_term` | \(\langle T\rangle_{\mathrm{code}}dV_{\mathrm{grid}}/dt\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
 
 Figure 6 contains aligned time series and one-to-one scatter plots for
 adiabatic conversion, the definition-matched workflow diabatic residual, and
 the secondary physical full-temperature residual.
+
+Figure 7 compares two independent ERA5 representations of horizontal
+thermal-energy divergence:
+
+\[
+\mathcal{F}_{T,\mathrm{walls}}
+  = -\mathcal{H}_{\mathrm{ERA5}}
+\quad\text{and}\quad
+\mathcal{F}_{T,\mathrm{vithed}}
+  = \frac{g}{c_p}\int_A\mathtt{vithed}\,dA.
+\]
+
+Both plotted quantities are positive out of the domain. This direct comparison
+tests whether the divergence archived as `vithed` is consistent with the sum
+of the four boundary transports used by the existing advection benchmark.
+
+Figure 8 compares the complete storage tendency and its volume-average
+decomposition:
+
+\[
+\frac{d}{dt}\int T\,dV,\qquad
+V\frac{d\langle T\rangle}{dt},\qquad
+\langle T\rangle\frac{dV}{dt}.
+\]
+
+The ERA5 side derives all three series from area-integrated `vithe` and the
+exact surface-pressure volume. The pressure-level side retains the code's
+native gridded temperature integral and gridded volume. Each row contains an
+aligned time-series panel and a one-to-one panel. The centered finite
+difference does not obey an exact discrete product rule, so the sum of the
+last two rows is a diagnostic approximation to the first row rather than an
+enforced identity.
 
 ## 9. Hard-data validation contract
 

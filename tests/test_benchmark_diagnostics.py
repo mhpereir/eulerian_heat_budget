@@ -243,14 +243,27 @@ def test_compute_full_column_benchmark_terms_matches_equations():
         dims=("time",),
         coords={"time": output_time},
     )
+    domain_volume = xr.DataArray(
+        [100.0, 110.0, 120.0, 130.0, 140.0],
+        dims=("time",),
+        coords={"time": time},
+        name="domain_volume_true",
+    )
+    benchmark_heat_flux_net = xr.DataArray(
+        [-30.0, -31.0, -32.0],
+        dims=("time",),
+        coords={"time": output_time},
+    )
 
     out = compute_full_column_benchmark_terms(
         benchmark_ds,
         area,
         output_time=output_time,
+        domain_volume=domain_volume,
         T_domain_avg=T_domain_avg,
         dV_dt=dV_dt,
         benchmark_mass_flux_net=benchmark_mass_flux_net,
+        benchmark_heat_flux_net=benchmark_heat_flux_net,
     )
 
     assert set(out.data_vars) == {
@@ -259,8 +272,12 @@ def test_compute_full_column_benchmark_terms_matches_equations():
         "benchmark_vithed",
         "benchmark_thermal_content",
         "benchmark_storage_term",
+        "benchmark_T_domain_avg",
+        "benchmark_mean_temperature_storage_term",
+        "benchmark_volume_change_storage_term",
         "benchmark_adiabatic_term",
         "benchmark_heat_flux_divergence",
+        "benchmark_heat_flux_divergence_from_walls",
         "benchmark_mass_residual",
         "benchmark_residual_heat",
         "benchmark_diabatic_term_physical",
@@ -271,10 +288,32 @@ def test_compute_full_column_benchmark_terms_matches_equations():
     npt.assert_allclose(out["benchmark_viec"], 28.0)
     npt.assert_allclose(out["benchmark_vithed"], 42.0)
     npt.assert_allclose(out["benchmark_storage_term"], 140.0 * conversion)
+    expected_mean = (
+        np.array([140.0, 280.0, 420.0]) * conversion
+        / np.array([110.0, 120.0, 130.0])
+    )
+    npt.assert_allclose(out["benchmark_T_domain_avg"], expected_mean)
+    full_mean = np.arange(5) * 140.0 * conversion / domain_volume.values
+    expected_mean_storage = (
+        (full_mean[2:] - full_mean[:-2]) / 2.0
+        * domain_volume.values[1:-1]
+    )
+    npt.assert_allclose(
+        out["benchmark_mean_temperature_storage_term"],
+        expected_mean_storage,
+    )
+    npt.assert_allclose(
+        out["benchmark_volume_change_storage_term"],
+        expected_mean * 10.0,
+    )
     npt.assert_allclose(out["benchmark_adiabatic_term"], 28.0 * conversion)
     npt.assert_allclose(
         out["benchmark_heat_flux_divergence"],
         42.0 * conversion,
+    )
+    npt.assert_allclose(
+        out["benchmark_heat_flux_divergence_from_walls"],
+        [30.0, 31.0, 32.0],
     )
     expected_physical = (140.0 + 42.0 - 28.0) * conversion
     npt.assert_allclose(out["benchmark_diabatic_term_physical"], expected_physical)
@@ -407,13 +446,18 @@ def test_calculate_budget_merges_full_column_benchmarks_into_output(tmp_path):
         "benchmark_vithed",
         "benchmark_thermal_content",
         "benchmark_storage_term",
+        "benchmark_T_domain_avg",
+        "benchmark_mean_temperature_storage_term",
+        "benchmark_volume_change_storage_term",
         "benchmark_adiabatic_term",
         "benchmark_heat_flux_divergence",
+        "benchmark_heat_flux_divergence_from_walls",
         "benchmark_mass_residual",
         "benchmark_residual_heat",
         "benchmark_diabatic_term_physical",
         "benchmark_diabatic_term",
         "calculated_diabatic_term_physical",
+        "volume_change_storage_term",
     }
     assert expected.issubset(out.data_vars)
     npt.assert_allclose(out["benchmark_adiabatic_term"], 0.0)

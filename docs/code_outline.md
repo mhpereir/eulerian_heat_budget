@@ -991,24 +991,31 @@ It also contains eight signed per-face benchmark fields:
 These 15 fields are retained in NetCDF output because downstream diagnostics
 need both aggregate and wall-resolved comparisons.
 
-The same optional result contains 12 heating-benchmark fields:
+The same optional result contains 17 full-column benchmark fields:
 
 - `benchmark_vithe`
 - `benchmark_viec`
 - `benchmark_vithed`
 - `benchmark_thermal_content`
 - `benchmark_storage_term`
+- `benchmark_T_domain_avg`
+- `benchmark_mean_temperature_storage_term`
+- `benchmark_volume_change_storage_term`
 - `benchmark_adiabatic_term`
 - `benchmark_heat_flux_divergence`
+- `benchmark_heat_flux_divergence_from_walls`
 - `benchmark_mass_residual`
 - `benchmark_residual_heat`
 - `benchmark_diabatic_term_physical`
 - `benchmark_diabatic_term`
 - `calculated_diabatic_term_physical`
+- `volume_change_storage_term`
 
 These retain the reduced ERA5 source values, the definition-matched
 volume-average comparison, and the secondary physical full-temperature
-comparison described in `docs/full-column-benchmarking-strategy.md`.
+comparison described in `docs/full-column-benchmarking-strategy.md`. They also
+support Figure 7's wall-sum versus `vithed` divergence test and Figure 8's
+three-part storage comparison.
 
 ### 7.6 Ad Hoc Run Metadata
 
@@ -1067,6 +1074,7 @@ Shared baseline tests:
   - per-face benchmark output schema and signs
   - full-column domain guard and analytic heating equations
   - benchmark Figures 1, 5, and 6
+  - analytic wall-divergence and storage-decomposition output fields
 - `tests/test_budget_closure.py`
   - exact and analytic mass and heat-advection closure cases
 - `tests/test_grid.py`
