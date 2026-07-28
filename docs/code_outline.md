@@ -27,6 +27,8 @@ per-face, and benchmark diagnostics needed by downstream analysis.
 
 `docs/Eulerian Heat Budget - Reformulation.md` is the source of truth for the
 physics. This document records how those definitions are represented in code.
+`docs/full-column-benchmarking-strategy.md` defines the ERA5 comparison
+hierarchy, hard-data fixture contract, and scientific tolerance policy.
 
 ## 2. Physical And Sign Contracts
 

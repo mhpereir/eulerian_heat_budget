@@ -1,6 +1,7 @@
 import importlib
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -1227,7 +1228,8 @@ def test_venus_production_preflight_rejects_non_authoritative_checkout(
             "bash",
             "-c",
             (
-                f"source {scheduler_dir / 'production_run_cli_settings.sh'}; "
+                "source "
+                f"{shlex.quote(str(scheduler_dir / 'production_run_cli_settings.sh'))}; "
                 "ehb_verify_production_submission_checkout"
             ),
         ],
