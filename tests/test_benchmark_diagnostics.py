@@ -12,6 +12,7 @@ if PROJECT_ROOT not in sys.path:
 
 from src import budget, grid
 from src.terms import (
+    _wall_centered_benchmark_flux,
     compute_benchmark_diagnostic_totals,
     compute_benchmark_output_face_fluxes,
     compute_full_column_benchmark_terms,
@@ -23,6 +24,42 @@ from src.plot_diagnostics import (
     fig6_benchmark_heating_comparison,
 )
 from src.specs import DomainRequest, DomainSpec, SurfaceBehaviour
+
+
+def test_wall_centered_benchmark_flux_averages_domain_and_halo_centers():
+    flux = xr.DataArray(
+        [10.0, 20.0, 40.0, 80.0],
+        dims=("lon",),
+        coords={"lon": [-130.0, -129.75, -110.25, -110.0]},
+        name="Fx_heat",
+    )
+
+    west = _wall_centered_benchmark_flux(
+        flux,
+        dim="lon",
+        boundary=-129.875,
+    )
+    east = _wall_centered_benchmark_flux(
+        flux,
+        dim="lon",
+        boundary=-110.125,
+    )
+
+    npt.assert_allclose(west, 15.0)
+    npt.assert_allclose(east, 60.0)
+    assert "adjacent centers" in west.attrs["wall_centering"]
+
+
+def test_wall_centered_benchmark_flux_rejects_non_midpoint_boundary():
+    flux = xr.DataArray(
+        [1.0, 2.0],
+        dims=("lat",),
+        coords={"lat": [40.0, 40.25]},
+        name="Fy_mass",
+    )
+
+    with pytest.raises(ValueError, match="do not bracket the wall symmetrically"):
+        _wall_centered_benchmark_flux(flux, dim="lat", boundary=40.1)
 
 
 def test_compute_benchmark_diagnostic_totals_matches_figure_5_1_series():
@@ -225,6 +262,7 @@ def test_compute_full_column_benchmark_terms_matches_equations():
             "vithe": (("time", "lat", "lon"), vithe_values),
             "viec": (("time", "lat", "lon"), np.full((5, 2, 2), 2.0)),
             "vithed": (("time", "lat", "lon"), np.full((5, 2, 2), 3.0)),
+            "vimad": (("time", "lat", "lon"), np.full((5, 2, 2), 4.0)),
         },
         coords={"time": time, "lat": lat, "lon": lon},
     )
@@ -270,6 +308,7 @@ def test_compute_full_column_benchmark_terms_matches_equations():
         "benchmark_vithe",
         "benchmark_viec",
         "benchmark_vithed",
+        "benchmark_vimad",
         "benchmark_thermal_content",
         "benchmark_storage_term",
         "benchmark_T_domain_avg",
@@ -278,6 +317,8 @@ def test_compute_full_column_benchmark_terms_matches_equations():
         "benchmark_adiabatic_term",
         "benchmark_heat_flux_divergence",
         "benchmark_heat_flux_divergence_from_walls",
+        "benchmark_mass_flux_divergence",
+        "benchmark_mass_flux_divergence_from_walls",
         "benchmark_mass_residual",
         "benchmark_residual_heat",
         "benchmark_diabatic_term_physical",
@@ -287,6 +328,7 @@ def test_compute_full_column_benchmark_terms_matches_equations():
     npt.assert_allclose(out["benchmark_vithe"], [140.0, 280.0, 420.0])
     npt.assert_allclose(out["benchmark_viec"], 28.0)
     npt.assert_allclose(out["benchmark_vithed"], 42.0)
+    npt.assert_allclose(out["benchmark_vimad"], 56.0)
     npt.assert_allclose(out["benchmark_storage_term"], 140.0 * conversion)
     expected_mean = (
         np.array([140.0, 280.0, 420.0]) * conversion
@@ -314,6 +356,11 @@ def test_compute_full_column_benchmark_terms_matches_equations():
     npt.assert_allclose(
         out["benchmark_heat_flux_divergence_from_walls"],
         [30.0, 31.0, 32.0],
+    )
+    npt.assert_allclose(out["benchmark_mass_flux_divergence"], 56.0 * 9.806)
+    npt.assert_allclose(
+        out["benchmark_mass_flux_divergence_from_walls"],
+        [-20.0, -20.0, -20.0],
     )
     expected_physical = (140.0 + 42.0 - 28.0) * conversion
     npt.assert_allclose(out["benchmark_diabatic_term_physical"], expected_physical)
@@ -436,6 +483,7 @@ def test_calculate_budget_merges_full_column_benchmarks_into_output(tmp_path):
             "vithe": (("time", "lat", "lon"), np.full(shape_3d, 1.0e9)),
             "viec": (("time", "lat", "lon"), np.zeros(shape_3d)),
             "vithed": (("time", "lat", "lon"), np.zeros(shape_3d)),
+            "vimad": (("time", "lat", "lon"), np.zeros(shape_3d)),
         },
         coords={"time": time, "lat": lat, "lon": lon},
     )
@@ -455,6 +503,7 @@ def test_calculate_budget_merges_full_column_benchmarks_into_output(tmp_path):
         "benchmark_vithe",
         "benchmark_viec",
         "benchmark_vithed",
+        "benchmark_vimad",
         "benchmark_thermal_content",
         "benchmark_storage_term",
         "benchmark_T_domain_avg",
@@ -463,6 +512,8 @@ def test_calculate_budget_merges_full_column_benchmarks_into_output(tmp_path):
         "benchmark_adiabatic_term",
         "benchmark_heat_flux_divergence",
         "benchmark_heat_flux_divergence_from_walls",
+        "benchmark_mass_flux_divergence",
+        "benchmark_mass_flux_divergence_from_walls",
         "benchmark_mass_residual",
         "benchmark_residual_heat",
         "benchmark_diabatic_term_physical",

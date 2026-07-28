@@ -24,6 +24,7 @@ ARCO_COLUMN_BENCHMARK_VAR_MAP = {
     "vertical_integral_of_thermal_energy": "vithe",
     "vertical_integral_of_energy_conversion": "viec",
     "vertical_integral_of_divergence_of_thermal_energy_flux": "vithed",
+    "vertical_integral_of_divergence_of_mass_flux": "vimad",
 }
 
 ARCO_BENCHMARK_VAR_MAP = {

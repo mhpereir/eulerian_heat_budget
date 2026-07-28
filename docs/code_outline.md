@@ -175,7 +175,7 @@ surface_pressure            -> sp
 
 Optional surface variables can also be streamed when requested. The benchmark
 add-on streams vertically integrated mass and heat fluxes plus `vithe`,
-`viec`, and `vithed`. The three heating diagnostics are valid only for a
+`viec`, `vithed`, and `vimad`. The full-column diagnostics are valid only for a
 1 hPa-to-surface-pressure calculation.
 
 ### 3.3 Staged ARCO Zarr Cache
@@ -230,7 +230,7 @@ The current staged cache schema stores:
 - compact `u_wall` and `v_wall` arrays containing the required lateral
   velocity stencils
 - optional compact benchmark wall fluxes
-- optional full-horizontal `vithe`, `viec`, and `vithed` benchmark fields
+- optional full-horizontal `vithe`, `viec`, `vithed`, and `vimad` benchmark fields
 - pressure bounds and cache metadata
 
 `src_arco.selection` reconstructs canonical `u` and `v` arrays before the
@@ -991,11 +991,12 @@ It also contains eight signed per-face benchmark fields:
 These 15 fields are retained in NetCDF output because downstream diagnostics
 need both aggregate and wall-resolved comparisons.
 
-The same optional result contains 17 full-column benchmark fields:
+The same optional result contains 20 full-column benchmark fields:
 
 - `benchmark_vithe`
 - `benchmark_viec`
 - `benchmark_vithed`
+- `benchmark_vimad`
 - `benchmark_thermal_content`
 - `benchmark_storage_term`
 - `benchmark_T_domain_avg`
@@ -1004,6 +1005,8 @@ The same optional result contains 17 full-column benchmark fields:
 - `benchmark_adiabatic_term`
 - `benchmark_heat_flux_divergence`
 - `benchmark_heat_flux_divergence_from_walls`
+- `benchmark_mass_flux_divergence`
+- `benchmark_mass_flux_divergence_from_walls`
 - `benchmark_mass_residual`
 - `benchmark_residual_heat`
 - `benchmark_diabatic_term_physical`
@@ -1014,8 +1017,10 @@ The same optional result contains 17 full-column benchmark fields:
 These retain the reduced ERA5 source values, the definition-matched
 volume-average comparison, and the secondary physical full-temperature
 comparison described in `docs/full-column-benchmarking-strategy.md`. They also
-support Figure 7's wall-sum versus `vithed` divergence test and Figure 8's
-three-part storage comparison.
+support Figure 7's wall-sum comparisons against both `vithed` and `vimad`, and
+Figure 8's three-part storage comparison. ERA5 component fluxes are centered
+at each domain wall by averaging the adjacent domain and halo cell-center
+values before line integration.
 
 ### 7.6 Ad Hoc Run Metadata
 

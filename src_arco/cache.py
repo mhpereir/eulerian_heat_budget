@@ -574,10 +574,41 @@ def _candidate_tile_records(
         if record.path.exists()
         and _record_source_matches(record, source_cfg)
         and _record_benchmark_matches(record, include_benchmark_variables)
+        and _record_benchmark_contract_matches(
+            record,
+            include_benchmark_variables,
+        )
         and _record_horizontal_covers(record, request)
         and _record_vertical_covers(record, request)
         and _record_time_overlaps(record, source_cfg)
     ]
+
+
+def _record_benchmark_contract_matches(
+    record: _TileRecord,
+    include_benchmark_variables: bool,
+) -> bool:
+    """Exclude benchmark tiles created under an older variable contract."""
+    if not include_benchmark_variables:
+        return True
+
+    source = {
+        "kind": record.source.get("kind"),
+        "arco_path": record.source.get("arco_path"),
+        "time_start": record.source.get("time_start"),
+        "time_end": record.source.get("time_end"),
+    }
+    payload = {
+        "source": source,
+        "request": record.request,
+        "include_benchmark_variables": True,
+        "schema": CACHE_SCHEMA,
+        "benchmark_variables": list(variables.BENCHMARK_VAR_NAMES),
+    }
+    expected_id = hashlib.sha256(
+        json.dumps(payload, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:24]
+    return record.tile_id == expected_id
 
 
 def _tile_record_from_row(root: Path, row) -> _TileRecord:

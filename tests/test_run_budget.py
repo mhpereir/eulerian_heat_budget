@@ -902,6 +902,7 @@ def test_main_arco_run_loads_benchmark_with_flag(monkeypatch):
         "vithe",
         "viec",
         "vithed",
+        "vimad",
     }
     assert calculate_calls[0]["benchmark_ds"] is benchmark_ds
 
