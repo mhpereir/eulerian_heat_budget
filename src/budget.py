@@ -298,7 +298,9 @@ def calculate_budget(
         # need to align benchmark dataset with our ds_halo grid and time steps;
         # then we need to compute horizontal integrals of the benchmark fluxes to get them in the same form as our advection terms for comparison
 
+        terms.require_full_column_benchmark_domain(DomainSpecs)
         benchmark_ds = grid.crop_to_target_grid(benchmark_ds, ds_halo)
+        benchmark_column_ds = grid.crop_to_target_grid(benchmark_ds, ds_domain)
         benchmark_mass_fluxes, benchmark_heat_fluxes = terms.compute_advective_benchmark_fluxes(benchmark_ds, ds_domain, DomainSpecs)
         benchmark_diagnostic_totals = terms.compute_benchmark_diagnostic_totals(
             benchmark_mass_fluxes,
@@ -311,8 +313,34 @@ def calculate_budget(
             benchmark_heat_fluxes,
             out["time"],
         )
+        full_column_benchmark_terms = terms.compute_full_column_benchmark_terms(
+            benchmark_column_ds,
+            ds_horizontal_cell_areas,
+            output_time=out["time"],
+            T_domain_avg=out["T_domain_avg"],
+            dV_dt=out["dV_dt_true"],
+            benchmark_mass_flux_net=benchmark_diagnostic_totals[
+                "benchmark_mass_flux_net"
+            ],
+        )
+        calculated_diabatic_physical = (
+            out["diabatic_term"] - out["residual_heat"]
+        ).rename("calculated_diabatic_term_physical")
+        calculated_diabatic_physical.attrs.update(
+            {
+                "long_name": "Calculated physical full-temperature diabatic residual",
+                "units": "K m2 Pa s-1",
+                "formula": "diabatic_term - residual_heat",
+            }
+        )
         out = xr.merge(
-            [out, benchmark_diagnostic_totals, benchmark_output_face_fluxes],
+            [
+                out,
+                benchmark_diagnostic_totals,
+                benchmark_output_face_fluxes,
+                full_column_benchmark_terms,
+                calculated_diabatic_physical,
+            ],
             compat="equals",
             join="exact",
         ).compute()
@@ -337,5 +365,9 @@ def calculate_budget(
                 plot_diag_path,
             )
             plot_diagnostics.fig5_benchmark_comparison(benchmark_mass_fluxes, benchmark_heat_fluxes, out, advection_terms_out, plot_diag_path) # type: ignore
+            plot_diagnostics.fig6_benchmark_heating_comparison(
+                out,
+                plot_diag_path,
+            )
 
     return out

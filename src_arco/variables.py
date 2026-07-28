@@ -13,14 +13,27 @@ ARCO_CORE_VAR_MAP = {
     "surface_pressure": "sp",
 }
 
-ARCO_BENCHMARK_VAR_MAP = {
+ARCO_ADVECTIVE_BENCHMARK_VAR_MAP = {
     "vertical_integral_of_eastward_heat_flux": "Fx_heat",
     "vertical_integral_of_northward_heat_flux": "Fy_heat",
     "vertical_integral_of_eastward_mass_flux": "Fx_mass",
     "vertical_integral_of_northward_mass_flux": "Fy_mass",
 }
 
+ARCO_COLUMN_BENCHMARK_VAR_MAP = {
+    "vertical_integral_of_thermal_energy": "vithe",
+    "vertical_integral_of_energy_conversion": "viec",
+    "vertical_integral_of_divergence_of_thermal_energy_flux": "vithed",
+}
+
+ARCO_BENCHMARK_VAR_MAP = {
+    **ARCO_ADVECTIVE_BENCHMARK_VAR_MAP,
+    **ARCO_COLUMN_BENCHMARK_VAR_MAP,
+}
+
 CORE_VAR_NAMES = tuple(ARCO_CORE_VAR_MAP.values())
+ADVECTIVE_BENCHMARK_VAR_NAMES = tuple(ARCO_ADVECTIVE_BENCHMARK_VAR_MAP.values())
+COLUMN_BENCHMARK_VAR_NAMES = tuple(ARCO_COLUMN_BENCHMARK_VAR_MAP.values())
 BENCHMARK_VAR_NAMES = tuple(ARCO_BENCHMARK_VAR_MAP.values())
 
 SURFACE_VARIABLE_ERROR = (
@@ -33,4 +46,3 @@ def require_no_surface_variables(surface_specs: Any) -> None:
     """Fail early for staged-cache v1 when optional surface fields are requested."""
     if bool(getattr(surface_specs, "use_surface_variables", False)):
         raise NotImplementedError(SURFACE_VARIABLE_ERROR)
-

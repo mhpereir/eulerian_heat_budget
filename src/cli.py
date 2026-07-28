@@ -180,8 +180,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help=(
-            "Load ARCO benchmark vertically integrated mass and heat fluxes for "
-            "benchmark diagnostic plots and budget output variables."
+            "Load optional ARCO full-column mass, heat, thermal-energy, "
+            "energy-conversion, and heat-flux-divergence diagnostics for "
+            "benchmark plots and budget output variables. Requires a 1 hPa "
+            "top and a surface-pressure lower boundary."
         ),
     )
 

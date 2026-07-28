@@ -1,6 +1,6 @@
 # Eulerian Heat Budget - Shared Code Outline
 
-July 26, 2026
+July 27, 2026
 
 ## 1. Purpose And Scope
 
@@ -173,8 +173,10 @@ vertical_velocity           -> w
 surface_pressure            -> sp
 ```
 
-Optional surface variables and vertically integrated benchmark mass and heat
-fluxes can also be streamed when requested.
+Optional surface variables can also be streamed when requested. The benchmark
+add-on streams vertically integrated mass and heat fluxes plus `vithe`,
+`viec`, and `vithed`. The three heating diagnostics are valid only for a
+1 hPa-to-surface-pressure calculation.
 
 ### 3.3 Staged ARCO Zarr Cache
 
@@ -228,6 +230,7 @@ The current staged cache schema stores:
 - compact `u_wall` and `v_wall` arrays containing the required lateral
   velocity stencils
 - optional compact benchmark wall fluxes
+- optional full-horizontal `vithe`, `viec`, and `vithed` benchmark fields
 - pressure bounds and cache metadata
 
 `src_arco.selection` reconstructs canonical `u` and `v` arrays before the
@@ -275,8 +278,8 @@ After CLI and output-mode resolution, the calculation flow is:
 3. `src/io.py` dispatches to the selected ERA5 adapter and standardizes its
    result.
 4. `src/validate.py` enforces the canonical loaded-dataset schema.
-5. Optional benchmark flux inputs are loaded from streamed ARCO or the staged
-   cache.
+5. Optional full-column benchmark inputs are loaded from streamed ARCO or the
+   staged cache.
 6. `src/grid.py::determine_domain()` returns:
    - `ds_domain`
    - `ds_halo`
@@ -516,7 +519,7 @@ Responsibilities include:
 - dispatching among pre-downloaded, streamed ARCO, and staged-cache adapters
 - loading local ERA5 component files
 - opening ARCO Zarr with transient-failure retry
-- loading streamed benchmark fluxes
+- loading streamed full-column benchmark fields
 - loading staged core and benchmark datasets where available
 - renaming coordinates and variables
 - dropping non-contract auxiliary coordinates
@@ -658,6 +661,7 @@ Computes physical and diagnostic terms:
 - residual diabatic heating
 - ARCO benchmark face fluxes
 - benchmark aggregate and output diagnostics
+- full-column `vithe`, `viec`, and `vithed` heating diagnostics
 
 The active advection path subtracts `T_domain_avg` before constructing heat
 fluxes. Optional surface fields are blended into the surface-adjacent layer
@@ -713,6 +717,7 @@ Writes calculation diagnostics:
 - `fig3_advection_components_timeseries()`
 - `fig4_temperature_derivative_timeseries()`
 - `fig5_benchmark_comparison()`
+- `fig6_benchmark_heating_comparison()`
 
 ### `src/plot_results.py`
 
@@ -960,7 +965,8 @@ add the two bottom-face fields for 28.
 ### 7.5 Optional Benchmark Output
 
 When benchmark variables are available and
-`--include-benchmark-variables` is enabled, the result also contains seven
+`--include-benchmark-variables` is enabled for a
+1 hPa-to-surface-pressure domain, the result also contains seven advective
 aggregate diagnostic fields:
 
 - `benchmark_mass_flux_net`
@@ -984,6 +990,25 @@ It also contains eight signed per-face benchmark fields:
 
 These 15 fields are retained in NetCDF output because downstream diagnostics
 need both aggregate and wall-resolved comparisons.
+
+The same optional result contains 12 heating-benchmark fields:
+
+- `benchmark_vithe`
+- `benchmark_viec`
+- `benchmark_vithed`
+- `benchmark_thermal_content`
+- `benchmark_storage_term`
+- `benchmark_adiabatic_term`
+- `benchmark_heat_flux_divergence`
+- `benchmark_mass_residual`
+- `benchmark_residual_heat`
+- `benchmark_diabatic_term_physical`
+- `benchmark_diabatic_term`
+- `calculated_diabatic_term_physical`
+
+These retain the reduced ERA5 source values, the definition-matched
+volume-average comparison, and the secondary physical full-temperature
+comparison described in `docs/full-column-benchmarking-strategy.md`.
 
 ### 7.6 Ad Hoc Run Metadata
 
@@ -1040,7 +1065,8 @@ Shared baseline tests:
 - `tests/test_benchmark_diagnostics.py`
   - aggregate benchmark formulas
   - per-face benchmark output schema and signs
-  - benchmark figures
+  - full-column domain guard and analytic heating equations
+  - benchmark Figures 1, 5, and 6
 - `tests/test_budget_closure.py`
   - exact and analytic mass and heat-advection closure cases
 - `tests/test_grid.py`

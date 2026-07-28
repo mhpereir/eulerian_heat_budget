@@ -73,6 +73,12 @@ DEFAULT_OUTPUT_ROOT: str = (
 DEFAULT_DIAGNOSTIC_PLOTS: bool = False
 DEFAULT_CONSTANT_TEMPERATURE_TEST: bool = False
 
+# ERA5 vertically integrated benchmark fields cover the complete atmosphere.
+# Restrict their use to the deepest pressure-level domain available from ERA5:
+# 1 hPa to a lower boundary that follows surface pressure. The ERA5 diagnostic
+# still includes the small atmospheric cap above 1 hPa.
+FULL_COLUMN_BENCHMARK_TOP_PRESSURE_PA: float = 100.0
+
 n_time:int = 12
 n_lat :int = 36
 n_lon :int = 36

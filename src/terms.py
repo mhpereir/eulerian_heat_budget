@@ -16,7 +16,7 @@ import numpy as np
 
 from . import integrals, weights, config
 
-from .specs import DomainSpec, SurfaceBehaviour
+from .specs import DomainRequest, DomainSpec, SurfaceBehaviour
 from .grid import get_boundary_line_elements
 
 def compute_domain_volume(ds_domain: xr.Dataset,
@@ -891,6 +891,225 @@ def compute_benchmark_diagnostic_totals(
         }
     )
 
+    return out
+
+
+def require_full_column_benchmark_domain(
+    DomainSpecs: DomainRequest | DomainSpec,
+) -> None:
+    """Reject ERA5 full-column diagnostics for a partial atmospheric domain."""
+    if DomainSpecs.zg_bottom != "surface_pressure":
+        raise ValueError(
+            "ERA5 vithe/viec/vithed benchmarks require "
+            "zg_bottom='surface_pressure'."
+        )
+    required_top_pressure = config.FULL_COLUMN_BENCHMARK_TOP_PRESSURE_PA
+    if not np.isclose(
+        float(DomainSpecs.zg_top_pressure),
+        required_top_pressure,
+        rtol=0.0,
+        atol=1.0e-6,
+    ):
+        raise ValueError(
+            "ERA5 vithe/viec/vithed benchmarks require a full-atmosphere "
+            "pressure-level domain with zg_top_pressure = "
+            f"{required_top_pressure:g} Pa (1 hPa)."
+        )
+
+
+def compute_full_column_benchmark_terms(
+    benchmark_ds: xr.Dataset,
+    horizontal_cell_areas: xr.DataArray,
+    *,
+    output_time: xr.DataArray,
+    T_domain_avg: xr.DataArray,
+    dV_dt: xr.DataArray,
+    benchmark_mass_flux_net: xr.DataArray,
+) -> xr.Dataset:
+    """Return ERA5 full-column heating benchmarks on the budget output axis."""
+    required = ("vithe", "viec", "vithed")
+    missing = [name for name in required if name not in benchmark_ds]
+    if missing:
+        raise ValueError(
+            "ERA5 full-column benchmark dataset is missing variables: "
+            f"{missing}"
+        )
+
+    expected_dims = ("time", "lat", "lon")
+    for name in required:
+        if benchmark_ds[name].dims != expected_dims:
+            raise ValueError(
+                f"Benchmark variable {name!r} must have dims "
+                f"{expected_dims}, got {benchmark_ds[name].dims}."
+            )
+
+    if horizontal_cell_areas.dims != ("lat", "lon"):
+        raise ValueError(
+            "Horizontal cell areas must have dims ('lat', 'lon') for "
+            "full-column benchmark integration."
+        )
+
+    area_weights = xr.ones_like(horizontal_cell_areas, dtype="float64")
+
+    def _area_integral(name: str) -> xr.DataArray:
+        integrated = integrals.area_integral(
+            benchmark_ds[name].astype("float64"),
+            horizontal_cell_areas,
+            area_weights,
+        )
+        return integrated.reset_coords(drop=True).rename(f"benchmark_{name}")
+
+    benchmark_vithe_full = _area_integral("vithe")
+    benchmark_viec_full = _area_integral("viec")
+    benchmark_vithed_full = _area_integral("vithed")
+
+    conversion = config.g / config.cp
+    thermal_content_full = (
+        benchmark_vithe_full * conversion
+    ).rename("benchmark_thermal_content")
+    storage_full = compute_time_derivative(thermal_content_full).rename(
+        "benchmark_storage_term"
+    )
+
+    benchmark_vithe = benchmark_vithe_full.sel(time=output_time)
+    benchmark_viec = benchmark_viec_full.sel(time=output_time)
+    benchmark_vithed = benchmark_vithed_full.sel(time=output_time)
+    thermal_content = thermal_content_full.sel(time=output_time)
+    storage = storage_full.sel(time=output_time)
+    adiabatic = (
+        benchmark_viec * conversion
+    ).rename("benchmark_adiabatic_term")
+    heat_flux_divergence = (
+        benchmark_vithed * conversion
+    ).rename("benchmark_heat_flux_divergence")
+    diabatic_physical = (
+        storage + heat_flux_divergence - adiabatic
+    ).rename("benchmark_diabatic_term_physical")
+
+    benchmark_mass_residual = (
+        benchmark_mass_flux_net.sel(time=output_time)
+        - dV_dt.sel(time=output_time)
+    ).rename("benchmark_mass_residual")
+    benchmark_residual_heat = (
+        benchmark_mass_residual * T_domain_avg.sel(time=output_time)
+    ).rename("benchmark_residual_heat")
+    diabatic_workflow = (
+        diabatic_physical + benchmark_residual_heat
+    ).rename("benchmark_diabatic_term")
+
+    out = xr.Dataset(
+        {
+            "benchmark_vithe": benchmark_vithe,
+            "benchmark_viec": benchmark_viec,
+            "benchmark_vithed": benchmark_vithed,
+            "benchmark_thermal_content": thermal_content,
+            "benchmark_storage_term": storage,
+            "benchmark_adiabatic_term": adiabatic,
+            "benchmark_heat_flux_divergence": heat_flux_divergence,
+            "benchmark_mass_residual": benchmark_mass_residual,
+            "benchmark_residual_heat": benchmark_residual_heat,
+            "benchmark_diabatic_term_physical": diabatic_physical,
+            "benchmark_diabatic_term": diabatic_workflow,
+        }
+    )
+
+    source_attrs = {
+        "benchmark_vithe": (
+            "Area integral of ERA5 vertical integral of thermal energy",
+            "J",
+            "vithe",
+            162060,
+        ),
+        "benchmark_viec": (
+            "Area integral of ERA5 vertical integral of energy conversion",
+            "W",
+            "viec",
+            162064,
+        ),
+        "benchmark_vithed": (
+            "Area integral of ERA5 divergence of vertically integrated thermal energy flux",
+            "W",
+            "vithed",
+            162083,
+        ),
+    }
+    for name, (long_name, units, short_name, param_id) in source_attrs.items():
+        out[name].attrs.update(
+            {
+                "long_name": long_name,
+                "units": units,
+                "source_short_name": short_name,
+                "source_param_id": param_id,
+                "spatial_reduction": "horizontal cell-area integral over domain",
+                "time_semantics": "instantaneous ERA5 analysis",
+            }
+        )
+
+    project_units = "K m2 Pa s-1"
+    out["benchmark_thermal_content"].attrs.update(
+        {
+            "long_name": "ERA5 benchmark pressure-volume thermal content",
+            "units": "K m2 Pa",
+            "formula": "(g / cp) * benchmark_vithe",
+        }
+    )
+    out["benchmark_storage_term"].attrs.update(
+        {
+            "long_name": "ERA5 benchmark full-column thermal storage tendency",
+            "units": project_units,
+            "formula": "centered_time_derivative(benchmark_thermal_content)",
+        }
+    )
+    out["benchmark_adiabatic_term"].attrs.update(
+        {
+            "long_name": "ERA5 benchmark adiabatic pressure-work term",
+            "units": project_units,
+            "formula": "(g / cp) * benchmark_viec",
+            "sign_convention": "positive compressional warming",
+        }
+    )
+    out["benchmark_heat_flux_divergence"].attrs.update(
+        {
+            "long_name": "ERA5 benchmark thermal-energy flux divergence",
+            "units": project_units,
+            "formula": "(g / cp) * benchmark_vithed",
+            "sign_convention": "positive divergence out of domain",
+        }
+    )
+    out["benchmark_mass_residual"].attrs.update(
+        {
+            "long_name": "ERA5 benchmark full-column mass-closure residual",
+            "units": "m2 Pa s-1",
+            "formula": "benchmark_mass_flux_net - dV_dt_true",
+            "sign_convention": "positive net inflow exceeds volume tendency",
+        }
+    )
+    out["benchmark_residual_heat"].attrs.update(
+        {
+            "long_name": "ERA5 heat-scaled mass-closure residual",
+            "units": project_units,
+            "formula": "benchmark_mass_residual * T_domain_avg",
+        }
+    )
+    out["benchmark_diabatic_term_physical"].attrs.update(
+        {
+            "long_name": "ERA5 physical full-temperature diabatic residual",
+            "units": project_units,
+            "formula": (
+                "benchmark_storage_term + benchmark_heat_flux_divergence "
+                "- benchmark_adiabatic_term"
+            ),
+        }
+    )
+    out["benchmark_diabatic_term"].attrs.update(
+        {
+            "long_name": "ERA5 workflow-defined volume-average diabatic residual",
+            "units": project_units,
+            "formula": (
+                "benchmark_diabatic_term_physical + benchmark_residual_heat"
+            ),
+        }
+    )
     return out
 
 

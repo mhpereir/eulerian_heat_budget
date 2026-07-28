@@ -895,3 +895,179 @@ def fig5_benchmark_comparison(
         r"Total Heat-flux ($\mathcal{H}$)",
         "fig5.3_benchmark_vs_calculated_heat_flux_total.png",
     )
+
+
+def _plot_benchmark_term_correlation(
+    benchmark: xr.DataArray,
+    calculated: xr.DataArray,
+    *,
+    title: str,
+    filename: str,
+    plot_dir: str,
+    color: str,
+) -> None:
+    benchmark_aligned, calculated_aligned = xr.align(
+        benchmark,
+        calculated,
+        join="inner",
+    )
+    x = benchmark_aligned.values.ravel()
+    y = calculated_aligned.values.ravel()
+    mask = np.isfinite(x) & np.isfinite(y)
+    x = x[mask]
+    y = y[mask]
+
+    all_values = np.concatenate([x, y])
+    if all_values.size:
+        lower = np.nanmin(all_values)
+        upper = np.nanmax(all_values)
+        if not np.isfinite(lower) or not np.isfinite(upper):
+            lower, upper = -1.0, 1.0
+    else:
+        lower, upper = -1.0, 1.0
+
+    if lower == upper:
+        pad = max(np.abs(lower) * 0.05, 1.0)
+    else:
+        pad = (upper - lower) * 0.05
+    lower -= pad
+    upper += pad
+
+    if x.size < 2 or np.std(x) == 0 or np.std(y) == 0:
+        correlation_label = f"Pearson r: n/a\nn = {x.size}"
+    else:
+        correlation_label = (
+            f"Pearson r: {np.corrcoef(x, y)[0, 1]:.3f}\nn = {x.size}"
+        )
+
+    fig, ax = plt.subplots(
+        figsize=_publication_figsize("single", SQUARE_PANEL_ASPECT),
+    )
+    ax.scatter(x, y, alpha=SCATTER_ALPHA, color=color, s=SCATTER_SIZE_PT2)
+    ax.plot([lower, upper], [lower, upper], linestyle="--", color="k", label="1:1")
+    ax.set_xlim(lower, upper)
+    ax.set_ylim(lower, upper)
+    _set_square_1_to_1_axis(ax)
+    _set_square_xlabel(ax, f"Benchmark [{HEAT_FLUX_UNITS}]")
+    ax.set_ylabel(f"Calculated [{HEAT_FLUX_UNITS}]")
+    ax.set_title(title)
+    _add_correlation_text(ax, correlation_label)
+    ax.legend(loc="lower right", fontsize=LEGEND_FONT_SIZE_PT)
+
+    _save_square_figure(fig, plot_dir + "/" + filename)
+    plt.close(fig)
+
+
+def fig6_benchmark_heating_comparison(
+    results: xr.Dataset,
+    plot_dir: str,
+) -> None:
+    """Plot ERA5 full-column adiabatic and diabatic benchmark comparisons."""
+    required = (
+        "adiabatic_term",
+        "diabatic_term",
+        "calculated_diabatic_term_physical",
+        "benchmark_adiabatic_term",
+        "benchmark_diabatic_term",
+        "benchmark_diabatic_term_physical",
+    )
+    missing = [name for name in required if name not in results]
+    if missing:
+        raise ValueError(
+            "Figure 6 requires full-column benchmark output variables: "
+            f"{missing}"
+        )
+
+    panels = (
+        (
+            "benchmark_adiabatic_term",
+            "adiabatic_term",
+            r"Adiabatic pressure work ($\mathcal{C}$)",
+            "tab:green",
+        ),
+        (
+            "benchmark_diabatic_term",
+            "diabatic_term",
+            r"Workflow diabatic residual ($\mathcal{D}_0$)",
+            "tab:orange",
+        ),
+        (
+            "benchmark_diabatic_term_physical",
+            "calculated_diabatic_term_physical",
+            r"Physical diabatic residual ($\mathcal{D}_{phys}$)",
+            "tab:purple",
+        ),
+    )
+
+    fig, axes = plt.subplots(
+        figsize=_publication_figsize("single", THREE_PANEL_STACK_ASPECT),
+        nrows=3,
+        sharex=True,
+    )
+    for axis, (benchmark_name, calculated_name, title, color) in zip(
+        axes,
+        panels,
+    ):
+        benchmark, calculated = xr.align(
+            results[benchmark_name],
+            results[calculated_name],
+            join="inner",
+        )
+        axis.plot(
+            benchmark["time"],
+            benchmark,
+            linestyle="--",
+            color=color,
+            label="Benchmark",
+        )
+        axis.plot(
+            calculated["time"],
+            calculated,
+            linestyle="-",
+            color=color,
+            label="Calculated",
+        )
+        axis.set_ylabel(rf"[{HEAT_FLUX_UNITS}]")
+        axis.set_title(title)
+        axis.legend(fontsize=LEGEND_FONT_SIZE_PT)
+
+    locator, formatter = _date_locator_formatter()
+    axes[-1].xaxis.set_major_locator(locator)
+    axes[-1].xaxis.set_major_formatter(formatter)
+    axes[-1].set_xlabel("Time")
+    _apply_stacked_figure_layout(fig, 3)
+    plt.savefig(plot_dir + "/fig6_benchmark_heating_comparison.png", dpi=300)
+    plt.close(fig)
+
+    scatter_specs = (
+        (
+            "benchmark_adiabatic_term",
+            "adiabatic_term",
+            r"Adiabatic pressure work ($\mathcal{C}$)",
+            "fig6.1_benchmark_vs_calculated_adiabatic.png",
+            "tab:green",
+        ),
+        (
+            "benchmark_diabatic_term",
+            "diabatic_term",
+            r"Workflow diabatic residual ($\mathcal{D}_0$)",
+            "fig6.2_benchmark_vs_calculated_diabatic_workflow.png",
+            "tab:orange",
+        ),
+        (
+            "benchmark_diabatic_term_physical",
+            "calculated_diabatic_term_physical",
+            r"Physical diabatic residual ($\mathcal{D}_{phys}$)",
+            "fig6.3_benchmark_vs_calculated_diabatic_physical.png",
+            "tab:purple",
+        ),
+    )
+    for benchmark_name, calculated_name, title, filename, color in scatter_specs:
+        _plot_benchmark_term_correlation(
+            results[benchmark_name],
+            results[calculated_name],
+            title=title,
+            filename=filename,
+            plot_dir=plot_dir,
+            color=color,
+        )
