@@ -6,7 +6,8 @@ RUN_START_MONTH_DAY="${RUN_START_MONTH_DAY:-05-01}"
 RUN_END_MONTH_DAY="${RUN_END_MONTH_DAY:-10-31}"
 
 DATA_SOURCE="${DATA_SOURCE:-arco_era5}"
-RUN_ID="${RUN_ID:-pnw_hotz-surface-700hpa-1940-2025-rerun-20260728}"
+RUN_ID="${RUN_ID:-pnw_hotz_surface_700hPa_1940_2025_second_attempt}"
+RUN_GROUP="${RUN_GROUP:-pnw}"
 REGION="${REGION:-pnw_hotz}"
 MARGIN_N="${MARGIN_N:-1}"
 ZG_TOP_PA="${ZG_TOP_PA:-70000}"
@@ -18,8 +19,8 @@ EHB_WORKSPACE_ROOT="${EHB_WORKSPACE_ROOT:-${HOME:?HOME must be set}/eulerian-hea
 EHB_CAMPAIGN_DATA_ROOT="${EHB_CAMPAIGN_DATA_ROOT:-${EHB_WORKSPACE_ROOT}/campaign-data}"
 EHB_RUN_BUDGET_ROOT="${EHB_RUN_BUDGET_ROOT:-${EHB_CAMPAIGN_DATA_ROOT}/run-budget}"
 EHB_LOG_ROOT="${EHB_LOG_ROOT:-${EHB_CAMPAIGN_DATA_ROOT}/logs}"
-PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-${EHB_RUN_BUDGET_ROOT}/${REGION}/${RUN_ID}}"
-LOG_DIR="${LOG_DIR:-${EHB_LOG_ROOT}/${REGION}/${RUN_ID}}"
+PRODUCTION_OUTPUT_DIR="${PRODUCTION_OUTPUT_DIR:-${EHB_RUN_BUDGET_ROOT}/${RUN_GROUP}/${RUN_ID}}"
+LOG_DIR="${LOG_DIR:-${EHB_LOG_ROOT}/${RUN_GROUP}/${RUN_ID}}"
 
 INIT_MANIFEST_ONLY="${INIT_MANIFEST_ONLY:-0}"
 ENABLE_DIAGNOSTIC_PLOTS="${ENABLE_DIAGNOSTIC_PLOTS:-1}"
@@ -200,6 +201,18 @@ ehb_build_production_run_budget_args() {
 ehb_production_year_for_task() {
   local task_id="$1"
   printf "%d\n" $((START_YEAR + 10#${task_id}))
+}
+
+ehb_yearly_output_path() {
+  local year="$1"
+  printf "%s/annual/heat_budget_%04d.nc\n" "${PRODUCTION_OUTPUT_DIR}" "${year}"
+}
+
+ehb_year_is_complete() {
+  local year="$1"
+  local output_path
+  output_path=$(ehb_yearly_output_path "${year}")
+  [[ -s "${output_path}" ]]
 }
 
 ehb_validate_production_year() {

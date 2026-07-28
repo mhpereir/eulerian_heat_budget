@@ -101,6 +101,12 @@ ehb_build_production_time_window "${YEAR}" TIME_START TIME_END
 
 ensure_manifest
 
+if ehb_year_is_complete "${YEAR}"; then
+  echo "[info] $(date -Is) skipping production year ${YEAR}; nonempty output already exists"
+  echo "[info] existing output: $(ehb_yearly_output_path "${YEAR}")"
+  exit 0
+fi
+
 echo "[info] $(date -Is) starting production year ${YEAR} on host $(hostname)"
 echo "[info] repo root: ${PROJECT_ROOT}"
 echo "[info] expected commit: ${EXPECTED_COMMIT}"

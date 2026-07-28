@@ -26,7 +26,10 @@ PROJECT_ROOT="$HOME/eulerian-heat-budget/production/eulerian_heat_budget-<commit
   "$PROJECT_ROOT/schedulers/submit_run_budget_production.sh"
 ```
 
-The defaults describe the `pnw_hotz` May 1 to October 31, 1940-2025 rerun,
-with a surface-pressure lower boundary, a 700 hPa top, and at most five
-concurrent yearly tasks. The wrapper rejects any data source other than
+The defaults continue the
+`pnw/pnw_hotz_surface_700hPa_1940_2025_second_attempt` campaign for May 1 to
+October 31, 1940-2025, with a surface-pressure lower boundary, a 700 hPa top,
+and at most five concurrent yearly tasks. Existing nonempty annual NetCDF
+outputs are skipped, so relaunching the complete array fills gaps without
+overwriting completed years. The wrapper rejects any data source other than
 `arco_era5`.

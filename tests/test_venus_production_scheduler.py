@@ -29,7 +29,7 @@ def test_direct_production_defaults_and_year_mapping():
         set -euo pipefail
         HOME=/tmp/ehb-test-home
         source {SETTINGS!s}
-        printf '%s\\n' "$DATA_SOURCE" "$REGION" "$START_YEAR" "$END_YEAR"
+        printf '%s\\n' "$DATA_SOURCE" "$RUN_GROUP" "$RUN_ID" "$REGION" "$START_YEAR" "$END_YEAR"
         ehb_production_year_for_task 85
         """
     )
@@ -37,11 +37,31 @@ def test_direct_production_defaults_and_year_mapping():
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.splitlines() == [
         "arco_era5",
+        "pnw",
+        "pnw_hotz_surface_700hPa_1940_2025_second_attempt",
         "pnw_hotz",
         "1940",
         "2025",
         "2025",
     ]
+
+
+def test_existing_nonempty_year_is_complete(tmp_path):
+    annual_dir = tmp_path / "annual"
+    annual_dir.mkdir()
+    (annual_dir / "heat_budget_1941.nc").write_bytes(b"netcdf")
+    completed = _run_bash(
+        f"""
+        set -euo pipefail
+        HOME=/tmp/ehb-test-home
+        PRODUCTION_OUTPUT_DIR={tmp_path!s}
+        source {SETTINGS!s}
+        ehb_year_is_complete 1941
+        ! ehb_year_is_complete 1942
+        """
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_direct_production_rejects_staged_cache_source():
