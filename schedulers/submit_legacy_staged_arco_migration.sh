@@ -43,7 +43,18 @@ if [[ -z "${TASK_RANGE}" ]]; then
   TASK_RANGE="0-${LAST_TASK}%${MAX_PARALLEL}"
 fi
 if [[ ! "${TASK_RANGE}" =~ ^[0-9]+-[0-9]+(%[0-9]+)?$ ]]; then
-  echo "[error] TASK_RANGE must use PBS array syntax such as 0-0, 1-85, or 0-85%5." >&2
+  echo "[error] TASK_RANGE must use PBS array syntax such as 0-1, 2-85, or 0-85%5." >&2
+  exit 2
+fi
+TASK_RANGE_WITHOUT_LIMIT="${TASK_RANGE%%%*}"
+FIRST_SUBMITTED_TASK="${TASK_RANGE_WITHOUT_LIMIT%-*}"
+LAST_SUBMITTED_TASK="${TASK_RANGE_WITHOUT_LIMIT#*-}"
+if (( FIRST_SUBMITTED_TASK >= LAST_SUBMITTED_TASK )); then
+  echo "[error] Venus/OpenPBS requires TASK_RANGE to contain at least two indices." >&2
+  exit 2
+fi
+if (( LAST_SUBMITTED_TASK > LAST_TASK )); then
+  echo "[error] TASK_RANGE ends after the campaign's last task index ${LAST_TASK}." >&2
   exit 2
 fi
 

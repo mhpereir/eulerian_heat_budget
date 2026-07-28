@@ -166,7 +166,8 @@ The migrated campaign intentionally has no `production_run.json`. Its
 provenance is recorded in `campaign.json`, yearly success markers, shard
 manifests, PBS logs, and `consolidation.json`.
 
-Set the ordinary campaign variables plus `LEGACY_CACHE_ROOT`. For example, a
-single-year smoke migration can use `TASK_RANGE=0-0` and
-`SUBMIT_CONSOLIDATION=0`. After validation, submit the remaining task range
-with consolidation enabled. Never point the destination at the legacy source.
+Set the ordinary campaign variables plus `LEGACY_CACHE_ROOT`. Venus/OpenPBS
+does not accept a one-element array, so a small smoke migration can use
+`TASK_RANGE=0-1` and `SUBMIT_CONSOLIDATION=0`. After validating both years,
+submit the remaining task range with consolidation enabled. Never point the
+destination at the legacy source.

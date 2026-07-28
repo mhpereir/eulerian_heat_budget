@@ -1393,7 +1393,7 @@ esac
     assert "consolidation_job_id=301.venus" in result.stdout
 
 
-def test_legacy_migration_single_year_uses_one_element_array(tmp_path):
+def test_legacy_migration_rejects_one_element_array(tmp_path):
     scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -1442,10 +1442,9 @@ echo "302[].venus"
         text=True,
         capture_output=True,
     )
-    assert result.returncode == 0, result.stderr
-    submitted = qsub_log.read_text(encoding="utf-8")
-    assert "-J 0-0" in submitted
-    assert "schedule_consolidate_legacy_staged_arco_cache.sh" not in submitted
+    assert result.returncode != 0
+    assert "at least two indices" in result.stderr
+    assert not qsub_log.exists()
 
 
 def test_run_budget_production_submission_uses_external_paths(tmp_path):
