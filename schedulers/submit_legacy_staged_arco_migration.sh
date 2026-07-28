@@ -42,8 +42,8 @@ LAST_TASK=$((TASK_COUNT - 1))
 if [[ -z "${TASK_RANGE}" ]]; then
   TASK_RANGE="0-${LAST_TASK}%${MAX_PARALLEL}"
 fi
-if [[ ! "${TASK_RANGE}" =~ ^[0-9]+(-[0-9]+)?(%[0-9]+)?$ ]]; then
-  echo "[error] TASK_RANGE must use PBS array syntax such as 0, 1-85, or 0-85%5." >&2
+if [[ ! "${TASK_RANGE}" =~ ^[0-9]+-[0-9]+(%[0-9]+)?$ ]]; then
+  echo "[error] TASK_RANGE must use PBS array syntax such as 0-0, 1-85, or 0-85%5." >&2
   exit 2
 fi
 

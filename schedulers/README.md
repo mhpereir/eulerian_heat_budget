@@ -167,6 +167,6 @@ provenance is recorded in `campaign.json`, yearly success markers, shard
 manifests, PBS logs, and `consolidation.json`.
 
 Set the ordinary campaign variables plus `LEGACY_CACHE_ROOT`. For example, a
-single-year smoke migration can use `TASK_RANGE=0` and
+single-year smoke migration can use `TASK_RANGE=0-0` and
 `SUBMIT_CONSOLIDATION=0`. After validation, submit the remaining task range
 with consolidation enabled. Never point the destination at the legacy source.
