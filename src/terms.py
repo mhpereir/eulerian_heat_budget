@@ -698,6 +698,45 @@ def compute_T_domain_average(T: xr.DataArray,
 
 ## benchmark terms for testing
 
+def _wall_centered_benchmark_flux(
+    flux: xr.DataArray,
+    *,
+    dim: str,
+    boundary: float,
+) -> xr.DataArray:
+    """Interpolate a cell-centered ERA5 flux to a geometric domain wall."""
+    coordinate = np.asarray(flux[dim].values, dtype=float)
+    lower = coordinate[coordinate < boundary]
+    upper = coordinate[coordinate > boundary]
+    if lower.size == 0 or upper.size == 0:
+        raise ValueError(
+            f"Cannot center {flux.name!r} at {dim}={boundary:g}: "
+            "both domain and halo centers are required."
+        )
+
+    lower_center = float(lower.max())
+    upper_center = float(upper.min())
+    lower_distance = boundary - lower_center
+    upper_distance = upper_center - boundary
+    tolerance = max(abs(lower_distance), abs(upper_distance), 1.0) * 1.0e-10
+    if not np.isclose(lower_distance, upper_distance, rtol=0.0, atol=tolerance):
+        raise ValueError(
+            f"Cannot average {flux.name!r} at {dim}={boundary:g}: adjacent "
+            f"centers {lower_center:g} and {upper_center:g} do not bracket "
+            "the wall symmetrically."
+        )
+
+    centered = 0.5 * (
+        flux.sel({dim: lower_center}) + flux.sel({dim: upper_center})
+    )
+    centered.attrs = dict(flux.attrs)
+    centered.attrs["wall_centering"] = (
+        f"arithmetic mean of adjacent centers at {lower_center:g} and "
+        f"{upper_center:g}"
+    )
+    return centered
+
+
 def compute_advective_benchmark_fluxes(benchmark_ds: xr.Dataset,
                                        ds_domain: xr.Dataset,
                                        DomainSpecs: DomainSpec) -> tuple[xr.Dataset, xr.Dataset]:
@@ -708,11 +747,31 @@ def compute_advective_benchmark_fluxes(benchmark_ds: xr.Dataset,
 
     dl = get_boundary_line_elements(ds_domain)
 
-    north_face_mass_flux = (dl['dl_north'] * benchmark_ds['Fy_mass'].sel(lat=DomainSpecs.lat_max, method='nearest') ).sum(dim='lon') * config.g
-    south_face_mass_flux = (dl['dl_south'] * benchmark_ds['Fy_mass'].sel(lat=DomainSpecs.lat_min, method='nearest') ).sum(dim='lon') * config.g
+    north_mass = _wall_centered_benchmark_flux(
+        benchmark_ds["Fy_mass"],
+        dim="lat",
+        boundary=DomainSpecs.lat_max,
+    )
+    south_mass = _wall_centered_benchmark_flux(
+        benchmark_ds["Fy_mass"],
+        dim="lat",
+        boundary=DomainSpecs.lat_min,
+    )
+    east_mass = _wall_centered_benchmark_flux(
+        benchmark_ds["Fx_mass"],
+        dim="lon",
+        boundary=DomainSpecs.lon_max,
+    )
+    west_mass = _wall_centered_benchmark_flux(
+        benchmark_ds["Fx_mass"],
+        dim="lon",
+        boundary=DomainSpecs.lon_min,
+    )
 
-    east_face_mass_flux = (dl['dl_east'] * benchmark_ds['Fx_mass'].sel(lon=DomainSpecs.lon_max, method='nearest') ).sum(dim='lat') * config.g
-    west_face_mass_flux = (dl['dl_west'] * benchmark_ds['Fx_mass'].sel(lon=DomainSpecs.lon_min, method='nearest') ).sum(dim='lat') * config.g
+    north_face_mass_flux = (dl['dl_north'] * north_mass).sum(dim='lon') * config.g
+    south_face_mass_flux = (dl['dl_south'] * south_mass).sum(dim='lon') * config.g
+    east_face_mass_flux = (dl['dl_east'] * east_mass).sum(dim='lat') * config.g
+    west_face_mass_flux = (dl['dl_west'] * west_mass).sum(dim='lat') * config.g
 
     north_face_mass_flux = weights._drop_if_present(north_face_mass_flux, ["lat", "lat_start", "lat_end", "lat_cell_id"])
     south_face_mass_flux = weights._drop_if_present(south_face_mass_flux, ["lat", "lat_start", "lat_end", "lat_cell_id"])
@@ -736,11 +795,31 @@ def compute_advective_benchmark_fluxes(benchmark_ds: xr.Dataset,
     }) 
 
 
-    north_face_heat_flux = (dl['dl_north'] * benchmark_ds['Fy_heat'].sel(lat=DomainSpecs.lat_max, method='nearest') ).sum(dim='lon') * config.g / config.cp
-    south_face_heat_flux = (dl['dl_south'] * benchmark_ds['Fy_heat'].sel(lat=DomainSpecs.lat_min, method='nearest') ).sum(dim='lon') * config.g / config.cp
+    north_heat = _wall_centered_benchmark_flux(
+        benchmark_ds["Fy_heat"],
+        dim="lat",
+        boundary=DomainSpecs.lat_max,
+    )
+    south_heat = _wall_centered_benchmark_flux(
+        benchmark_ds["Fy_heat"],
+        dim="lat",
+        boundary=DomainSpecs.lat_min,
+    )
+    east_heat = _wall_centered_benchmark_flux(
+        benchmark_ds["Fx_heat"],
+        dim="lon",
+        boundary=DomainSpecs.lon_max,
+    )
+    west_heat = _wall_centered_benchmark_flux(
+        benchmark_ds["Fx_heat"],
+        dim="lon",
+        boundary=DomainSpecs.lon_min,
+    )
 
-    east_face_heat_flux = (dl['dl_east'] * benchmark_ds['Fx_heat'].sel(lon=DomainSpecs.lon_max, method='nearest') ).sum(dim='lat') * config.g / config.cp
-    west_face_heat_flux = (dl['dl_west'] * benchmark_ds['Fx_heat'].sel(lon=DomainSpecs.lon_min, method='nearest') ).sum(dim='lat') * config.g / config.cp
+    north_face_heat_flux = (dl['dl_north'] * north_heat).sum(dim='lon') * config.g / config.cp
+    south_face_heat_flux = (dl['dl_south'] * south_heat).sum(dim='lon') * config.g / config.cp
+    east_face_heat_flux = (dl['dl_east'] * east_heat).sum(dim='lat') * config.g / config.cp
+    west_face_heat_flux = (dl['dl_west'] * west_heat).sum(dim='lat') * config.g / config.cp
 
     north_face_heat_flux = weights._drop_if_present(north_face_heat_flux, ["lat", "lat_start", "lat_end", "lat_cell_id"])
     south_face_heat_flux = weights._drop_if_present(south_face_heat_flux, ["lat", "lat_start", "lat_end", "lat_cell_id"])
@@ -900,7 +979,7 @@ def require_full_column_benchmark_domain(
     """Reject ERA5 full-column diagnostics for a partial atmospheric domain."""
     if DomainSpecs.zg_bottom != "surface_pressure":
         raise ValueError(
-            "ERA5 vithe/viec/vithed benchmarks require "
+            "ERA5 vithe/viec/vithed/vimad benchmarks require "
             "zg_bottom='surface_pressure'."
         )
     required_top_pressure = config.FULL_COLUMN_BENCHMARK_TOP_PRESSURE_PA
@@ -911,7 +990,7 @@ def require_full_column_benchmark_domain(
         atol=1.0e-6,
     ):
         raise ValueError(
-            "ERA5 vithe/viec/vithed benchmarks require a full-atmosphere "
+            "ERA5 vithe/viec/vithed/vimad benchmarks require a full-atmosphere "
             "pressure-level domain with zg_top_pressure = "
             f"{required_top_pressure:g} Pa (1 hPa)."
         )
@@ -929,7 +1008,7 @@ def compute_full_column_benchmark_terms(
     benchmark_heat_flux_net: xr.DataArray,
 ) -> xr.Dataset:
     """Return ERA5 full-column heating benchmarks on the budget output axis."""
-    required = ("vithe", "viec", "vithed")
+    required = ("vithe", "viec", "vithed", "vimad")
     missing = [name for name in required if name not in benchmark_ds]
     if missing:
         raise ValueError(
@@ -964,6 +1043,7 @@ def compute_full_column_benchmark_terms(
     benchmark_vithe_full = _area_integral("vithe")
     benchmark_viec_full = _area_integral("viec")
     benchmark_vithed_full = _area_integral("vithed")
+    benchmark_vimad_full = _area_integral("vimad")
 
     conversion = config.g / config.cp
     thermal_content_full = (
@@ -987,6 +1067,7 @@ def compute_full_column_benchmark_terms(
     benchmark_vithe = benchmark_vithe_full.sel(time=output_time)
     benchmark_viec = benchmark_viec_full.sel(time=output_time)
     benchmark_vithed = benchmark_vithed_full.sel(time=output_time)
+    benchmark_vimad = benchmark_vimad_full.sel(time=output_time)
     thermal_content = thermal_content_full.sel(time=output_time)
     storage = storage_full.sel(time=output_time)
     benchmark_T_domain_avg = benchmark_T_domain_avg_full.sel(time=output_time)
@@ -1005,6 +1086,12 @@ def compute_full_column_benchmark_terms(
     heat_flux_divergence_from_walls = (
         -benchmark_heat_flux_net.sel(time=output_time)
     ).rename("benchmark_heat_flux_divergence_from_walls")
+    mass_flux_divergence = (
+        benchmark_vimad * config.g
+    ).rename("benchmark_mass_flux_divergence")
+    mass_flux_divergence_from_walls = (
+        -benchmark_mass_flux_net.sel(time=output_time)
+    ).rename("benchmark_mass_flux_divergence_from_walls")
     diabatic_physical = (
         storage + heat_flux_divergence - adiabatic
     ).rename("benchmark_diabatic_term_physical")
@@ -1025,6 +1112,7 @@ def compute_full_column_benchmark_terms(
             "benchmark_vithe": benchmark_vithe,
             "benchmark_viec": benchmark_viec,
             "benchmark_vithed": benchmark_vithed,
+            "benchmark_vimad": benchmark_vimad,
             "benchmark_thermal_content": thermal_content,
             "benchmark_storage_term": storage,
             "benchmark_T_domain_avg": benchmark_T_domain_avg,
@@ -1038,6 +1126,10 @@ def compute_full_column_benchmark_terms(
             "benchmark_heat_flux_divergence": heat_flux_divergence,
             "benchmark_heat_flux_divergence_from_walls": (
                 heat_flux_divergence_from_walls
+            ),
+            "benchmark_mass_flux_divergence": mass_flux_divergence,
+            "benchmark_mass_flux_divergence_from_walls": (
+                mass_flux_divergence_from_walls
             ),
             "benchmark_mass_residual": benchmark_mass_residual,
             "benchmark_residual_heat": benchmark_residual_heat,
@@ -1064,6 +1156,12 @@ def compute_full_column_benchmark_terms(
             "W",
             "vithed",
             162083,
+        ),
+        "benchmark_vimad": (
+            "Area integral of ERA5 divergence of vertically integrated mass flux",
+            "kg s-1",
+            "vimad",
+            162081,
         ),
     }
     for name, (long_name, units, short_name, param_id) in source_attrs.items():
@@ -1134,6 +1232,18 @@ def compute_full_column_benchmark_terms(
         "long_name": "ERA5 thermal-energy flux divergence from wall fluxes",
         "units": project_units,
         "formula": "-benchmark_heat_flux_net",
+        "sign_convention": "positive divergence out of domain",
+    }
+    out["benchmark_mass_flux_divergence"].attrs = {
+        "long_name": "ERA5 mass-flux divergence",
+        "units": "m2 Pa s-1",
+        "formula": "g * benchmark_vimad",
+        "sign_convention": "positive divergence out of domain",
+    }
+    out["benchmark_mass_flux_divergence_from_walls"].attrs = {
+        "long_name": "ERA5 mass-flux divergence from wall fluxes",
+        "units": "m2 Pa s-1",
+        "formula": "-benchmark_mass_flux_net",
         "sign_convention": "positive divergence out of domain",
     }
     out["benchmark_mass_residual"].attrs.update(

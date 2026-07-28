@@ -151,7 +151,7 @@ in reconstructed mass transport.
 ## 3. ERA5 full-column variables
 
 ERA5 lists these fields in Table 6, "surface and single level parameters:
-vertical integrals and total column: instantaneous." All three are available
+vertical integrals and total column: instantaneous." All four are available
 for analysis and forecast records. This phase must retrieve the analysis
 record and preserve metadata that identifies the product, stream, type, grid,
 time, and parameter ID.
@@ -161,6 +161,7 @@ time, and parameter ID.
 | Thermal storage | `vertical_integral_of_thermal_energy` | `vithe` | 162060 | \(\mathrm{J\,m^{-2}}\) | \(E_T=(c_p/g)\int_0^{p_s}T\,dp\) |
 | Adiabatic conversion | `vertical_integral_of_energy_conversion` | `viec` | 162064 | \(\mathrm{W\,m^{-2}}\) | \(C_E=(1/g)\int_0^{p_s}(RT\omega/p)\,dp\) |
 | Heat-flux divergence | `vertical_integral_of_divergence_of_thermal_energy_flux` | `vithed` | 162083 | \(\mathrm{W\,m^{-2}}\) | \(\nabla_H\boldsymbol{\cdot}[(c_p/g)\int_0^{p_s}T\mathbf v\,dp]\) |
+| Mass-flux divergence | `vertical_integral_of_divergence_of_mass_flux` | `vimad` | 162081 | \(\mathrm{kg\,m^{-2}\,s^{-1}}\) | \(\nabla_H\boldsymbol{\cdot}[(1/g)\int_0^{p_s}\mathbf v\,dp]\) |
 
 The explicit integral definitions are documented in the ERA-Interim archive
 and use the same ECMWF local parameter family retained by ERA5. The live ERA5
@@ -486,6 +487,7 @@ needed to reproduce the comparison:
 | `benchmark_vithe` | Area integral of `vithe` | J |
 | `benchmark_viec` | Area integral of `viec` | W |
 | `benchmark_vithed` | Area integral of `vithed` | W |
+| `benchmark_vimad` | Area integral of `vimad` | \(\mathrm{kg\,s^{-1}}\) |
 | `benchmark_thermal_content` | \((g/c_p)\int_A\mathtt{vithe}\,dA\) | \(\mathrm{K\,m^2\,Pa}\) |
 | `benchmark_storage_term` | Centered tendency of benchmark thermal content | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
 | `benchmark_T_domain_avg` | ERA5 thermal content divided by the exact surface-pressure volume | K |
@@ -494,6 +496,8 @@ needed to reproduce the comparison:
 | `benchmark_adiabatic_term` | \((g/c_p)\int_A\mathtt{viec}\,dA\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
 | `benchmark_heat_flux_divergence` | \((g/c_p)\int_A\mathtt{vithed}\,dA\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
 | `benchmark_heat_flux_divergence_from_walls` | Negative of the inward-positive sum of ERA5 wall heat transports | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
+| `benchmark_mass_flux_divergence` | \(g\int_A\mathtt{vimad}\,dA\) | \(\mathrm{m^2\,Pa\,s^{-1}}\) |
+| `benchmark_mass_flux_divergence_from_walls` | Negative of the inward-positive sum of ERA5 wall mass transports | \(\mathrm{m^2\,Pa\,s^{-1}}\) |
 | `benchmark_mass_residual` | \(\mathcal{M}_{\mathrm{ERA5}}-(dV/dt)_{\mathrm{ERA5}}\) | \(\mathrm{m^2\,Pa\,s^{-1}}\) |
 | `benchmark_residual_heat` | \(\langle T\rangle\delta\mathcal{M}_{\mathrm{ERA5}}\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
 | `benchmark_diabatic_term_physical` | \(\mathcal{D}_{\mathrm{ERA5,res}}\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
@@ -505,8 +509,10 @@ Figure 6 contains aligned time series and one-to-one scatter plots for
 adiabatic conversion, the definition-matched workflow diabatic residual, and
 the secondary physical full-temperature residual.
 
-Figure 7 compares two independent ERA5 representations of horizontal
-thermal-energy divergence:
+Figure 7 compares two independent ERA5 representations of horizontal heat
+and mass divergence. The ERA5 component flux at each geometric wall is the
+arithmetic mean of the adjacent domain-center and halo-center values. The
+four centered wall transports are then summed with an outward-positive sign:
 
 \[
 \mathcal{F}_{T,\mathrm{walls}}
@@ -516,9 +522,23 @@ thermal-energy divergence:
   = \frac{g}{c_p}\int_A\mathtt{vithed}\,dA.
 \]
 
-Both plotted quantities are positive out of the domain. This direct comparison
-tests whether the divergence archived as `vithed` is consistent with the sum
-of the four boundary transports used by the existing advection benchmark.
+The analogous mass comparison is
+
+\[
+\mathcal{F}_{M,\mathrm{walls}}
+  = -\mathcal{M}_{\mathrm{ERA5}}
+\quad\text{and}\quad
+\mathcal{F}_{M,\mathrm{vimad}}
+  = g\int_A\mathtt{vimad}\,dA.
+\]
+
+All four plotted quantities are positive out of the domain. These intra-ERA5
+one-to-one comparisons test the wall-centering and finite-domain integration
+independently of the pressure-level calculation. Exact equality is not
+assumed because ERA5 documents that public regular-grid fields are
+interpolated from the native model grid, so a regridded divergence need not
+obey the discrete divergence theorem exactly with separately regridded
+component fluxes.
 
 Figure 8 compares the complete storage tendency and its volume-average
 decomposition:
@@ -671,7 +691,8 @@ Implementation status:
 
 | Phase | Status |
 |---|---|
-| Add shared ERA5 mappings and optional retrieval for `vithe`, `viec`, and `vithed` | Implemented |
+| Add shared ERA5 mappings and optional retrieval for `vithe`, `viec`, `vithed`, and `vimad` | Implemented |
+| Center ERA5 mass and heat component fluxes by averaging adjacent domain and halo cells at each wall | Implemented with analytic tests |
 | Store full-horizontal heating fields in optional staged benchmark tiles and reject old contracts | Implemented |
 | Convert storage, adiabatic conversion, and both diabatic definitions with explicit units and signs | Implemented with analytic tests |
 | Retain reduced source variables and derived comparison series in NetCDF-ready output | Implemented with an end-to-end synthetic test |

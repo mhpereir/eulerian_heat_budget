@@ -246,6 +246,7 @@ def _canonical_dataset() -> xr.Dataset:
             "vithe": xr.DataArray(np.full(shape_3d, 50.0), dims=("time", "lat", "lon")),
             "viec": xr.DataArray(np.full(shape_3d, 60.0), dims=("time", "lat", "lon")),
             "vithed": xr.DataArray(np.full(shape_3d, 70.0), dims=("time", "lat", "lon")),
+            "vimad": xr.DataArray(np.full(shape_3d, 80.0), dims=("time", "lat", "lon")),
         },
         coords={"time": time, "level": level, "lat": lat, "lon": lon},
     )
@@ -402,6 +403,35 @@ def test_only_benchmark_tile_id_tracks_benchmark_variable_contract(monkeypatch):
         request,
         include_benchmark_variables=True,
     ) != benchmark_before
+
+
+def test_cache_load_ignores_tiles_from_older_benchmark_contract(
+    monkeypatch,
+    tmp_path,
+):
+    _patch_to_zarr_creates_store(monkeypatch)
+    source_cfg = _source_cfg()
+    tile_path, tile = _write_indexed_tile(
+        tmp_path,
+        source_cfg,
+        _request(),
+        include_benchmark_variables=True,
+    )
+    _patch_open_zarr_from_registry(monkeypatch, {str(tile_path): tile})
+
+    monkeypatch.setattr(
+        variables,
+        "BENCHMARK_VAR_NAMES",
+        (*variables.BENCHMARK_VAR_NAMES, "future_benchmark"),
+    )
+
+    with pytest.raises(cache.OfflineCoverageError, match="No staged ARCO cache tiles"):
+        cache.load_cache_dataset(
+            tmp_path,
+            _staged_source_cfg(staged_cache_root=str(tmp_path)),
+            _request(),
+            include_benchmark_variables=True,
+        )
 
 
 def test_write_tile_removes_partial_tmp_store_on_failure(monkeypatch, tmp_path):
