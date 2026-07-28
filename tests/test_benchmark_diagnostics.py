@@ -324,6 +324,17 @@ def test_compute_full_column_benchmark_terms_matches_equations():
         expected_physical + 150.0,
     )
     assert out["benchmark_vithe"].attrs["source_param_id"] == 162060
+    assert set(out["benchmark_T_domain_avg"].attrs) == {
+        "long_name",
+        "units",
+        "formula",
+    }
+    assert set(out["benchmark_heat_flux_divergence_from_walls"].attrs) == {
+        "long_name",
+        "units",
+        "formula",
+        "sign_convention",
+    }
     assert out["benchmark_diabatic_term"].attrs["formula"] == (
         "benchmark_diabatic_term_physical + benchmark_residual_heat"
     )

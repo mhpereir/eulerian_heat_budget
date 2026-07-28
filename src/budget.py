@@ -119,13 +119,11 @@ def calculate_budget(
     volume_change_storage_term = (
         T_domain_avg.sel(time=d_dt_T["time"]) * dV_dt
     ).rename("volume_change_storage_term")
-    volume_change_storage_term.attrs.update(
-        {
-            "long_name": "Calculated volume-change storage tendency",
-            "units": "K m2 Pa s-1",
-            "formula": "T_domain_avg * dV_dt",
-        }
-    )
+    volume_change_storage_term.attrs = {
+        "long_name": "Calculated volume-change storage tendency",
+        "units": "K m2 Pa s-1",
+        "formula": "T_domain_avg * dV_dt",
+    }
 
     print('\t Preparing advective term')
     #logic to distinguish between normal calculation and test with constant T field 
