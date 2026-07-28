@@ -922,9 +922,11 @@ def compute_full_column_benchmark_terms(
     horizontal_cell_areas: xr.DataArray,
     *,
     output_time: xr.DataArray,
+    domain_volume: xr.DataArray,
     T_domain_avg: xr.DataArray,
     dV_dt: xr.DataArray,
     benchmark_mass_flux_net: xr.DataArray,
+    benchmark_heat_flux_net: xr.DataArray,
 ) -> xr.Dataset:
     """Return ERA5 full-column heating benchmarks on the budget output axis."""
     required = ("vithe", "viec", "vithed")
@@ -970,18 +972,39 @@ def compute_full_column_benchmark_terms(
     storage_full = compute_time_derivative(thermal_content_full).rename(
         "benchmark_storage_term"
     )
+    benchmark_T_domain_avg_full = (
+        thermal_content_full / domain_volume
+    ).rename("benchmark_T_domain_avg")
+    benchmark_mean_temperature_storage_full = (
+        compute_time_derivative(benchmark_T_domain_avg_full)
+        * domain_volume.sel(time=output_time)
+    ).rename("benchmark_mean_temperature_storage_term")
+    benchmark_volume_change_storage_full = (
+        benchmark_T_domain_avg_full.sel(time=output_time)
+        * compute_time_derivative(domain_volume)
+    ).rename("benchmark_volume_change_storage_term")
 
     benchmark_vithe = benchmark_vithe_full.sel(time=output_time)
     benchmark_viec = benchmark_viec_full.sel(time=output_time)
     benchmark_vithed = benchmark_vithed_full.sel(time=output_time)
     thermal_content = thermal_content_full.sel(time=output_time)
     storage = storage_full.sel(time=output_time)
+    benchmark_T_domain_avg = benchmark_T_domain_avg_full.sel(time=output_time)
+    benchmark_mean_temperature_storage = (
+        benchmark_mean_temperature_storage_full.sel(time=output_time)
+    )
+    benchmark_volume_change_storage = (
+        benchmark_volume_change_storage_full.sel(time=output_time)
+    )
     adiabatic = (
         benchmark_viec * conversion
     ).rename("benchmark_adiabatic_term")
     heat_flux_divergence = (
         benchmark_vithed * conversion
     ).rename("benchmark_heat_flux_divergence")
+    heat_flux_divergence_from_walls = (
+        -benchmark_heat_flux_net.sel(time=output_time)
+    ).rename("benchmark_heat_flux_divergence_from_walls")
     diabatic_physical = (
         storage + heat_flux_divergence - adiabatic
     ).rename("benchmark_diabatic_term_physical")
@@ -1004,8 +1027,18 @@ def compute_full_column_benchmark_terms(
             "benchmark_vithed": benchmark_vithed,
             "benchmark_thermal_content": thermal_content,
             "benchmark_storage_term": storage,
+            "benchmark_T_domain_avg": benchmark_T_domain_avg,
+            "benchmark_mean_temperature_storage_term": (
+                benchmark_mean_temperature_storage
+            ),
+            "benchmark_volume_change_storage_term": (
+                benchmark_volume_change_storage
+            ),
             "benchmark_adiabatic_term": adiabatic,
             "benchmark_heat_flux_divergence": heat_flux_divergence,
+            "benchmark_heat_flux_divergence_from_walls": (
+                heat_flux_divergence_from_walls
+            ),
             "benchmark_mass_residual": benchmark_mass_residual,
             "benchmark_residual_heat": benchmark_residual_heat,
             "benchmark_diabatic_term_physical": diabatic_physical,
@@ -1060,6 +1093,33 @@ def compute_full_column_benchmark_terms(
             "formula": "centered_time_derivative(benchmark_thermal_content)",
         }
     )
+    out["benchmark_T_domain_avg"].attrs.update(
+        {
+            "long_name": "ERA5 benchmark full-column volume-mean temperature",
+            "units": "K",
+            "formula": "benchmark_thermal_content / domain_volume_true",
+        }
+    )
+    out["benchmark_mean_temperature_storage_term"].attrs.update(
+        {
+            "long_name": "ERA5 benchmark mean-temperature storage tendency",
+            "units": project_units,
+            "formula": (
+                "domain_volume_true * "
+                "centered_time_derivative(benchmark_T_domain_avg)"
+            ),
+        }
+    )
+    out["benchmark_volume_change_storage_term"].attrs.update(
+        {
+            "long_name": "ERA5 benchmark volume-change storage tendency",
+            "units": project_units,
+            "formula": (
+                "benchmark_T_domain_avg * "
+                "centered_time_derivative(domain_volume_true)"
+            ),
+        }
+    )
     out["benchmark_adiabatic_term"].attrs.update(
         {
             "long_name": "ERA5 benchmark adiabatic pressure-work term",
@@ -1073,6 +1133,14 @@ def compute_full_column_benchmark_terms(
             "long_name": "ERA5 benchmark thermal-energy flux divergence",
             "units": project_units,
             "formula": "(g / cp) * benchmark_vithed",
+            "sign_convention": "positive divergence out of domain",
+        }
+    )
+    out["benchmark_heat_flux_divergence_from_walls"].attrs.update(
+        {
+            "long_name": "ERA5 thermal-energy flux divergence from wall fluxes",
+            "units": project_units,
+            "formula": "-benchmark_heat_flux_net",
             "sign_convention": "positive divergence out of domain",
         }
     )

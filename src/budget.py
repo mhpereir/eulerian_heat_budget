@@ -116,6 +116,16 @@ def calculate_budget(
     dT_dt        = dT_dt.sel(time=d_dt_T['time'])
 
     dT_dt_2 = d_dt_T - T_domain_avg.sel(time=d_dt_T['time']) * dV_dt
+    volume_change_storage_term = (
+        T_domain_avg.sel(time=d_dt_T["time"]) * dV_dt
+    ).rename("volume_change_storage_term")
+    volume_change_storage_term.attrs.update(
+        {
+            "long_name": "Calculated volume-change storage tendency",
+            "units": "K m2 Pa s-1",
+            "formula": "T_domain_avg * dV_dt",
+        }
+    )
 
     print('\t Preparing advective term')
     #logic to distinguish between normal calculation and test with constant T field 
@@ -279,6 +289,7 @@ def calculate_budget(
             'd_dt_T': d_dt_T.sel(time=d_dt_T['time']),
             'dT_dt': dT_dt.sel(time=d_dt_T['time']),
             'dT_dt_2': dT_dt_2.sel(time=d_dt_T['time']),
+            'volume_change_storage_term': volume_change_storage_term,
             'dV_dt': dV_dt.sel(time=d_dt_T['time']),
             'dV_dt_true': dV_dt_true.sel(time=d_dt_T['time']),
             'advection_error': advection_error.sel(time=d_dt_T['time']),
@@ -317,10 +328,14 @@ def calculate_budget(
             benchmark_column_ds,
             ds_horizontal_cell_areas,
             output_time=out["time"],
+            domain_volume=domain_volume_true,
             T_domain_avg=out["T_domain_avg"],
             dV_dt=out["dV_dt_true"],
             benchmark_mass_flux_net=benchmark_diagnostic_totals[
                 "benchmark_mass_flux_net"
+            ],
+            benchmark_heat_flux_net=benchmark_diagnostic_totals[
+                "benchmark_heat_flux_net"
             ],
         )
         calculated_diabatic_physical = (
