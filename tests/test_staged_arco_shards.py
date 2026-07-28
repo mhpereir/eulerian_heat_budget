@@ -17,6 +17,7 @@ from src.specs import DataSourceConfig, DomainRequest, SurfaceBehaviour
 from src_arco import cache, selection
 from src_arco.campaign import Campaign, CampaignConfigError, initialize_campaign
 from src_arco.consolidation import consolidate, finalize_year_shard, year_shard_root
+from src_arco.legacy_migration import migrate_legacy_year
 from src_arco.shard_artifacts import (
     SUCCESS_MARKER_NAME,
     ShardValidationError,
@@ -232,6 +233,49 @@ def test_campaign_initialization_rejects_legacy_cache_root(tmp_path):
 
     with pytest.raises(CampaignConfigError, match="legacy cache root"):
         initialize_campaign(root, campaign)
+
+
+def test_legacy_migration_preserves_dataset_through_consolidation(tmp_path):
+    campaign = _campaign()
+    legacy_root = tmp_path / "legacy"
+    request = _request()
+    source_cfg = _source_cfg()
+    tile = cache.build_arco_cache_tile(
+        _canonical_dataset(),
+        request,
+        include_benchmark_variables=False,
+    )
+    cache.write_tile(
+        legacy_root,
+        tile,
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+
+    campaign_root = tmp_path / campaign.campaign_id
+    initialize_campaign(campaign_root, campaign)
+    migrate_legacy_year(
+        legacy_root,
+        campaign_root,
+        1940,
+        git_commit="a" * 40,
+    )
+    summary = consolidate(campaign_root)
+
+    assert summary["year_count"] == 1
+    assert summary["tile_count"] == 1
+    migrated = cache.load_cache_dataset(
+        campaign_root,
+        _staged_cfg(campaign_root),
+        request,
+    )
+    legacy = cache.load_cache_dataset(
+        legacy_root,
+        _staged_cfg(legacy_root),
+        request,
+    )
+    xrt.assert_identical(migrated, legacy)
 
 
 def test_consolidated_shard_preserves_dataset_and_budget_physics(tmp_path):

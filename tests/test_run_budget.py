@@ -1325,6 +1325,74 @@ esac
     assert submission["submitted_at"]
 
 
+def test_legacy_migration_submission_links_consolidation_to_array(tmp_path):
+    scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_git = fake_bin / "git"
+    _write_fake_production_git(fake_git)
+    fake_qsub = fake_bin / "qsub"
+    fake_qsub.write_text(
+        """#!/bin/bash
+printf '%s\\n' "$*" >> "${QSUB_LOG:?}"
+case "$*" in
+  *schedule_migrate_legacy_staged_arco_cache.sh) echo "300[].venus" ;;
+  *schedule_consolidate_legacy_staged_arco_cache.sh) echo "301.venus" ;;
+  *) exit 2 ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    fake_qsub.chmod(0o755)
+
+    workspace_root = tmp_path / "eulerian-heat-budget"
+    project_root = workspace_root / "production" / "eulerian_heat_budget-test"
+    project_root.mkdir(parents=True)
+    legacy_root = workspace_root / "campaign-data" / "staged-zarr" / "legacy"
+    (legacy_root / "tiles").mkdir(parents=True)
+    (legacy_root / "cache.sqlite").touch()
+    qsub_log = tmp_path / "qsub.log"
+    log_dir = workspace_root / "campaign-data" / "logs" / "pnw_bartusek" / "migration"
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "PROJECT_ROOT": str(project_root),
+            "EHB_WORKSPACE_ROOT": str(workspace_root),
+            "SCHEDULER_DIR": str(scheduler_dir),
+            "PRODUCTION_RUN_CLI_SETTINGS": str(
+                scheduler_dir / "production_run_cli_settings.sh"
+            ),
+            "QSUB_BIN": str(fake_qsub),
+            "QSUB_LOG": str(qsub_log),
+            "LEGACY_CACHE_ROOT": str(legacy_root),
+            "REGION": "pnw_bartusek",
+            "CAMPAIGN_ID": "pnw-bartusek-surface-700hpa-1940-2025",
+            "LOG_DIR": str(log_dir),
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(scheduler_dir / "submit_legacy_staged_arco_migration.sh")],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    submitted = qsub_log.read_text(encoding="utf-8").splitlines()
+    assert len(submitted) == 2
+    assert "-J 0-85%5" in submitted[0]
+    assert "schedule_migrate_legacy_staged_arco_cache.sh" in submitted[0]
+    assert f"LEGACY_CACHE_ROOT={legacy_root}" in submitted[0]
+    assert "-W depend=afterok:300[].venus" in submitted[1]
+    assert "schedule_consolidate_legacy_staged_arco_cache.sh" in submitted[1]
+    assert "migration_job_id=300[].venus" in result.stdout
+    assert "consolidation_job_id=301.venus" in result.stdout
+
+
 def test_run_budget_production_submission_uses_external_paths(tmp_path):
     scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
     fake_bin = tmp_path / "bin"

@@ -147,3 +147,26 @@ PROJECT_ROOT=/home/USER/eulerian-heat-budget/production/eulerian_heat_budget-COM
 
 The default result directory is
 `campaign-data/run-budget/<region>/<run-id>/`.
+
+## Migrate a legacy indexed cache
+
+Use `submit_legacy_staged_arco_migration.sh` when an existing legacy
+`cache.sqlite` and `tiles/` collection must be reorganized into yearly shards
+without downloading the ARCO data again. The migration:
+
+- treats the legacy cache as read-only;
+- creates hard links for tile files, so source and destination must be on the
+  same filesystem;
+- creates one private SQLite catalog per year;
+- runs the ordinary coverage, campaign, checksum, and Zarr validation;
+- writes `shard-manifest.json` and `_SUCCESS.json` last; and
+- optionally runs the ordinary campaign consolidation as a dependent job.
+
+The migrated campaign intentionally has no `production_run.json`. Its
+provenance is recorded in `campaign.json`, yearly success markers, shard
+manifests, PBS logs, and `consolidation.json`.
+
+Set the ordinary campaign variables plus `LEGACY_CACHE_ROOT`. For example, a
+single-year smoke migration can use `TASK_RANGE=0` and
+`SUBMIT_CONSOLIDATION=0`. After validation, submit the remaining task range
+with consolidation enabled. Never point the destination at the legacy source.
