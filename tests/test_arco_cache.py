@@ -243,6 +243,9 @@ def _canonical_dataset() -> xr.Dataset:
             "Fy_heat": xr.DataArray(np.full(shape_3d, 20.0), dims=("time", "lat", "lon")),
             "Fx_mass": xr.DataArray(np.full(shape_3d, 30.0), dims=("time", "lat", "lon")),
             "Fy_mass": xr.DataArray(np.full(shape_3d, 40.0), dims=("time", "lat", "lon")),
+            "vithe": xr.DataArray(np.full(shape_3d, 50.0), dims=("time", "lat", "lon")),
+            "viec": xr.DataArray(np.full(shape_3d, 60.0), dims=("time", "lat", "lon")),
+            "vithed": xr.DataArray(np.full(shape_3d, 70.0), dims=("time", "lat", "lon")),
         },
         coords={"time": time, "level": level, "lat": lat, "lon": lon},
     )
@@ -267,6 +270,8 @@ def test_build_arco_cache_tile_stores_wall_only_velocities():
     assert set(tile["v_wall"]["v_lon"].values) == {12.0, 13.0, 14.0}
     assert tile["Fx_heat"].dims == ("time", "u_lat", "u_lon")
     assert tile["Fy_heat"].dims == ("time", "v_lat", "v_lon")
+    for name in variables.COLUMN_BENCHMARK_VAR_NAMES:
+        assert tile[name].dims == ("time", "lat", "lon")
     assert "p_start" in tile.coords
     assert "Fx_heat" in tile
 
@@ -301,6 +306,9 @@ def test_reconstruct_benchmark_dataset_expands_compact_shell():
 
     for name in ("Fx_heat", "Fy_heat", "Fx_mass", "Fy_mass"):
         assert out[name].dims == ("time", "lat", "lon")
+    for name in variables.COLUMN_BENCHMARK_VAR_NAMES:
+        assert out[name].dims == ("time", "lat", "lon")
+        xrt.assert_identical(out[name], tile[name])
 
     assert bool(out["Fx_mass"].sel(lon=11.0, lat=[2.0, 3.0, 4.0]).notnull().all())
     assert bool(out["Fx_mass"].sel(lon=13.0).isnull().all())
@@ -362,6 +370,38 @@ def test_tile_id_changes_with_vertical_request_fields():
     }
 
     assert len(ids) == 4
+
+
+def test_only_benchmark_tile_id_tracks_benchmark_variable_contract(monkeypatch):
+    source_cfg = _source_cfg()
+    request = _request()
+    core_before = cache.tile_id_for_request(
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    )
+    benchmark_before = cache.tile_id_for_request(
+        source_cfg,
+        request,
+        include_benchmark_variables=True,
+    )
+
+    monkeypatch.setattr(
+        variables,
+        "BENCHMARK_VAR_NAMES",
+        (*variables.BENCHMARK_VAR_NAMES, "future_benchmark"),
+    )
+
+    assert cache.tile_id_for_request(
+        source_cfg,
+        request,
+        include_benchmark_variables=False,
+    ) == core_before
+    assert cache.tile_id_for_request(
+        source_cfg,
+        request,
+        include_benchmark_variables=True,
+    ) != benchmark_before
 
 
 def test_write_tile_removes_partial_tmp_store_on_failure(monkeypatch, tmp_path):
@@ -1227,6 +1267,36 @@ def test_benchmark_cache_load_rejects_nonbenchmark_tile(monkeypatch, tmp_path):
     _patch_open_zarr_from_registry(monkeypatch, {str(tile_path): tile})
 
     with pytest.raises(cache.OfflineCoverageError, match="No staged ARCO cache tiles"):
+        cache.load_cache_dataset(
+            tmp_path,
+            _staged_source_cfg(staged_cache_root=str(tmp_path)),
+            _request(),
+            include_benchmark_variables=True,
+        )
+
+
+def test_benchmark_cache_load_requires_current_variable_contract(
+    monkeypatch,
+    tmp_path,
+):
+    _patch_to_zarr_creates_store(monkeypatch)
+    source_cfg = _source_cfg()
+    tile_path, tile = _write_indexed_tile(
+        tmp_path,
+        source_cfg,
+        _request(),
+        include_benchmark_variables=True,
+    )
+    old_contract_tile = tile.drop_vars(variables.COLUMN_BENCHMARK_VAR_NAMES)
+    _patch_open_zarr_from_registry(
+        monkeypatch,
+        {str(tile_path): old_contract_tile},
+    )
+
+    with pytest.raises(
+        cache.OfflineCoverageError,
+        match="older variable contract and must be restaged",
+    ):
         cache.load_cache_dataset(
             tmp_path,
             _staged_source_cfg(staged_cache_root=str(tmp_path)),

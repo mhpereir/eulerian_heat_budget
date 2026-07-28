@@ -205,6 +205,8 @@ def main(args=None) -> None:
     if args is None:
         args = cli.parse_args()
     request = build_request_from_cli(args)
+    if args.include_benchmark_variables:
+        terms.require_full_column_benchmark_domain(request)
     SurfaceSpecs = build_surface_behaviour_from_cli(args)
     diagnostic_plots, constant_temperature_test = build_runtime_controls_from_cli(args)
     production_options = build_production_options_from_cli(args)

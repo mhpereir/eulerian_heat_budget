@@ -9,6 +9,11 @@ diabatic residual terms.
 
 The first implementation phase is deliberately restricted to diagnostics that
 ERA5 publishes as **instantaneous, full-column, analysis-compatible fields**.
+The code-side pressure-level domain must extend from the surface-pressure
+boundary to 1 hPa, the highest pressure level in the ARCO ERA5 source used by
+this project. The ERA5 vertically integrated fields include the small
+model-top cap above 1 hPa, so that irreducible coverage difference must remain
+visible in interpretation and provenance.
 The three new benchmark variables are:
 
 - `vithe`: vertical integral of thermal energy
@@ -457,14 +462,45 @@ must be matched explicitly before comparison with analyzed states.
 For the instantaneous full-column benchmark:
 
 1. Retrieve hourly analysis fields at identical valid times.
-2. Use the project's centered finite difference for `vithe`.
-3. Compare only on the centered output time axis.
-4. Evaluate one-hour and coarsened two-hour or three-hour calculations from
+2. Require `zg_bottom='surface_pressure'` and `zg_top_pressure=100 Pa`
+   (1 hPa).
+3. Record that `vithe`, `viec`, and `vithed` include the model-top cap above
+   the pressure-level calculation.
+4. Use the project's centered finite difference for `vithe`.
+5. Compare only on the centered output time axis.
+6. Evaluate one-hour and coarsened two-hour or three-hour calculations from
    the same pilot window.
-5. Treat convergence with timestep as a required diagnostic. Do not silently
+7. Treat convergence with timestep as a required diagnostic. Do not silently
    tune a tolerance to absorb time-sampling error.
 
-## 8. Hard-data validation contract
+## 8. Implemented optional output contract
+
+`--include-benchmark-variables` is an add-on. Runs without the flag retain the
+ordinary production retrieval, cache identity, calculation, and output
+contract. With the flag enabled on a 1 hPa-to-surface-pressure domain, the
+output retains the area-integrated source diagnostics and every derived series
+needed to reproduce the comparison:
+
+| Output variable | Meaning | Units |
+|---|---|---|
+| `benchmark_vithe` | Area integral of `vithe` | J |
+| `benchmark_viec` | Area integral of `viec` | W |
+| `benchmark_vithed` | Area integral of `vithed` | W |
+| `benchmark_thermal_content` | \((g/c_p)\int_A\mathtt{vithe}\,dA\) | \(\mathrm{K\,m^2\,Pa}\) |
+| `benchmark_storage_term` | Centered tendency of benchmark thermal content | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
+| `benchmark_adiabatic_term` | \((g/c_p)\int_A\mathtt{viec}\,dA\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
+| `benchmark_heat_flux_divergence` | \((g/c_p)\int_A\mathtt{vithed}\,dA\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
+| `benchmark_mass_residual` | \(\mathcal{M}_{\mathrm{ERA5}}-(dV/dt)_{\mathrm{ERA5}}\) | \(\mathrm{m^2\,Pa\,s^{-1}}\) |
+| `benchmark_residual_heat` | \(\langle T\rangle\delta\mathcal{M}_{\mathrm{ERA5}}\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
+| `benchmark_diabatic_term_physical` | \(\mathcal{D}_{\mathrm{ERA5,res}}\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
+| `benchmark_diabatic_term` | \(\mathcal{D}_{0,\mathrm{ERA5}}\) | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
+| `calculated_diabatic_term_physical` | `diabatic_term - residual_heat` | \(\mathrm{K\,m^2\,Pa\,s^{-1}}\) |
+
+Figure 6 contains aligned time series and one-to-one scatter plots for
+adiabatic conversion, the definition-matched workflow diabatic residual, and
+the secondary physical full-temperature residual.
+
+## 9. Hard-data validation contract
 
 The benchmark implementation is not complete until the repository contains a
 small, intentional real-ERA5 regression fixture and tests that use it. Large
@@ -487,7 +523,7 @@ scripts/
 The exact paths may change during implementation review, but the separation of
 source-building code, provenance, compact data and tests is required.
 
-### 8.1 Pilot cases
+### 9.1 Pilot cases
 
 The pilot should include at least two short hourly windows:
 
@@ -500,7 +536,7 @@ Where practical, add a large-area or global case to test cancellation and
 mass closure at a different spatial scale. Case selection must be based on
 computed signal amplitudes, not on visual preference alone.
 
-### 8.2 Required provenance
+### 9.2 Required provenance
 
 The fixture manifest and README must record:
 
@@ -519,7 +555,7 @@ calculations. Expected scalar time series may be stored alongside the reduced
 fields, but tests must recompute them from the fields where doing so exercises
 the production calculation.
 
-### 8.3 Test layers
+### 9.3 Test layers
 
 | Layer | Data | Purpose | Tolerance policy |
 |---|---|---|---|
@@ -553,7 +589,7 @@ Required algebraic assertions include:
 \end{aligned}
 \]
 
-### 8.4 Deriving stringent tolerances
+### 9.4 Deriving stringent tolerances
 
 Scientific tolerances must not be guessed before the pilot. They must be
 derived from the observed distribution across all selected cases and times,
@@ -592,28 +628,26 @@ A tolerance may be relaxed only with a documented scientific explanation,
 updated pilot statistics and explicit review. A change in expected fixture
 values is a benchmark update, not routine test maintenance.
 
-## 9. Implementation sequence
+## 10. Implementation sequence
 
-1. Add shared ERA5 mappings and retrieval support for `vithe`, `viec` and
-   `vithed`, preserving analysis and instantaneous metadata.
-2. Extend staged-cache schemas and coverage validation so missing benchmark
-   variables fail before calculation.
-3. Add isolated conversion functions for storage, adiabatic conversion and
-   the ERA5 physical and workflow-defined diabatic residuals.
-4. Add output variables with formulas, units, signs, source parameter IDs and
-   time semantics in attributes, including separate code and ERA5
-   \(\delta\mathcal{M}\) and heat-scaled residuals.
-5. Run the real-data pilot and publish the complete metric table.
-6. Freeze the compact fixture, provenance and empirically justified
-   tolerances.
-7. Add plots and production diagnostics only after the numerical tests pass.
+Implementation status:
+
+| Phase | Status |
+|---|---|
+| Add shared ERA5 mappings and optional retrieval for `vithe`, `viec`, and `vithed` | Implemented |
+| Store full-horizontal heating fields in optional staged benchmark tiles and reject old contracts | Implemented |
+| Convert storage, adiabatic conversion, and both diabatic definitions with explicit units and signs | Implemented with analytic tests |
+| Retain reduced source variables and derived comparison series in NetCDF-ready output | Implemented with an end-to-end synthetic test |
+| Add Figure 6 time-series and correlation diagnostics | Implemented with file-generation tests |
+| Run the real-data pilot and publish the complete metric table | Pending |
+| Freeze a compact fixture, provenance, and empirically justified tolerances | Pending |
 
 Forecast-mean model-level diabatic tendencies remain future work. That phase
 must document the forecast initialization, step interval, accumulation or
 mean convention, valid-time alignment and any discontinuity introduced by
 joining successive forecasts.
 
-## 10. References
+## 11. References
 
 1. ECMWF, [ERA5 data documentation, especially Table 6: instantaneous
    vertical integrals and total-column

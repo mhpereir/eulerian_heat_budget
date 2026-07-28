@@ -853,6 +853,10 @@ def test_main_arco_run_loads_benchmark_with_flag(monkeypatch):
                 "arco_era5",
                 "--region",
                 "pnw_bartusek",
+                "--zg-top-pa",
+                "100",
+                "--zg-bottom",
+                "surface_pressure",
                 "--include-benchmark-variables",
             ]
         ),
@@ -882,8 +886,31 @@ def test_main_arco_run_loads_benchmark_with_flag(monkeypatch):
         "Fy_heat",
         "Fx_mass",
         "Fy_mass",
+        "vithe",
+        "viec",
+        "vithed",
     }
     assert calculate_calls[0]["benchmark_ds"] is benchmark_ds
+
+
+def test_main_benchmark_flag_rejects_partial_column_before_loading(monkeypatch):
+    args = cli.parse_args(
+        [
+            "--data-source",
+            "arco_era5",
+            "--region",
+            "pnw_bartusek",
+            "--include-benchmark-variables",
+        ]
+    )
+    monkeypatch.setattr(
+        run_budget.io,
+        "load_dataset",
+        lambda *args, **kwargs: pytest.fail("partial-column run reached data loading"),
+    )
+
+    with pytest.raises(ValueError, match="zg_top_pressure = 100 Pa"):
+        run_budget.main(args)
 
 
 def test_main_staged_cache_loads_local_benchmark_with_flag(monkeypatch):
@@ -898,6 +925,10 @@ def test_main_staged_cache_loads_local_benchmark_with_flag(monkeypatch):
                 "/tmp/ehb-cache",
                 "--region",
                 "pnw_bartusek",
+                "--zg-top-pa",
+                "100",
+                "--zg-bottom",
+                "surface_pressure",
                 "--include-benchmark-variables",
             ]
         ),

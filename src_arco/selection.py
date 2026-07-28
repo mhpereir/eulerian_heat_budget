@@ -6,6 +6,7 @@ import numpy as np
 import xarray as xr
 
 from src import specs
+from . import variables
 
 
 def cell_edges_from_centers(coord: xr.DataArray, name: str) -> np.ndarray:
@@ -166,7 +167,7 @@ def reconstruct_budget_dataset(tile: xr.Dataset, request: specs.DomainRequest) -
 def reconstruct_benchmark_dataset(tile: xr.Dataset, request: specs.DomainRequest) -> xr.Dataset:
     missing = [
         name
-        for name in ("Fx_heat", "Fy_heat", "Fx_mass", "Fy_mass")
+        for name in variables.BENCHMARK_VAR_NAMES
         if name not in tile
     ]
     if missing:
@@ -188,6 +189,8 @@ def reconstruct_benchmark_dataset(tile: xr.Dataset, request: specs.DomainRequest
         wall = _select_y_benchmark_wall(tile, name, indexers, v_lat)
         empty = xr.full_like(tile["sp"], np.nan).rename(name)
         out_vars[name] = wall.combine_first(empty).transpose("time", "lat", "lon")
+    for name in variables.COLUMN_BENCHMARK_VAR_NAMES:
+        out_vars[name] = tile[name].transpose("time", "lat", "lon")
 
     return xr.Dataset(out_vars, attrs=dict(tile.attrs))
 
@@ -340,6 +343,11 @@ def _add_wall_only_benchmark_variables(
             .isel(lat=v_lat_indices, lon=domain_lon_indices)
             .rename({"lat": "v_lat", "lon": "v_lon"})
         )
+
+    for name in variables.COLUMN_BENCHMARK_VAR_NAMES:
+        if name not in ds:
+            raise ValueError(f"Benchmark variable {name!r} is missing from staged source dataset.")
+        tile[name] = ds[name]
 
     return tile
 

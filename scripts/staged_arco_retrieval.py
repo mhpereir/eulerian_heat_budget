@@ -13,7 +13,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from scripts import run_budget
-from src import cli, config, io, specs
+from src import cli, config, io, specs, terms
 from src_arco import cache, variables
 
 
@@ -106,6 +106,8 @@ def main() -> None:
         raise NotImplementedError(variables.SURFACE_VARIABLE_ERROR)
 
     request = run_budget.build_request_from_cli(args)
+    if args.include_benchmark_variables:
+        terms.require_full_column_benchmark_domain(request)
     surface_specs = run_budget.build_surface_behaviour_from_cli(args)
     variables.require_no_surface_variables(surface_specs)
 

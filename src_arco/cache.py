@@ -16,7 +16,7 @@ import numpy as np
 import xarray as xr
 
 from src import config, specs
-from . import selection
+from . import selection, variables
 
 
 DB_NAME = "cache.sqlite"
@@ -110,6 +110,8 @@ def tile_id_for_request(
         "include_benchmark_variables": bool(include_benchmark_variables),
         "schema": CACHE_SCHEMA,
     }
+    if include_benchmark_variables:
+        payload["benchmark_variables"] = list(variables.BENCHMARK_VAR_NAMES)
     encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:24]
 
@@ -360,6 +362,15 @@ def load_cache_dataset(
     _validate_wall_coverage(combined, request)
 
     if include_benchmark_variables:
+        missing = [
+            name for name in variables.BENCHMARK_VAR_NAMES
+            if name not in combined
+        ]
+        if missing:
+            raise OfflineCoverageError(
+                "Staged ARCO cache benchmark tile uses an older variable "
+                f"contract and must be restaged; missing: {missing}"
+            )
         return selection.reconstruct_benchmark_dataset(combined, request)
     return selection.reconstruct_budget_dataset(combined, request)
 
