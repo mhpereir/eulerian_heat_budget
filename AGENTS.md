@@ -85,26 +85,43 @@ that subtree.
 - Preserve normalized campaign configuration, source commit, environment,
   scheduler or service identity, shard manifests, success markers,
   consolidation summary, and scientific validation as run provenance.
-- For staged production, create `production_run.json` atomically at the
-  campaign root before submission. Record the authoritative branch and commit,
-  normalized settings, source, paths, runtime environment, requested
-  resources, and every retrieval and consolidation job pairing.
+- When the branch provides the staged run-manifest implementation, create
+  `production_run.json` atomically at the campaign root before submission.
+  Otherwise preserve the backend's documented equivalent. Record the
+  authoritative branch and commit, normalized settings, source, paths, runtime
+  environment, requested resources, and every retrieval and consolidation job
+  pairing.
 - Run production work only from a named, clean commit. A queued job must verify
   the expected commit before computation.
-- On Venus, keep Git checkouts under
-  `~/eulerian-heat-budget/{development,production}/` and keep all production
-  data under `~/eulerian-heat-budget/campaign-data/`.
-- Production staged caches, `run_budget` outputs, and logs must resolve outside
-  `PROJECT_ROOT`. Use the region-nested
-  `campaign-data/{staged-zarr,run-budget,logs}/<region>/` layout.
-- Run long production jobs from a commit-specific checkout under
-  `~/eulerian-heat-budget/production/`. Never switch the branch of a checkout
-  referenced by queued or running jobs.
 - Treat input datasets as read-only. Write small local experiments under
   ignored `tmp/`; write large remote intermediates and results to the storage
   location appropriate to the active backend.
 - Preserve or extend the run metadata whenever adding a scheduler, service, or
   execution mode.
+
+## Use the shared local environment
+
+- Use the local Mamba environment named `dev_env` for compilation checks, unit
+  and regression tests, local consolidation checks, and small scientific
+  prototypes.
+- Activate it explicitly with `mamba activate dev_env`, then print or inspect
+  `sys.executable` before recording validation results.
+- Treat `environment.yml` and any branch-specific locked requirements as the
+  dependency contracts. If `dev_env` is missing a required package, repair the
+  declared environment rather than silently using the base environment or
+  bypassing a check.
+- Treat `dev_env` as the first cross-platform compatibility gate, not as proof
+  that Venus OpenPBS, Alliance Slurm, or a Google container workflow will
+  succeed. Preserve validation on the actual target platform.
+
+Minimal local validation starts with:
+
+```bash
+mamba activate dev_env
+python -c "import sys; print(sys.executable)"
+python -m pytest -q
+python scripts/run_budget.py --help
+```
 
 ## Develop and validate locally
 
@@ -126,114 +143,83 @@ that subtree.
   the job identity, commit, configuration, environment, paths, and scientific
   checks used.
 
+## Track long-running work
+
+Use `/home/mhpereir/work/TODO_global.md` as the global command center for work
+performed below `/home/mhpereir/work`.
+
+- Track an operation when it may outlive the current agent run, uses a remote
+  scheduler or billable service, has a process or job identity that must be
+  recovered later, or produces artifacts that require later validation. Do not
+  use elapsed time alone as the inclusion rule.
+- Before submission, create or update one stable task entry with the intended
+  outcome, repository, authoritative branch and commit, backend, configuration,
+  expected logs, and expected outputs.
+- Immediately after submission, record the exact process, PBS, Slurm, or Batch
+  identity before doing other work. Preserve array notation, cluster suffixes,
+  dependent job IDs, campaign IDs, and Batch job UIDs when applicable.
+- Monitor initial state and logs for a few minutes. Record the observed state,
+  an ISO 8601 timestamp with timezone, and the next check or action.
+- Reconcile the recorded entry with live scheduler or service state before
+  submitting a replacement. Append attempts instead of overwriting prior job
+  identities or failure evidence.
+- Distinguish scheduler completion from scientific completion. Mark the task
+  complete only after expected artifacts, success markers, coverage, and
+  scientific checks pass.
+- On handoff, cancellation, or failure, record the current state, partial
+  artifacts, log location, and exact next action.
+- Keep detailed immutable provenance beside project outputs. The command center
+  indexes active work and does not replace `production_run.json`, campaign
+  manifests, scheduler logs, or scientific validation records.
+
 ## Route Google Cloud work
 
-Use this pathway only when `deployment/gcp` is present, normally on
-`google_development_staged`.
+Use this pathway only when `deployment/gcp/AGENTS.md` is present, normally on
+`google_development_staged`. That nested contract marks the adapter as loaded
+on the current branch.
 
 - Invoke the `ehb-gcp-batch` skill.
+- Read `deployment/gcp/AGENTS.md` before changing or operating the adapter.
 - Read `docs/README.md` completely before preparing, submitting, resuming,
   downloading, or consolidating a campaign.
-- Use `docs/google-cloud-batch-deployment.md` for architecture, schema, IAM,
-  integrity, observability, and recovery details.
 - Treat `deployment/gcp` as staged ARCO acquisition. It does not execute
   `scripts/run_budget.py` or produce heat-budget NetCDF output.
-- Prefer tracked deployment scripts over reconstructed commands.
-- Validate and normalize the exact campaign and record its SHA-256.
-- Use only digest-pinned production images.
-- Gate a full campaign on a completed, downloaded, consolidated, and opened
-  one-year canary.
-- Resume an unchanged campaign and image under a new job ID.
-- Verify the active account, project, region, resource names, permissions,
-  quotas, image digest, and current job state live.
-- Require explicit authorization before changing APIs, IAM, or cloud resources;
-  building or pushing images; uploading campaigns; submitting or retrying jobs;
-  deleting cloud data; or starting a large download.
 
-If `deployment/gcp` or the two Google runbooks are absent, this pathway is not
-loaded on the current branch. Switch to or branch from
+If the nested contract or the two Google runbooks are absent, this pathway is
+not loaded on the current branch. Switch to or branch from
 `google_development_staged` rather than treating the absence as a defect.
 
 ## Route Alliance and Slurm work
 
-Use this pathway only for Alliance execution, normally on
-`drac_development_2_staged`.
+Use this pathway only when `schedulers/AGENTS.md` identifies a Slurm adapter,
+normally on `drac_development_2_staged`.
 
 - Invoke the `alliance-hpc` skill.
+- Read `schedulers/AGENTS.md` before changing or operating the Slurm adapter.
 - Treat the local repository as the development source of truth and the
   cluster as an execution target.
-- Make and validate all changes locally. Never edit source or run an agent on a
-  cluster.
 - Submit all computation through Slurm. Do not compute on a login node.
-- Use tracked Slurm scripts and explicit account, walltime, CPU, memory, module,
-  environment, input, output, checkpoint, and log settings.
-- Omit a partition unless a verified requirement makes one necessary.
-- Use arrays with bounded concurrency for yearly production work.
-- On Fir, compute nodes currently have internet access. On Rorqual, compute
-  nodes do not, so stage every dependency before submission.
-- Start with a short queued test before production, inspect resource use, and
-  adjust future requests from evidence.
-- Keep large transient data in suitable cluster storage and retrieve only the
-  outputs needed locally.
-- Require explicit authorization before synchronizing code, creating remote
-  files or environments, submitting or changing jobs, deleting data, or
-  changing permissions.
 
-When the Slurm shard workflow is present, read `schedulers/README.md`. Do not
-start the production calculation until every expected yearly shard has
-validated and consolidation has published `campaign.json`, `cache.sqlite`, and
-`consolidation.json` at the campaign root.
-
-If the Slurm adapters are absent, switch to or branch from
+If that nested Slurm contract is absent, switch to or branch from
 `drac_development_2_staged` rather than adding cluster assumptions to another
 tip.
 
 ## Route Venus and OpenPBS work
 
-Use this pathway only for Venus execution, normally on
-`production_development_staged`.
+Use this pathway only when `schedulers/AGENTS.md` identifies an OpenPBS adapter,
+normally on `production_development_staged`.
 
 - Invoke the `venus-hpc` skill.
+- Read `schedulers/AGENTS.md` and `schedulers/README.md` before changing or
+  operating the OpenPBS adapter.
 - Treat `production_development_staged` as the only authoritative source branch
   for Venus staged retrieval and production `run_budget` submissions.
-- Submit production work only from a clean, named
-  `production_development_staged` checkout below
-  `~/eulerian-heat-budget/production/`.
-- Before submission, verify that `HEAD`, the configured upstream, and the live
-  `origin/production_development_staged` tip are the same commit. Do not launch
-  from a feature branch or include commits ahead of the authoritative tip, even
-  intentionally. Integrate, validate, and push those commits to
-  `production_development_staged` first.
-- Treat `google_development_staged` and `drac_development_2_staged` as separate
-  backend authorities for their own Google Batch and Alliance Slurm workflows.
-  They do not bypass the Venus production-branch preflight.
 - Keep the local Git repository authoritative and use the shared Git remote to
   transport code.
-- Inspect legacy Venus work read-only before adopting it. Stop if Venus has
-  uncommitted or unpushed work.
-- Commit and push the exact local branch before fast-forward deployment to a
-  clean Venus checkout.
-- Never edit source, run an agent, resolve Git conflicts, stash, reset, or clean
-  on Venus.
 - Submit all tests and scientific computation through OpenPBS, never on the
   login node.
-- Use tracked PBS scripts with explicit resources, environment initialization,
-  input, output, provenance, and log paths.
-- Use `${VENUS_MAMBA_ENV:-dev_env}` unless the project explicitly tracks a
-  different environment contract.
-- Use Git for source. Use narrowly scoped `rsync` only for explicitly selected
-  data or results, never for a mixed repository root.
-- Start with a queued smoke test and inspect its logs and resource use before
-  production.
-- Require explicit authorization before pushing, deploying, transferring,
-  creating remote files or environments, submitting or altering jobs, deleting
-  data, or changing permissions.
 
-When the PBS shard workflow is present, read `schedulers/README.md`. Require a
-successful dependent consolidation job before the production calculation
-consumes the campaign root.
-
-If the PBS adapters are absent, switch to or branch from
+If that nested OpenPBS contract is absent, switch to or branch from
 `production_development_staged` rather than adding Venus assumptions to another
 tip.
 
@@ -243,8 +229,8 @@ A change is complete when:
 
 1. The implementation and documentation agree with the scientific contract.
 2. The change is based on the authoritative shared or backend branch.
-3. Paths and mutable identities are configurable and no machine-local value was
-   introduced.
+3. Runtime paths and mutable identities are configurable and no machine-local
+   runtime value was introduced.
 4. Focused tests, the complete suite, shell checks, and CLI smoke tests pass in
    the declared environment.
 5. A representative queued or service-backed test is recorded when real backend
