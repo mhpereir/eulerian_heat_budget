@@ -23,6 +23,7 @@ from .shard_artifacts import (
     ShardValidationError,
     read_tile_rows,
     safe_relative_path,
+    sha256_file,
     validate_completed_shard,
 )
 
@@ -74,7 +75,7 @@ def _iter_regular_files(root: Path) -> dict[str, Path]:
     return files
 
 
-def _validate_existing_hardlink_tree(source: Path, destination: Path) -> None:
+def _validate_existing_copy_tree(source: Path, destination: Path) -> None:
     source_files = _iter_regular_files(source)
     destination_files = _iter_regular_files(destination)
     if set(source_files) != set(destination_files):
@@ -85,31 +86,32 @@ def _validate_existing_hardlink_tree(source: Path, destination: Path) -> None:
         destination_file = destination_files[relative]
         source_stat = source_file.stat()
         destination_stat = destination_file.stat()
-        if (
-            source_stat.st_dev != destination_stat.st_dev
-            or source_stat.st_ino != destination_stat.st_ino
-        ):
+        if source_stat.st_size != destination_stat.st_size:
             raise ShardValidationError(
-                "Existing destination file is not the expected hard link: "
+                "Existing destination file size differs from the legacy source: "
+                f"{destination_file}"
+            )
+        if os.path.samestat(source_stat, destination_stat):
+            raise ShardValidationError(
+                f"Destination file must be an independent copy: {destination_file}"
+            )
+        if sha256_file(source_file) != sha256_file(destination_file):
+            raise ShardValidationError(
+                "Existing destination file content differs from the legacy source: "
                 f"{destination_file}"
             )
 
 
-def _hardlink_tile(source: Path, destination: Path) -> None:
+def _copy_tile(source: Path, destination: Path) -> None:
     if destination.exists():
         if not destination.is_dir():
             raise ShardValidationError(
                 f"Destination tile path is not a directory: {destination}"
             )
-        _validate_existing_hardlink_tree(source, destination)
+        _validate_existing_copy_tree(source, destination)
         return
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if source.stat().st_dev != destination.parent.stat().st_dev:
-        raise ShardValidationError(
-            "Legacy source and destination are on different filesystems; "
-            "hard-link migration is unavailable."
-        )
     temp_dir = Path(
         tempfile.mkdtemp(
             prefix=f".{destination.name}.legacy-migration.",
@@ -119,10 +121,11 @@ def _hardlink_tile(source: Path, destination: Path) -> None:
     )
     temp_dir.rmdir()
     try:
-        shutil.copytree(source, temp_dir, copy_function=os.link)
+        shutil.copytree(source, temp_dir, copy_function=shutil.copy2)
         os.replace(temp_dir, destination)
+        _validate_existing_copy_tree(source, destination)
     except FileExistsError:
-        _validate_existing_hardlink_tree(source, destination)
+        _validate_existing_copy_tree(source, destination)
     finally:
         if temp_dir.exists():
             shutil.rmtree(temp_dir)
@@ -176,7 +179,7 @@ def migrate_legacy_year(
     pbs_array_index: str | None = None,
     git_commit: str,
 ) -> dict[str, Any]:
-    """Hard-link one legacy year, validate it, and publish shard provenance."""
+    """Copy one legacy year, validate it, and publish shard provenance."""
     source_root = Path(legacy_cache_root)
     destination_root = Path(campaign_root)
     _require_distinct_roots(source_root, destination_root)
@@ -221,7 +224,7 @@ def migrate_legacy_year(
         expected_tile_names.add(relative.parts[1])
         source_tile = source_root.joinpath(*relative.parts)
         destination_tile = shard_root.joinpath(*relative.parts)
-        _hardlink_tile(source_tile, destination_tile)
+        _copy_tile(source_tile, destination_tile)
 
     unexpected = sorted(
         path.name

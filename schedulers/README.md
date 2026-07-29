@@ -155,8 +155,7 @@ Use `submit_legacy_staged_arco_migration.sh` when an existing legacy
 without downloading the ARCO data again. The migration:
 
 - treats the legacy cache as read-only;
-- creates hard links for tile files, so source and destination must be on the
-  same filesystem;
+- creates independent copies of every tile file;
 - creates one private SQLite catalog per year;
 - runs the ordinary coverage, campaign, checksum, and Zarr validation;
 - writes `shard-manifest.json` and `_SUCCESS.json` last; and

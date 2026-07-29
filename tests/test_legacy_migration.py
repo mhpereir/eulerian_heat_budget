@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 import sqlite3
 
@@ -97,7 +96,7 @@ def _legacy_cache(root: Path) -> Path:
     return cache_root
 
 
-def test_migrate_legacy_year_hardlinks_and_finalizes(monkeypatch, tmp_path):
+def test_migrate_legacy_year_copies_and_finalizes(monkeypatch, tmp_path):
     source = _legacy_cache(tmp_path)
     campaign_root = tmp_path / _campaign().campaign_id
     initialize_campaign(campaign_root, _campaign())
@@ -126,7 +125,14 @@ def test_migrate_legacy_year_hardlinks_and_finalizes(monkeypatch, tmp_path):
         / "chunk"
     )
     assert result["year"] == 1940
-    assert os.path.samestat(source_chunk.stat(), migrated_chunk.stat())
+    assert source_chunk.read_bytes() == migrated_chunk.read_bytes()
+    assert (
+        source_chunk.stat().st_dev,
+        source_chunk.stat().st_ino,
+    ) != (
+        migrated_chunk.stat().st_dev,
+        migrated_chunk.stat().st_ino,
+    )
     with sqlite3.connect(
         campaign_root / "shards" / "year=1940" / "cache.sqlite"
     ) as connection:
@@ -180,7 +186,7 @@ def test_migrate_legacy_year_rejects_conflicting_destination(monkeypatch, tmp_pa
         lambda *args, **kwargs: {},
     )
 
-    with pytest.raises(ShardValidationError, match="not the expected hard link"):
+    with pytest.raises(ShardValidationError, match="differs from the legacy source"):
         migrate_legacy_year(
             source,
             campaign_root,
