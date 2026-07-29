@@ -145,32 +145,15 @@ python scripts/run_budget.py --help
 
 ## Track long-running work
 
-Use `/home/mhpereir/work/TODO_global.md` as the global command center for work
-performed below `/home/mhpereir/work`.
-
-- Track an operation when it may outlive the current agent run, uses a remote
-  scheduler or billable service, has a process or job identity that must be
-  recovered later, or produces artifacts that require later validation. Do not
-  use elapsed time alone as the inclusion rule.
-- Before submission, create or update one stable task entry with the intended
-  outcome, repository, authoritative branch and commit, backend, configuration,
-  expected logs, and expected outputs.
-- Immediately after submission, record the exact process, PBS, Slurm, or Batch
-  identity before doing other work. Preserve array notation, cluster suffixes,
-  dependent job IDs, campaign IDs, and Batch job UIDs when applicable.
-- Monitor initial state and logs for a few minutes. Record the observed state,
-  an ISO 8601 timestamp with timezone, and the next check or action.
-- Reconcile the recorded entry with live scheduler or service state before
-  submitting a replacement. Append attempts instead of overwriting prior job
-  identities or failure evidence.
-- Distinguish scheduler completion from scientific completion. Mark the task
-  complete only after expected artifacts, success markers, coverage, and
-  scientific checks pass.
-- On handoff, cancellation, or failure, record the current state, partial
-  artifacts, log location, and exact next action.
-- Keep detailed immutable provenance beside project outputs. The command center
-  indexes active work and does not replace `production_run.json`, campaign
-  manifests, scheduler logs, or scientific validation records.
+- Invoke the `command-center` skill for qualifying asynchronous operations.
+- In addition to the shared schema, record the campaign ID and hash, immutable
+  image digest when applicable, backend-specific job and dependency identities,
+  retrieval and consolidation relationship, cache and output roots, manifests,
+  and success markers.
+- Mark the task complete only after expected artifacts, success markers,
+  coverage, and scientific checks pass.
+- Keep detailed immutable provenance in `production_run.json`, campaign
+  manifests, scheduler logs, and scientific validation records beside outputs.
 
 ## Route Google Cloud work
 
