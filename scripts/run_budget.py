@@ -14,7 +14,6 @@ from src import plot_results
 from src_arco import variables as arco_variables
 
 import logging
-from dask.distributed import Client
     
 
 from src import terms
@@ -194,8 +193,9 @@ def build_production_options_from_cli(args) -> ProductionOptions | None:
         overwrite_output=args.overwrite_output,
     )
 
-def main() -> None:
-    args = cli.parse_args()
+def main(args=None) -> None:
+    if args is None:
+        args = cli.parse_args()
     request = build_request_from_cli(args)
     SurfaceSpecs = build_surface_behaviour_from_cli(args)
     diagnostic_plots, constant_temperature_test = build_runtime_controls_from_cli(args)
@@ -391,20 +391,16 @@ def main() -> None:
             plot_results.plot_constant_T_results(result, result_test, plot_dir=constant_t_plot_dir)
 
 if __name__ == "__main__":
-    
     logging.getLogger("distributed.shuffle._scheduler_plugin").setLevel(logging.ERROR)
-    logging.getLogger("distributed.shuffle._core").setLevel(logging.ERROR)  
+    logging.getLogger("distributed.shuffle._core").setLevel(logging.ERROR)
 
-    client = Client(
+    parsed_args = cli.parse_args()
+    from dask.distributed import Client
+
+    with Client(
         n_workers=4,
         threads_per_worker=1,
         processes=True,
         memory_limit="8GB",
-    )
-
-    # print(client)
-    # print("Dashboard:", client.dashboard_link)
-
-    main()
-
-    
+    ):
+        main(parsed_args)
