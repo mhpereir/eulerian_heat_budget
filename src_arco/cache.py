@@ -165,7 +165,7 @@ def write_tile(
     try:
         write_started = time.monotonic()
         _log_cache_write(f"writing temporary zarr store {tmp_path}")
-        tile_to_write.to_zarr(str(tmp_path), mode="w")
+        tile_to_write.to_zarr(str(tmp_path), mode="w", consolidated=False)
         _log_cache_write(
             f"finished temporary zarr store {tmp_path} "
             f"in {time.monotonic() - write_started:.1f}s"

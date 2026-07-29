@@ -84,7 +84,8 @@ def _request_with(
 
 
 def _patch_to_zarr_creates_store(monkeypatch) -> None:
-    def fake_to_zarr(self, path, mode="w"):
+    def fake_to_zarr(self, path, mode="w", *, consolidated=None):
+        assert consolidated is False
         Path(path).mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(xr.Dataset, "to_zarr", fake_to_zarr)
@@ -299,7 +300,8 @@ def test_write_tile_removes_partial_tmp_store_on_failure(monkeypatch, tmp_path):
     )
     tiles_dir = tmp_path / cache.TILES_DIR
 
-    def fake_to_zarr(self, path, mode="w"):
+    def fake_to_zarr(self, path, mode="w", *, consolidated=None):
+        assert consolidated is False
         Path(path).mkdir(parents=True, exist_ok=True)
         (Path(path) / "zarr.json").write_text("{}")
         raise OSError("Temporary failure in name resolution")
@@ -341,7 +343,8 @@ def test_write_tile_does_not_hold_cache_lock_during_zarr_write(monkeypatch, tmp_
             events.append("exit")
             return self._lock.__exit__(exc_type, exc, tb)
 
-    def fake_to_zarr(self, path, mode="w"):
+    def fake_to_zarr(self, path, mode="w", *, consolidated=None):
+        assert consolidated is False
         assert events == []
         Path(path).mkdir(parents=True, exist_ok=True)
 
@@ -649,7 +652,8 @@ def test_cache_load_reconstructs_from_local_tile_without_arco(monkeypatch, tmp_p
         include_benchmark_variables=False,
     )
 
-    def fake_to_zarr(self, path, mode="w"):
+    def fake_to_zarr(self, path, mode="w", *, consolidated=None):
+        assert consolidated is False
         Path(path).mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(xr.Dataset, "to_zarr", fake_to_zarr)

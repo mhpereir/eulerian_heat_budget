@@ -19,7 +19,7 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 COPY . /app
-RUN python -c "import tempfile; import numpy as np; import xarray as xr; path = tempfile.mkdtemp(); xr.Dataset({'value': ('time', np.arange(4.0))}, coords={'time': np.arange(4)}).to_zarr(path, mode='w'); xr.open_zarr(path, chunks=None).close()" \
+RUN python -c "import tempfile; import numpy as np; import xarray as xr; path = tempfile.mkdtemp(); xr.Dataset({'value': ('time', np.arange(4.0))}, coords={'time': np.arange(4)}).to_zarr(path, mode='w', consolidated=False); xr.open_zarr(path, chunks=None, consolidated=False).close()" \
     && python -m pytest -q \
     && touch /tmp/ehb-tests-passed
 
