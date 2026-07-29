@@ -1163,6 +1163,10 @@ case "$*" in
     printf '%s\\trefs/heads/production_development_staged\\n' \
       "${FAKE_REMOTE_HEAD:-0000000000000000000000000000000000000000}"
     ;;
+  *"ls-remote --exit-code origin refs/heads/development/legacy-cache-copy-migration"*)
+    printf '%s\\trefs/heads/development/legacy-cache-copy-migration\\n' \
+      "${FAKE_REMOTE_HEAD:-0000000000000000000000000000000000000000}"
+    ;;
   *"config --get remote.origin.url"*)
     printf '%s\\n' "git@example.invalid:eulerian_heat_budget.git"
     ;;
@@ -1347,7 +1351,7 @@ esac
     fake_qsub.chmod(0o755)
 
     workspace_root = tmp_path / "eulerian-heat-budget"
-    project_root = workspace_root / "production" / "eulerian_heat_budget-test"
+    project_root = workspace_root / "development" / "eulerian_heat_budget-test"
     project_root.mkdir(parents=True)
     legacy_root = workspace_root / "campaign-data" / "staged-zarr" / "legacy"
     (legacy_root / "tiles").mkdir(parents=True)
@@ -1370,6 +1374,9 @@ esac
             "REGION": "pnw_bartusek",
             "CAMPAIGN_ID": "pnw-bartusek-surface-700hpa-1940-2025",
             "LOG_DIR": str(log_dir),
+            "FAKE_BRANCH": "development/legacy-cache-copy-migration",
+            "FAKE_UPSTREAM": "origin/development/legacy-cache-copy-migration",
+            "MIGRATION_AFTEROK_JOB_ID": "299[].venus",
         }
     )
 
@@ -1385,6 +1392,7 @@ esac
     submitted = qsub_log.read_text(encoding="utf-8").splitlines()
     assert len(submitted) == 2
     assert "-J 0-85%5" in submitted[0]
+    assert "-W depend=afterok:299[].venus" in submitted[0]
     assert "schedule_migrate_legacy_staged_arco_cache.sh" in submitted[0]
     assert f"LEGACY_CACHE_ROOT={legacy_root}" in submitted[0]
     assert "-W depend=afterok:300[].venus" in submitted[1]
@@ -1411,7 +1419,7 @@ echo "302[].venus"
     fake_qsub.chmod(0o755)
 
     workspace_root = tmp_path / "eulerian-heat-budget"
-    project_root = workspace_root / "production" / "eulerian_heat_budget-test"
+    project_root = workspace_root / "development" / "eulerian_heat_budget-test"
     project_root.mkdir(parents=True)
     legacy_root = workspace_root / "campaign-data" / "staged-zarr" / "legacy"
     (legacy_root / "tiles").mkdir(parents=True)
@@ -1432,6 +1440,8 @@ echo "302[].venus"
             "LEGACY_CACHE_ROOT": str(legacy_root),
             "TASK_RANGE": "0-0",
             "SUBMIT_CONSOLIDATION": "0",
+            "FAKE_BRANCH": "development/legacy-cache-copy-migration",
+            "FAKE_UPSTREAM": "origin/development/legacy-cache-copy-migration",
         }
     )
 

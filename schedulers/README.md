@@ -170,3 +170,8 @@ does not accept a one-element array, so a small smoke migration can use
 `TASK_RANGE=0-1` and `SUBMIT_CONSOLIDATION=0`. After validating both years,
 submit the remaining task range with consolidation enabled. Never point the
 destination at the legacy source.
+
+This one-time workflow runs only from the exact
+`development/legacy-cache-copy-migration` branch in a clean checkout below
+`~/eulerian-heat-budget/development/`. Set `MIGRATION_AFTEROK_JOB_ID` to hold a
+larger migration array until a smoke array finishes successfully.

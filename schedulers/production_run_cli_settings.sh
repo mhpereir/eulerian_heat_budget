@@ -43,6 +43,7 @@ ENABLE_BENCHMARK_VARIABLES="${ENABLE_BENCHMARK_VARIABLES:-0}" # use only with fu
 MANIFEST_PATH="${MANIFEST_PATH:-${PRODUCTION_OUTPUT_DIR}/production_run.json}"
 MANIFEST_LOCK_DIR="${MANIFEST_LOCK_DIR:-${PRODUCTION_OUTPUT_DIR}/.manifest_init.lock}"
 MANIFEST_WAIT_SECONDS="${MANIFEST_WAIT_SECONDS:-300}"
+LEGACY_MIGRATION_BRANCH="development/legacy-cache-copy-migration"
 
 ehb_bool_enabled() {
   case "${1:-0}" in
@@ -224,6 +225,120 @@ ehb_verify_runtime_checkout() {
   fi
   if [[ -n "${status_output}" ]]; then
     echo "[error] runtime checkout is dirty: ${PROJECT_ROOT}" >&2
+    return 1
+  fi
+}
+
+ehb_require_legacy_migration_checkout() {
+  : "${PROJECT_ROOT:?PROJECT_ROOT must be set by the submission workflow}"
+
+  local project_root
+  local development_root
+  local git_root
+  local current_branch
+  local upstream_branch
+
+  project_root=$(readlink -m -- "${PROJECT_ROOT}")
+  development_root=$(readlink -m -- "${EHB_WORKSPACE_ROOT}/development")
+  case "${project_root}" in
+    "${development_root}/"*) ;;
+    *)
+      echo "[error] Legacy migration checkout must be below ${development_root}: ${project_root}" >&2
+      return 1
+      ;;
+  esac
+
+  if ! git_root=$(git -C "${project_root}" rev-parse --show-toplevel); then
+    echo "[error] PROJECT_ROOT is not a Git checkout: ${project_root}" >&2
+    return 1
+  fi
+  git_root=$(readlink -m -- "${git_root}")
+  if [[ "${git_root}" != "${project_root}" ]]; then
+    echo "[error] PROJECT_ROOT is not the Git root: ${project_root}" >&2
+    return 1
+  fi
+
+  if ! current_branch=$(git -C "${project_root}" symbolic-ref --quiet --short HEAD); then
+    echo "[error] Legacy migration checkout must use the named ${LEGACY_MIGRATION_BRANCH} branch." >&2
+    return 1
+  fi
+  if [[ "${current_branch}" != "${LEGACY_MIGRATION_BRANCH}" ]]; then
+    echo "[error] Legacy migration requires branch ${LEGACY_MIGRATION_BRANCH}, not ${current_branch}." >&2
+    return 1
+  fi
+
+  if ! upstream_branch=$(
+    git -C "${project_root}" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}'
+  ); then
+    echo "[error] ${LEGACY_MIGRATION_BRANCH} must track origin/${LEGACY_MIGRATION_BRANCH}." >&2
+    return 1
+  fi
+  if [[ "${upstream_branch}" != "origin/${LEGACY_MIGRATION_BRANCH}" ]]; then
+    echo "[error] Legacy migration upstream must be origin/${LEGACY_MIGRATION_BRANCH}, not ${upstream_branch}." >&2
+    return 1
+  fi
+}
+
+ehb_verify_legacy_migration_submission_checkout() {
+  ehb_require_legacy_migration_checkout || return 1
+
+  local project_root
+  local required_ref="refs/heads/${LEGACY_MIGRATION_BRANCH}"
+  local actual_commit
+  local remote_commit
+  local remote_ref
+  local status_output
+
+  project_root=$(readlink -m -- "${PROJECT_ROOT}")
+  if ! status_output=$(
+    git -C "${project_root}" status --porcelain --untracked-files=normal
+  ); then
+    echo "[error] Could not inspect migration checkout status: ${project_root}" >&2
+    return 1
+  fi
+  if [[ -n "${status_output}" ]]; then
+    echo "[error] Refusing to submit from a dirty migration checkout: ${project_root}" >&2
+    return 1
+  fi
+
+  if ! actual_commit=$(git -C "${project_root}" rev-parse HEAD); then
+    echo "[error] Could not resolve migration checkout HEAD: ${project_root}" >&2
+    return 1
+  fi
+  if ! read -r remote_commit remote_ref < <(
+    git -C "${project_root}" ls-remote --exit-code origin "${required_ref}"
+  ); then
+    echo "[error] Could not resolve the live origin/${LEGACY_MIGRATION_BRANCH} tip." >&2
+    return 1
+  fi
+  if [[ "${remote_ref}" != "${required_ref}" || -z "${remote_commit}" ]]; then
+    echo "[error] origin did not return exactly ${required_ref}." >&2
+    return 1
+  fi
+  if [[ "${actual_commit}" != "${remote_commit}" ]]; then
+    echo "[error] Migration checkout ${actual_commit} is not the temporary branch tip ${remote_commit}." >&2
+    return 1
+  fi
+
+  printf '%s\n' "${actual_commit}"
+}
+
+ehb_verify_legacy_migration_runtime_checkout() {
+  : "${PROJECT_ROOT:?PROJECT_ROOT must be set by the submission workflow}"
+  : "${EXPECTED_COMMIT:?EXPECTED_COMMIT must be set by the submission workflow}"
+
+  ehb_require_legacy_migration_checkout || return 1
+
+  local actual_commit
+  local status_output
+  actual_commit=$(git -C "${PROJECT_ROOT}" rev-parse HEAD)
+  if [[ "${actual_commit}" != "${EXPECTED_COMMIT}" ]]; then
+    echo "[error] migration checkout commit ${actual_commit} does not match ${EXPECTED_COMMIT}" >&2
+    return 1
+  fi
+  status_output=$(git -C "${PROJECT_ROOT}" status --porcelain --untracked-files=normal)
+  if [[ -n "${status_output}" ]]; then
+    echo "[error] migration runtime checkout is dirty: ${PROJECT_ROOT}" >&2
     return 1
   fi
 }

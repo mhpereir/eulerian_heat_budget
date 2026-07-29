@@ -11,10 +11,11 @@ QSUB_BIN="${QSUB_BIN:-/opt/pbs/bin/qsub}"
 MAX_PARALLEL="${MAX_PARALLEL:-5}"
 TASK_RANGE="${TASK_RANGE:-}"
 SUBMIT_CONSOLIDATION="${SUBMIT_CONSOLIDATION:-1}"
+MIGRATION_AFTEROK_JOB_ID="${MIGRATION_AFTEROK_JOB_ID:-}"
 
 source "${SETTINGS_FILE}"
 ehb_require_external_production_paths
-EXPECTED_COMMIT=$(ehb_verify_production_submission_checkout)
+EXPECTED_COMMIT=$(ehb_verify_legacy_migration_submission_checkout)
 
 if [[ ! -f "${LEGACY_CACHE_ROOT}/cache.sqlite" || ! -d "${LEGACY_CACHE_ROOT}/tiles" ]]; then
   echo "[error] legacy cache is not an indexed tile cache: ${LEGACY_CACHE_ROOT}" >&2
@@ -80,15 +81,30 @@ EXPORTS+=",EHB_STAGED_ZARR_ROOT=${EHB_STAGED_ZARR_ROOT},EHB_RUN_BUDGET_ROOT=${EH
 EXPORTS+=",EHB_LOG_ROOT=${EHB_LOG_ROOT},RUN_ID=${RUN_ID},PRODUCTION_OUTPUT_DIR=${PRODUCTION_OUTPUT_DIR}"
 EXPORTS+=",STAGED_RUN_MANIFEST_PATH=${STAGED_RUN_MANIFEST_PATH}"
 
+MIGRATION_DEPENDENCY_ARGS=()
+if [[ -n "${MIGRATION_AFTEROK_JOB_ID}" ]]; then
+  if [[ ! "${MIGRATION_AFTEROK_JOB_ID}" =~ ^[0-9]+(\[\])?(\.[A-Za-z0-9._-]+)?$ ]]; then
+    echo "[error] MIGRATION_AFTEROK_JOB_ID is not a recognized PBS job ID." >&2
+    exit 2
+  fi
+  MIGRATION_DEPENDENCY_ARGS=(
+    -W "depend=afterok:${MIGRATION_AFTEROK_JOB_ID}"
+  )
+fi
+
 echo "[submit] legacy_cache_root=${LEGACY_CACHE_ROOT}"
 echo "[submit] campaign=${CAMPAIGN_ID}"
 echo "[submit] cache_root=${STAGED_CACHE_ROOT}"
 echo "[submit] commit=${EXPECTED_COMMIT}"
 echo "[submit] log_dir=${LOG_DIR}"
 echo "[submit] migration_array=${TASK_RANGE}"
+if [[ -n "${MIGRATION_AFTEROK_JOB_ID}" ]]; then
+  echo "[submit] migration_dependency=afterok:${MIGRATION_AFTEROK_JOB_ID}"
+fi
 
 MIGRATION_JOB_ID=$(
   "${QSUB_BIN}" \
+    "${MIGRATION_DEPENDENCY_ARGS[@]}" \
     -J "${TASK_RANGE}" \
     -o "${LOG_DIR}/" \
     -v "${EXPORTS}" \

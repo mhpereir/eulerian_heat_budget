@@ -19,7 +19,7 @@ SCRIPT_DIR="${SCRIPT_DIR:-${PROJECT_ROOT}/scripts}"
 SETTINGS_FILE="${PRODUCTION_RUN_CLI_SETTINGS:-${SCHEDULER_DIR}/production_run_cli_settings.sh}"
 
 source "${SETTINGS_FILE}"
-ehb_verify_runtime_checkout
+ehb_verify_legacy_migration_runtime_checkout
 ehb_require_external_production_paths
 ehb_require_staged_cache_root "legacy shard consolidation"
 
