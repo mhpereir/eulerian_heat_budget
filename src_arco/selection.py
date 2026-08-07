@@ -143,10 +143,8 @@ def reconstruct_budget_dataset(tile: xr.Dataset, request: specs.DomainRequest) -
     u_wall = _select_u_wall(tile, indexers, required_u_lon)
     v_wall = _select_v_wall(tile, indexers, required_v_lat)
 
-    u = xr.full_like(tile["T"], np.nan).rename("u")
-    v = xr.full_like(tile["T"], np.nan).rename("v")
-    u = u_wall.combine_first(u).transpose("time", "level", "lat", "lon")
-    v = v_wall.combine_first(v).transpose("time", "level", "lat", "lon")
+    u = _expand_sparse_wall(u_wall, tile["T"], name="u")
+    v = _expand_sparse_wall(v_wall, tile["T"], name="v")
 
     out = xr.Dataset(
         {
@@ -183,16 +181,50 @@ def reconstruct_benchmark_dataset(tile: xr.Dataset, request: specs.DomainRequest
     out_vars = {}
     for name in ("Fx_heat", "Fx_mass"):
         wall = _select_x_benchmark_wall(tile, name, indexers, u_lon)
-        empty = xr.full_like(tile["sp"], np.nan).rename(name)
-        out_vars[name] = wall.combine_first(empty).transpose("time", "lat", "lon")
+        out_vars[name] = _expand_sparse_wall(wall, tile["sp"], name=name)
     for name in ("Fy_heat", "Fy_mass"):
         wall = _select_y_benchmark_wall(tile, name, indexers, v_lat)
-        empty = xr.full_like(tile["sp"], np.nan).rename(name)
-        out_vars[name] = wall.combine_first(empty).transpose("time", "lat", "lon")
+        out_vars[name] = _expand_sparse_wall(wall, tile["sp"], name=name)
     for name in variables.COLUMN_BENCHMARK_VAR_NAMES:
         out_vars[name] = tile[name].transpose("time", "lat", "lon")
 
     return xr.Dataset(out_vars, attrs=dict(tile.attrs))
+
+
+def _expand_sparse_wall(
+    wall: xr.DataArray,
+    template: xr.DataArray,
+    *,
+    name: str,
+) -> xr.DataArray:
+    """Expand a compact wall field without multiplying Dask chunks.
+
+    Xarray's outer alignment builds one mask per missing spatial coordinate.
+    If the compact wall retains several spatial chunks, combining those masks
+    can multiply the task graph. A compact lateral shell is small in space, so
+    coalescing only its spatial chunks before alignment keeps the graph bounded
+    while preserving time and level parallelism. The expanded result is then
+    restored to the template's chunk layout.
+    """
+    if wall.chunks is not None:
+        spatial_chunks = {
+            dim: -1
+            for dim in ("lat", "lon")
+            if dim in wall.dims
+        }
+        wall = wall.chunk(spatial_chunks)
+
+    empty = xr.full_like(template, np.nan).rename(name)
+    expanded = wall.combine_first(empty).transpose(*template.dims).rename(name)
+
+    if expanded.chunks is not None and template.chunks is not None:
+        expanded = expanded.chunk(
+            {
+                dim: template.chunksizes[dim]
+                for dim in template.dims
+            }
+        )
+    return expanded
 
 
 def _select_u_wall(

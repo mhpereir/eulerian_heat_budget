@@ -236,7 +236,9 @@ The current staged cache schema stores:
 `src_arco.selection` reconstructs canonical `u` and `v` arrays before the
 dataset enters the shared validation and budget pipeline. Interior velocity
 locations that are not required by the wall-flux calculation can remain
-missing.
+missing. During reconstruction, each compact wall coalesces only its spatial
+chunks before outer alignment, then restores the canonical template chunk
+layout. This bounds the Dask graph without removing time or level parallelism.
 
 Current staged-cache constraints:
 
@@ -1110,6 +1112,7 @@ Staged-tip addition:
 
 - `tests/test_arco_cache.py`
   - compact wall-only tile construction and reconstruction
+  - bounded sparse-wall Dask reconstruction and canonical rechunking
   - cache identity and coverage
   - local offline loading
   - time-tile mosaics and gap/conflict rejection
@@ -1123,6 +1126,8 @@ Staged-tip addition:
   - atomic combined-catalog publication and failure preservation
   - canonical-dataset and budget equivalence with the legacy cache layout
   - missing-year and integrity rejection
+- `tests/test_plot_results.py`
+  - warning-free hourly and daily rendering for short real-smoke time ranges
 
 Google staged-tip addition:
 
@@ -1143,7 +1148,7 @@ Isolated cross-tip validation at this document update:
 - `drac_development_2_staged`: `120 passed`
 - `google_development_staged`: `139 passed` with one Matplotlib date-locator
   warning
-- `production_development_staged`: `168 passed` with warnings treated as errors
+- `production_development_staged`: `170 passed` with warnings treated as errors
 
 Branch-specific suites must pass before their corresponding retrieval or
 production deployment.

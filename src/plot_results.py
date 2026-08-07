@@ -42,7 +42,11 @@ def _publication_figsize(aspect: float):
 
 
 def _date_locator_formatter():
-    locator = mdates.AutoDateLocator(minticks=3, maxticks=5)
+    locator = mdates.AutoDateLocator(
+        minticks=3,
+        maxticks=6,
+        interval_multiples=False,
+    )
     formatter = mdates.ConciseDateFormatter(locator)
     return locator, formatter
 

@@ -5,12 +5,15 @@ import signal
 import sys
 import threading
 import time
+import warnings
 from pathlib import Path
 
+import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
 import xarray.testing as xrt
+from dask.array.core import PerformanceWarning
 
 PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
 if PROJECT_ROOT not in sys.path:
@@ -295,6 +298,35 @@ def test_reconstruct_budget_dataset_keeps_canonical_shape_with_sparse_velocity()
     assert bool(out["u"].sel(lon=11.0, lat=[1.0, 5.0]).isnull().all())
     assert bool(out["v"].sel(lat=1.0, lon=[12.0, 13.0, 14.0]).notnull().all())
     assert bool(out["v"].sel(lat=1.0, lon=[11.0, 15.0]).isnull().all())
+
+
+def test_expand_sparse_wall_preserves_template_chunks_without_dask_warning():
+    time = np.arange("1941-06-01", "1941-06-03", dtype="datetime64[h]")
+    level = np.array([100000.0, 90000.0, 80000.0, 70000.0])
+    lat = np.arange(82.0)
+    lon = np.arange(82.0)
+    template = xr.DataArray(
+        da.zeros(
+            (time.size, level.size, lat.size, lon.size),
+            chunks=(12, 4, 16, 16),
+        ),
+        dims=("time", "level", "lat", "lon"),
+        coords={"time": time, "level": level, "lat": lat, "lon": lon},
+        name="T",
+    )
+    wall = template.isel(
+        lat=slice(1, 81),
+        lon=[0, 1, 80, 81],
+    ).rename("u_wall")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PerformanceWarning)
+        expanded = selection._expand_sparse_wall(wall, template, name="u")
+
+    assert expanded.dims == template.dims
+    assert expanded.chunks == template.chunks
+    assert bool((expanded.isel(lat=1, lon=0).compute() == 0.0).all())
+    assert bool(expanded.isel(lat=0, lon=40).isnull().compute().all())
 
 
 def test_reconstruct_benchmark_dataset_expands_compact_shell():
