@@ -273,7 +273,7 @@ def test_write_budget_result_drops_none_attrs_before_serialization(tmp_path):
     )
 
     written = write_budget_result(ds_budget, str(output_path), overwrite=False)
-    reopened = xr.open_dataset(written)
+    reopened = xr.open_dataset(written, engine="h5netcdf")
 
     assert written == str(output_path)
     assert "optional_note" not in reopened.attrs

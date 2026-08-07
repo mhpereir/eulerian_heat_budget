@@ -178,7 +178,10 @@ def require_output_path(output_path: str | None, *, overwrite: bool) -> str:
 
 def write_budget_result(ds_budget: Any, output_path: str | None, *, overwrite: bool) -> str:
     resolved_output_path = require_output_path(output_path, overwrite=overwrite)
-    _drop_none_attrs(ds_budget).to_netcdf(resolved_output_path)
+    _drop_none_attrs(ds_budget).to_netcdf(
+        resolved_output_path,
+        engine="h5netcdf",
+    )
     return resolved_output_path
 
 

@@ -703,7 +703,8 @@ Owns output paths, serialization, and provenance:
 - output collision and overwrite checks
 - ad hoc `run_info.json`
 - production `production_run.json`
-- NetCDF writing with unsupported `None` attributes removed
+- NetCDF writing through the declared `h5netcdf` backend with unsupported
+  `None` attributes removed
 - named-branch git provenance
 - tracked runtime dirty-state detection
 
@@ -1142,7 +1143,7 @@ Isolated cross-tip validation at this document update:
 - `drac_development_2_staged`: `120 passed`
 - `google_development_staged`: `139 passed` with one Matplotlib date-locator
   warning
-- `production_development_staged`: `147 passed`
+- `production_development_staged`: `168 passed` with warnings treated as errors
 
 Branch-specific suites must pass before their corresponding retrieval or
 production deployment.
