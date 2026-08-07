@@ -107,6 +107,11 @@ After preflight, the wrapper submits:
 2. `schedule_consolidate_staged_arco_cache.sh` with an `afterok`
    dependency on that array.
 
+For a one-year campaign, Venus cannot accept a one-element PBS array. The
+wrapper therefore disables embedded PBS directives and submits the retrieval
+as an explicitly resourced serial job with logical task index zero. Multi-year
+campaigns continue to use bounded arrays.
+
 It prints both PBS job IDs. Record them with the campaign ID, Git commit, cache
 root, log directory, and production configuration. The wrapper also records
 both IDs in campaign-level `production_run.json`. It creates
@@ -147,3 +152,7 @@ PROJECT_ROOT=/home/USER/eulerian-heat-budget/production/eulerian_heat_budget-COM
 
 The default result directory is
 `campaign-data/run-budget/<region>/<run-id>/`.
+Resubmitting the same run is gap-safe: a year with an existing nonempty
+`annual/heat_budget_<year>.nc` is skipped, while a missing or empty annual file
+is recomputed. A one-year calculation is submitted as a serial PBS job for the
+same reason as one-year retrieval.

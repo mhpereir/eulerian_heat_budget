@@ -96,15 +96,29 @@ echo "[submit] cache_root=${STAGED_CACHE_ROOT}"
 echo "[submit] commit=${EXPECTED_COMMIT}"
 echo "[submit] log_dir=${LOG_DIR}"
 echo "[submit] manifest=${STAGED_RUN_MANIFEST_PATH}"
-echo "[submit] retrieval_array=0-${LAST_TASK}%${MAX_PARALLEL}"
-
-RETRIEVAL_JOB_ID=$(
-  "${QSUB_BIN}" \
-    -J "0-${LAST_TASK}%${MAX_PARALLEL}" \
-    -o "${LOG_DIR}/" \
-    -v "${EXPORTS}" \
-    "${SCHEDULER_DIR}/schedule_staged_arco_retrieval_production.sh"
-)
+if (( TASK_COUNT == 1 )); then
+  echo "[submit] retrieval_serial_year=${START_YEAR}"
+  RETRIEVAL_JOB_ID=$(
+    "${QSUB_BIN}" \
+      -C "#NO_PBS_DIRECTIVES" \
+      -N ehb_stage_arco_prod \
+      -l select=1:ncpus=8:mem=8gb \
+      -l walltime=48:00:00 \
+      -j oe \
+      -o "${LOG_DIR}/" \
+      -v "${EXPORTS},EHB_SERIAL_TASK_INDEX=0" \
+      "${SCHEDULER_DIR}/schedule_staged_arco_retrieval_production.sh"
+  )
+else
+  echo "[submit] retrieval_array=0-${LAST_TASK}%${MAX_PARALLEL}"
+  RETRIEVAL_JOB_ID=$(
+    "${QSUB_BIN}" \
+      -J "0-${LAST_TASK}%${MAX_PARALLEL}" \
+      -o "${LOG_DIR}/" \
+      -v "${EXPORTS}" \
+      "${SCHEDULER_DIR}/schedule_staged_arco_retrieval_production.sh"
+  )
+fi
 echo "[submit] retrieval_job_id=${RETRIEVAL_JOB_ID}"
 "${PYTHON_EXECUTABLE}" \
   "${SCRIPT_DIR}/staged_arco_run_manifest.py" \

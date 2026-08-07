@@ -1053,6 +1053,8 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "ehb_build_production_staged_retrieval_args" in settings
     assert "ehb_build_staged_campaign_init_args" in settings
     assert "ehb_year_shard_root" in settings
+    assert "ehb_resolve_yearly_task_index" in settings
+    assert "ehb_year_is_complete" in settings
     assert "ehb_require_consolidated_staged_cache" in settings
     assert "ehb_require_staged_run_manifest" in settings
     assert "ehb_require_venus_production_checkout" in settings
@@ -1071,9 +1073,12 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "#PBS -l walltime=48:00:00" in staging_scheduler
     assert "#PBS -o /dev/null" not in production_scheduler
     assert "ehb_build_production_run_budget_args COMMON_RUN_ARGS" in production_scheduler
-    assert "ehb_production_year_for_task \"${PBS_ARRAY_INDEX}\"" in production_scheduler
+    assert "TASK_INDEX=$(ehb_resolve_yearly_task_index)" in production_scheduler
+    assert "ehb_production_year_for_task \"${TASK_INDEX}\"" in production_scheduler
+    assert "ehb_year_is_complete \"${YEAR}\"" in production_scheduler
     assert "ehb_build_production_time_window \"${YEAR}\" TIME_START TIME_END" in production_scheduler
-    assert "ehb_production_year_for_task \"${PBS_ARRAY_INDEX}\"" in staging_scheduler
+    assert "TASK_INDEX=$(ehb_resolve_yearly_task_index)" in staging_scheduler
+    assert "ehb_production_year_for_task \"${TASK_INDEX}\"" in staging_scheduler
     assert "ehb_build_production_time_window \"${YEAR}\" TIME_START TIME_END" in staging_scheduler
     assert "YEAR_CACHE_ROOT=$(ehb_year_shard_root \"${YEAR}\")" in staging_scheduler
     assert "\"${YEAR_CACHE_ROOT}\"" in staging_scheduler
@@ -1090,6 +1095,8 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert '--consolidation-select "1:ncpus=1:mem=4gb"' in submission_script
     assert '--consolidation-walltime "12:00:00"' in submission_script
     assert "record-submission" in submission_script
+    assert '-C "#NO_PBS_DIRECTIVES"' in submission_script
+    assert "EHB_SERIAL_TASK_INDEX=0" in submission_script
     assert 'LOG_DIR="${LOG_DIR:-${EHB_LOG_ROOT}/${REGION}/${RUN_ID}}"' in settings
     assert '-o "${LOG_DIR}/"' in submission_script
     assert '-o "${LOG_DIR}/"' in run_submission_script
@@ -1102,6 +1109,8 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
         in run_submission_script
     )
     assert "schedule_run_budget_production.sh" in run_submission_script
+    assert '-C "#NO_PBS_DIRECTIVES"' in run_submission_script
+    assert "EHB_SERIAL_TASK_INDEX=0" in run_submission_script
     assert "CAMPAIGN_ID=${CAMPAIGN_ID}" in submission_script
     assert "STAGED_CACHE_ROOT=${STAGED_CACHE_ROOT}" in submission_script
 
@@ -1192,6 +1201,66 @@ printf 'CAMPAIGN_ARGS=%s\n' "${CAMPAIGN_ARGS[*]}"
     )
     assert incomplete.returncode != 0
     assert "staged campaign is not consolidated" in incomplete.stderr
+
+
+def test_production_settings_resolve_serial_tasks_and_completed_years(tmp_path):
+    output_dir = tmp_path / "production"
+    annual_dir = output_dir / "annual"
+    annual_dir.mkdir(parents=True)
+    (annual_dir / "heat_budget_1940.nc").write_bytes(b"complete")
+    (annual_dir / "heat_budget_1941.nc").touch()
+
+    script = """
+set -euo pipefail
+source schedulers/production_run_cli_settings.sh
+EHB_SERIAL_TASK_INDEX=0
+printf 'SERIAL=%s\n' "$(ehb_resolve_yearly_task_index)"
+unset EHB_SERIAL_TASK_INDEX
+PBS_ARRAY_INDEX=5
+printf 'ARRAY=%s\n' "$(ehb_resolve_yearly_task_index)"
+if ehb_year_is_complete 1940; then printf 'COMPLETE_1940=yes\n'; fi
+if ! ehb_year_is_complete 1941; then printf 'COMPLETE_1941=no\n'; fi
+printf 'OUTPUT=%s\n' "$(ehb_yearly_output_path 1940)"
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "PROJECT_ROOT": PROJECT_ROOT,
+            "PRODUCTION_OUTPUT_DIR": str(output_dir),
+        }
+    )
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert "SERIAL=0" in result.stdout
+    assert "ARRAY=5" in result.stdout
+    assert "COMPLETE_1940=yes" in result.stdout
+    assert "COMPLETE_1941=no" in result.stdout
+    assert f"OUTPUT={annual_dir / 'heat_budget_1940.nc'}" in result.stdout
+
+    invalid = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "source schedulers/production_run_cli_settings.sh; "
+                "PBS_ARRAY_INDEX=1 EHB_SERIAL_TASK_INDEX=0 "
+                "ehb_resolve_yearly_task_index"
+            ),
+        ],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert invalid.returncode != 0
+    assert "disagree" in invalid.stderr
 
 
 def _write_fake_production_git(path: Path) -> None:
@@ -1381,6 +1450,86 @@ esac
     assert submission["submitted_at"]
 
 
+def test_single_year_staged_submission_uses_serial_pbs_job(tmp_path):
+    scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_production_git(fake_bin / "git")
+    fake_qsub = fake_bin / "qsub"
+    fake_qsub.write_text(
+        """#!/bin/bash
+printf '%s\\n' "$*" >> "${QSUB_LOG:?}"
+case "$*" in
+  *schedule_staged_arco_retrieval_production.sh) echo "125.venus" ;;
+  *schedule_consolidate_staged_arco_cache.sh) echo "126.venus" ;;
+  *) exit 2 ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_qsub.chmod(0o755)
+
+    qsub_log = tmp_path / "qsub.log"
+    log_dir = tmp_path / "logs"
+    workspace_root = tmp_path / "eulerian-heat-budget"
+    project_root = workspace_root / "production" / "eulerian_heat_budget-test"
+    project_root.mkdir(parents=True)
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "PROJECT_ROOT": str(project_root),
+            "EHB_WORKSPACE_ROOT": str(workspace_root),
+            "SCHEDULER_DIR": str(scheduler_dir),
+            "PRODUCTION_RUN_CLI_SETTINGS": str(
+                scheduler_dir / "production_run_cli_settings.sh"
+            ),
+            "QSUB_BIN": str(fake_qsub),
+            "QSUB_LOG": str(qsub_log),
+            "LOG_DIR": str(log_dir),
+            "PYTHON_EXECUTABLE": sys.executable,
+            "SCRIPT_DIR": str(Path(PROJECT_ROOT) / "scripts"),
+            "START_YEAR": "1940",
+            "END_YEAR": "1940",
+            "CAMPAIGN_ID": "alaska-one-year-1940",
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(scheduler_dir / "submit_staged_arco_production.sh")],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    submitted = qsub_log.read_text(encoding="utf-8").splitlines()
+    assert len(submitted) == 2
+    assert "-J" not in submitted[0]
+    assert "-C #NO_PBS_DIRECTIVES" in submitted[0]
+    assert "-l select=1:ncpus=8:mem=8gb" in submitted[0]
+    assert "-l walltime=48:00:00" in submitted[0]
+    assert "EHB_SERIAL_TASK_INDEX=0" in submitted[0]
+    assert "schedule_staged_arco_retrieval_production.sh" in submitted[0]
+    assert "-W depend=afterok:125.venus" in submitted[1]
+    assert "retrieval_job_id=125.venus" in result.stdout
+    assert "consolidation_job_id=126.venus" in result.stdout
+
+    manifest_path = (
+        workspace_root
+        / "campaign-data"
+        / "staged-zarr"
+        / "alaska"
+        / "alaska-one-year-1940"
+        / "production_run.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["scheduler"]["array"]["first_task_index"] == 0
+    assert manifest["scheduler"]["array"]["last_task_index"] == 0
+    assert manifest["submissions"][0]["retrieval_job_id"] == "125.venus"
+
+
 def test_run_budget_production_submission_uses_external_paths(tmp_path):
     scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
     fake_bin = tmp_path / "bin"
@@ -1443,6 +1592,70 @@ echo "200[].venus"
     assert f"STAGED_CACHE_ROOT={cache_root}" in submitted
     assert f"PRODUCTION_OUTPUT_DIR={output_dir}" in submitted
     assert "production_job_id=200[].venus" in result.stdout
+
+
+def test_single_year_run_budget_submission_uses_serial_pbs_job(tmp_path):
+    scheduler_dir = Path(PROJECT_ROOT) / "schedulers"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_production_git(fake_bin / "git")
+    fake_qsub = fake_bin / "qsub"
+    fake_qsub.write_text(
+        """#!/bin/bash
+printf '%s\\n' "$*" >> "${QSUB_LOG:?}"
+echo "201.venus"
+""",
+        encoding="utf-8",
+    )
+    fake_qsub.chmod(0o755)
+
+    cache_root = tmp_path / "campaign-data" / "staged-zarr" / "alaska" / "campaign"
+    cache_root.mkdir(parents=True)
+    for required in ("campaign.json", "cache.sqlite", "consolidation.json"):
+        (cache_root / required).touch()
+    output_dir = tmp_path / "campaign-data" / "run-budget" / "alaska" / "run"
+    log_dir = tmp_path / "campaign-data" / "logs" / "alaska" / "run"
+    qsub_log = tmp_path / "qsub.log"
+    workspace_root = tmp_path / "eulerian-heat-budget"
+    project_root = workspace_root / "production" / "eulerian_heat_budget-test"
+    project_root.mkdir(parents=True)
+    env = os.environ.copy()
+    env.update(
+        {
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "PROJECT_ROOT": str(project_root),
+            "EHB_WORKSPACE_ROOT": str(workspace_root),
+            "SCHEDULER_DIR": str(scheduler_dir),
+            "PRODUCTION_RUN_CLI_SETTINGS": str(
+                scheduler_dir / "production_run_cli_settings.sh"
+            ),
+            "QSUB_BIN": str(fake_qsub),
+            "QSUB_LOG": str(qsub_log),
+            "STAGED_CACHE_ROOT": str(cache_root),
+            "PRODUCTION_OUTPUT_DIR": str(output_dir),
+            "LOG_DIR": str(log_dir),
+            "START_YEAR": "1940",
+            "END_YEAR": "1940",
+        }
+    )
+
+    result = subprocess.run(
+        ["bash", str(scheduler_dir / "submit_run_budget_production.sh")],
+        cwd=PROJECT_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    submitted = qsub_log.read_text(encoding="utf-8")
+    assert "-J" not in submitted
+    assert "-C #NO_PBS_DIRECTIVES" in submitted
+    assert "-l select=1:ncpus=8:mem=25gb" in submitted
+    assert "EHB_SERIAL_TASK_INDEX=0" in submitted
+    assert f"-o {log_dir}/" in submitted
+    assert "schedule_run_budget_production.sh" in submitted
+    assert "production_job_id=201.venus" in result.stdout
 
 
 def _configure_main_stubs(monkeypatch, args):

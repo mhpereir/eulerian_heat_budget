@@ -57,13 +57,26 @@ echo "[submit] cache_root=${STAGED_CACHE_ROOT}"
 echo "[submit] output_dir=${PRODUCTION_OUTPUT_DIR}"
 echo "[submit] log_dir=${LOG_DIR}"
 echo "[submit] commit=${EXPECTED_COMMIT}"
-echo "[submit] production_array=0-${LAST_TASK}%${MAX_PARALLEL}"
-
-PRODUCTION_JOB_ID=$(
-  "${QSUB_BIN}" \
-    -J "0-${LAST_TASK}%${MAX_PARALLEL}" \
-    -o "${LOG_DIR}/" \
-    -v "${EXPORTS}" \
-    "${SCHEDULER_DIR}/schedule_run_budget_production.sh"
-)
+if (( TASK_COUNT == 1 )); then
+  echo "[submit] production_serial_year=${START_YEAR}"
+  PRODUCTION_JOB_ID=$(
+    "${QSUB_BIN}" \
+      -C "#NO_PBS_DIRECTIVES" \
+      -N eulerian_heat_budget_prod \
+      -l select=1:ncpus=8:mem=25gb \
+      -j oe \
+      -o "${LOG_DIR}/" \
+      -v "${EXPORTS},EHB_SERIAL_TASK_INDEX=0" \
+      "${SCHEDULER_DIR}/schedule_run_budget_production.sh"
+  )
+else
+  echo "[submit] production_array=0-${LAST_TASK}%${MAX_PARALLEL}"
+  PRODUCTION_JOB_ID=$(
+    "${QSUB_BIN}" \
+      -J "0-${LAST_TASK}%${MAX_PARALLEL}" \
+      -o "${LOG_DIR}/" \
+      -v "${EXPORTS}" \
+      "${SCHEDULER_DIR}/schedule_run_budget_production.sh"
+  )
+fi
 echo "[submit] production_job_id=${PRODUCTION_JOB_ID}"

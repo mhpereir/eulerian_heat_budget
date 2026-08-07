@@ -350,11 +350,48 @@ ehb_production_year_for_task() {
   printf "%d\n" $((START_YEAR + 10#${task_id}))
 }
 
+ehb_resolve_yearly_task_index() {
+  local array_index="${PBS_ARRAY_INDEX:-}"
+  local serial_index="${EHB_SERIAL_TASK_INDEX:-}"
+  local resolved_index
+
+  if [[ -n "${array_index}" && -n "${serial_index}" && "${array_index}" != "${serial_index}" ]]; then
+    echo "[error] PBS_ARRAY_INDEX and EHB_SERIAL_TASK_INDEX disagree." >&2
+    return 1
+  fi
+  if [[ -n "${array_index}" ]]; then
+    resolved_index="${array_index}"
+  elif [[ -n "${serial_index}" ]]; then
+    resolved_index="${serial_index}"
+  else
+    echo "[error] A yearly task requires PBS_ARRAY_INDEX or EHB_SERIAL_TASK_INDEX." >&2
+    return 1
+  fi
+
+  if [[ ! "${resolved_index}" =~ ^[0-9]+$ ]]; then
+    echo "[error] Yearly task index must be a nonnegative integer: ${resolved_index}" >&2
+    return 1
+  fi
+  printf '%s\n' "${resolved_index}"
+}
+
+ehb_yearly_output_path() {
+  local year="$1"
+  printf "%s/annual/heat_budget_%04d.nc\n" "${PRODUCTION_OUTPUT_DIR}" "${year}"
+}
+
+ehb_year_is_complete() {
+  local year="$1"
+  local output_path
+  output_path=$(ehb_yearly_output_path "${year}")
+  [[ -s "${output_path}" ]]
+}
+
 ehb_validate_production_year() {
   local year="$1"
 
-  if (( year > END_YEAR )); then
-    echo "[error] Computed YEAR=${year} exceeds END_YEAR=${END_YEAR}" >&2
+  if (( year < START_YEAR || year > END_YEAR )); then
+    echo "[error] Computed YEAR=${year} is outside ${START_YEAR}-${END_YEAR}." >&2
     return 1
   fi
 }

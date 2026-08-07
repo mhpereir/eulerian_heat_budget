@@ -93,13 +93,18 @@ if [[ "${INIT_MANIFEST_ONLY}" == "1" ]]; then
   exit 0
 fi
 
-: "${PBS_ARRAY_INDEX:?PBS_ARRAY_INDEX must be set for yearly production runs}"
-
-YEAR=$(ehb_production_year_for_task "${PBS_ARRAY_INDEX}")
+TASK_INDEX=$(ehb_resolve_yearly_task_index)
+YEAR=$(ehb_production_year_for_task "${TASK_INDEX}")
 ehb_validate_production_year "${YEAR}"
 ehb_build_production_time_window "${YEAR}" TIME_START TIME_END
 
 ensure_manifest
+
+if ehb_year_is_complete "${YEAR}"; then
+  echo "[info] $(date -Is) skipping production year ${YEAR}; nonempty output already exists"
+  echo "[info] existing output: $(ehb_yearly_output_path "${YEAR}")"
+  exit 0
+fi
 
 echo "[info] $(date -Is) starting production year ${YEAR} on host $(hostname)"
 echo "[info] repo root: ${PROJECT_ROOT}"

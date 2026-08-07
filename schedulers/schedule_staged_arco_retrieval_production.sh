@@ -35,9 +35,8 @@ VENUS_MAMBA_ENV="${VENUS_MAMBA_ENV:-dev_env}"
 mamba activate "${VENUS_MAMBA_ENV}"
 PYTHON_EXECUTABLE=$(command -v python)
 
-: "${PBS_ARRAY_INDEX:?PBS_ARRAY_INDEX must be set for yearly production staged ARCO retrieval}"
-
-YEAR=$(ehb_production_year_for_task "${PBS_ARRAY_INDEX}")
+TASK_INDEX=$(ehb_resolve_yearly_task_index)
+YEAR=$(ehb_production_year_for_task "${TASK_INDEX}")
 ehb_validate_production_year "${YEAR}"
 ehb_build_production_time_window "${YEAR}" TIME_START TIME_END
 YEAR_CACHE_ROOT=$(ehb_year_shard_root "${YEAR}")
@@ -68,6 +67,6 @@ echo "[info] time window: ${TIME_START} to ${TIME_END}"
   --cache-root "${STAGED_CACHE_ROOT}" \
   --year "${YEAR}" \
   --pbs-job-id "${PBS_JOBID:-}" \
-  --pbs-array-index "${PBS_ARRAY_INDEX}" \
+  --pbs-array-index "${PBS_ARRAY_INDEX:-}" \
   --git-commit "${EXPECTED_COMMIT}"
 echo "[info] $(date -Is) finished production staged ARCO retrieval for year ${YEAR}"
