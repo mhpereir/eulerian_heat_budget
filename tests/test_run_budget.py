@@ -18,6 +18,19 @@ from src import cli, config
 run_budget = importlib.import_module("scripts.run_budget")
 
 
+def test_cli_help_exits_before_dask_client_start():
+    result = subprocess.run(
+        [sys.executable, "scripts/run_budget.py", "--help"],
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=True,
+    )
+
+    assert "usage:" in result.stdout
+
+
 def _make_stub_budget_result(t_scale: float = 273.0) -> xr.Dataset:
     return xr.Dataset({"T_scale": xr.DataArray(t_scale)})
 
