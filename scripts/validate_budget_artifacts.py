@@ -35,6 +35,23 @@ class ValidationProfile:
 
 
 PROFILES = {
+    "fixed-500-300-1941": ValidationProfile(
+        time_start="1941-05-01T01:00:00",
+        time_end="1941-08-31T23:00:00",
+        time_count=2951,
+        input_start="1941-05-01T00:00:00",
+        input_end="1941-09-01T00:00:00",
+        zg_top_pressure=30000.0,
+        zg_bottom="pressure_level",
+        zg_bottom_pressure=50000.0,
+        allow_bottom_overflow=False,
+        benchmark_variables=False,
+        png_count=10,
+        required_pngs=(
+            "fig2_mass_residual_time_series.png",
+            "fig2.2_mass_advection_terms_timeseries.png",
+        ),
+    ),
     "fixed-500-300-2021": ValidationProfile(
         time_start="2021-05-01T01:00:00",
         time_end="2021-08-31T23:00:00",
@@ -50,6 +67,25 @@ PROFILES = {
         required_pngs=(
             "fig2_mass_residual_time_series.png",
             "fig2.2_mass_advection_terms_timeseries.png",
+        ),
+    ),
+    "full-column-benchmark-1941": ValidationProfile(
+        time_start="1941-06-01T01:00:00",
+        time_end="1941-08-31T22:00:00",
+        time_count=2206,
+        input_start="1941-06-01T00:00:00",
+        input_end="1941-08-31T23:00:00",
+        zg_top_pressure=100.0,
+        zg_bottom="surface_pressure",
+        zg_bottom_pressure=None,
+        allow_bottom_overflow=True,
+        benchmark_variables=True,
+        png_count=19,
+        required_pngs=(
+            "fig2_mass_residual_time_series.png",
+            "fig2.2_mass_advection_terms_timeseries.png",
+            "fig5_benchmark_comparison.png",
+            "fig6_benchmark_heating_comparison.png",
         ),
     ),
     "full-column-benchmark-2021": ValidationProfile(
