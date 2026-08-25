@@ -1012,6 +1012,9 @@ def test_single_run_schedulers_share_cli_settings():
     settings = (scheduler_dir / "single_run_cli_settings").read_text()
     run_scheduler = (scheduler_dir / "schedule_run_budget.sh").read_text()
     retrieval_scheduler = (scheduler_dir / "schedule_staged_arco_retrieval.sh").read_text()
+    graph_smoke_scheduler = (
+        scheduler_dir / "schedule_staged_wall_graph_smoke.sh"
+    ).read_text()
 
     assert "STAGED_CACHE_ROOT=" in settings
     assert "STAGED_ARCO_TIME_CHUNK=" in settings
@@ -1040,6 +1043,8 @@ def test_single_run_schedulers_share_cli_settings():
     assert "#PBS -l walltime=48:00:00" in retrieval_scheduler
     assert "export EHB_DASK_N_WORKERS=\"${EHB_DASK_N_WORKERS:-4}\"" in run_scheduler
     assert "dask: threaded scheduler, workers=${EHB_DASK_N_WORKERS}" in run_scheduler
+    assert "tests/test_plot_diagnostics.py" in graph_smoke_scheduler
+    assert "empty_quantile_bins" in graph_smoke_scheduler
     assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in retrieval_scheduler
     assert "/dev/null" not in run_scheduler
     assert "/dev/null" not in retrieval_scheduler

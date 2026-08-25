@@ -57,7 +57,8 @@ echo "[info] log file: ${LOGFILE}"
 
 /usr/bin/time -v "${PYTHON_EXECUTABLE}" -m pytest -q -W error \
     tests/test_arco_cache.py \
+    tests/test_plot_diagnostics.py \
     tests/test_validate_budget_artifacts.py \
-    -k "expand_sparse_wall or reconstruct_budget_dataset_keeps_canonical_shape or reconstruct_benchmark_dataset_expands_compact_shell or validate_run"
+    -k "expand_sparse_wall or reconstruct_budget_dataset_keeps_canonical_shape or reconstruct_benchmark_dataset_expands_compact_shell or empty_quantile_bins or nanmean_or_nan or validate_run"
 
 echo "[info] $(date -Is) staged-wall graph smoke passed"

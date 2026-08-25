@@ -129,9 +129,10 @@ sequentially.
 Before a full-season validation of staged-wall reconstruction changes, submit
 `schedule_staged_wall_graph_smoke.sh` from the clean candidate checkout. The
 smoke requires `PROJECT_ROOT` and `EXPECTED_COMMIT`, activates `dev_env`, and
-runs the focused Dask graph, reconstruction-equivalence, and artifact-validator
-tests with warnings treated as errors. It requests one CPU, 4 GB, and 15
-minutes, and accepts an external `LOG_DIR` for durable PBS logs.
+runs the focused Dask graph, reconstruction-equivalence, empty diagnostic-bin,
+and artifact-validator tests with warnings treated as errors. It requests one
+CPU, 4 GB, and 15 minutes, and accepts an external `LOG_DIR` for durable PBS
+logs.
 
 ## Resume and consume
 
