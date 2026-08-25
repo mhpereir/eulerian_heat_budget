@@ -124,6 +124,34 @@ def test_validate_run_compares_dataset_and_required_plot_pixels(tmp_path):
     assert report["reference_comparison"]["dataset_identical"] is True
     assert report["reference_comparison"]["dataset_scientifically_equivalent"] is True
     assert len(report["reference_comparison"]["pixel_identical_plots"]) == 2
+    assert report["reference_comparison"]["plot_comparison"] == {
+        "performed": True,
+        "reason": None,
+    }
+
+
+def test_validate_run_compares_dataset_when_reference_has_no_plots(tmp_path):
+    candidate, cache, commit = _write_run(tmp_path / "candidate", "fixed-500-300-2021")
+    reference, _, _ = _write_run(tmp_path / "reference", "fixed-500-300-2021")
+    for path in reference.rglob("*.png"):
+        path.unlink()
+
+    report = validator.validate_run(
+        candidate,
+        profile_name="fixed-500-300-2021",
+        expected_commit=commit,
+        expected_cache=cache,
+        reference_dir=reference,
+    )
+
+    comparison = report["reference_comparison"]
+    assert comparison["dataset_identical"] is True
+    assert comparison["dataset_scientifically_equivalent"] is True
+    assert comparison["pixel_identical_plots"] == []
+    assert comparison["plot_comparison"] == {
+        "performed": False,
+        "reason": "Reference run contains no PNG plots.",
+    }
 
 
 def test_validate_run_accepts_roundoff_equivalent_reference(tmp_path):

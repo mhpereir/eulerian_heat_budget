@@ -553,23 +553,31 @@ def _compare_reference(
     candidate_by_name = {path.name: path for path in candidate_pngs}
     reference_by_name = {path.name: path for path in (reference_dir / "plots").rglob("*.png")}
     compared = []
-    for name in profile.required_pngs:
-        _require(name in reference_by_name, f"Reference plot is missing: {name}")
-        with (
-            Image.open(candidate_by_name[name]) as candidate_image,
-            Image.open(reference_by_name[name]) as reference_image,
-        ):
-            _require(
-                np.array_equal(np.asarray(candidate_image), np.asarray(reference_image)),
-                f"Candidate plot pixels differ from reference for {name}.",
-            )
-        compared.append(name)
+    plot_comparison = {
+        "performed": bool(reference_by_name),
+        "reason": None,
+    }
+    if reference_by_name:
+        for name in profile.required_pngs:
+            _require(name in reference_by_name, f"Reference plot is missing: {name}")
+            with (
+                Image.open(candidate_by_name[name]) as candidate_image,
+                Image.open(reference_by_name[name]) as reference_image,
+            ):
+                _require(
+                    np.array_equal(np.asarray(candidate_image), np.asarray(reference_image)),
+                    f"Candidate plot pixels differ from reference for {name}.",
+                )
+            compared.append(name)
+    else:
+        plot_comparison["reason"] = "Reference run contains no PNG plots."
     return {
         "dataset_identical": dataset_identical,
         "dataset_scientifically_equivalent": True,
         "relative_tolerance": REFERENCE_RELATIVE_TOLERANCE,
         "variables": comparisons,
         "pixel_identical_plots": compared,
+        "plot_comparison": plot_comparison,
         "reference_netcdf_sha256": _sha256(reference_path),
     }
 
