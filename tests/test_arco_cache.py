@@ -176,6 +176,7 @@ def _patch_to_zarr_creates_store(monkeypatch) -> None:
 
 def _patch_open_zarr_from_registry(monkeypatch, registry: dict[str, xr.Dataset], opened: list[str] | None = None) -> None:
     def fake_open_zarr(path, *args, **kwargs):
+        assert kwargs["consolidated"] is False
         key = str(path)
         if opened is not None:
             opened.append(key)

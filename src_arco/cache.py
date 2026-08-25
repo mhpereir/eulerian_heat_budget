@@ -346,7 +346,11 @@ def load_cache_dataset(
 
     selected_tiles = [
         _select_cached_coverage(
-            xr.open_zarr(str(record.path), decode_timedelta=False),
+            xr.open_zarr(
+                str(record.path),
+                decode_timedelta=False,
+                consolidated=False,
+            ),
             cache_source_cfg,
             request,
             require_time_bounds=False,
