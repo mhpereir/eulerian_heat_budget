@@ -122,7 +122,48 @@ def test_validate_run_compares_dataset_and_required_plot_pixels(tmp_path):
     )
 
     assert report["reference_comparison"]["dataset_identical"] is True
+    assert report["reference_comparison"]["dataset_scientifically_equivalent"] is True
     assert len(report["reference_comparison"]["pixel_identical_plots"]) == 2
+
+
+def test_validate_run_accepts_roundoff_equivalent_reference(tmp_path):
+    candidate, cache, commit = _write_run(tmp_path / "candidate", "fixed-500-300-2021")
+    reference, _, _ = _write_run(tmp_path / "reference", "fixed-500-300-2021")
+    with xr.open_dataset(candidate / "heat_budget.nc", engine="h5netcdf") as opened:
+        changed = opened.load()
+    changed["T_domain_avg"][0] += 1.0e-9
+    changed.to_netcdf(candidate / "heat_budget.nc", engine="h5netcdf", mode="w")
+
+    report = validator.validate_run(
+        candidate,
+        profile_name="fixed-500-300-2021",
+        expected_commit=commit,
+        expected_cache=cache,
+        reference_dir=reference,
+    )
+
+    comparison = report["reference_comparison"]
+    assert comparison["dataset_identical"] is False
+    assert comparison["dataset_scientifically_equivalent"] is True
+    assert comparison["variables"]["T_domain_avg"]["identical"] is False
+
+
+def test_validate_run_rejects_difference_above_scientific_tolerance(tmp_path):
+    candidate, cache, commit = _write_run(tmp_path / "candidate", "fixed-500-300-2021")
+    reference, _, _ = _write_run(tmp_path / "reference", "fixed-500-300-2021")
+    with xr.open_dataset(candidate / "heat_budget.nc", engine="h5netcdf") as opened:
+        changed = opened.load()
+    changed["T_domain_avg"][0] += 1.0e-4
+    changed.to_netcdf(candidate / "heat_budget.nc", engine="h5netcdf", mode="w")
+
+    with pytest.raises(validator.ArtifactValidationError, match="scientific tolerance"):
+        validator.validate_run(
+            candidate,
+            profile_name="fixed-500-300-2021",
+            expected_commit=commit,
+            expected_cache=cache,
+            reference_dir=reference,
+        )
 
 
 def test_validate_run_rejects_scientific_difference(tmp_path):

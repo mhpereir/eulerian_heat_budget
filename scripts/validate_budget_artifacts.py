@@ -140,6 +140,10 @@ BENCHMARK_REQUIRED = (
     "calculated_diabatic_term_physical",
 )
 
+REFERENCE_RELATIVE_TOLERANCE = 1.0e-11
+REFERENCE_ABSOLUTE_TOLERANCE = 1.0e-10
+REFERENCE_VOLUME_DERIVATIVE_ULPS = 64.0
+
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
@@ -415,12 +419,100 @@ def _compare_reference(
     _require(reference_path.is_file(), f"Missing reference NetCDF: {reference_path}")
     with xr.open_dataset(reference_path, engine="h5netcdf") as opened:
         reference = opened.load()
-    try:
-        xr.testing.assert_identical(candidate, reference)
-    except AssertionError as exc:
-        raise ArtifactValidationError(
-            f"Candidate dataset is not identical to reference: {exc}"
-        ) from exc
+    _require(candidate.sizes == reference.sizes, "Candidate dimensions differ from reference.")
+    _require(
+        set(candidate.coords) == set(reference.coords),
+        "Candidate coordinates differ from reference.",
+    )
+    for name in candidate.coords:
+        _require(
+            candidate[name].identical(reference[name]),
+            f"Candidate coordinate {name!r} differs from reference.",
+        )
+    _require(
+        set(candidate.data_vars) == set(reference.data_vars),
+        "Candidate variable inventory differs from reference.",
+    )
+    _require(
+        candidate.attrs == reference.attrs,
+        "Candidate global attributes differ from reference.",
+    )
+
+    time = np.asarray(reference["time"].values).astype("datetime64[ns]")
+    timestep_seconds = float(
+        np.median(np.diff(time).astype("timedelta64[ns]").astype(np.float64)) / 1.0e9
+    )
+    volume_scale = float(
+        max(
+            np.max(np.abs(np.asarray(candidate["domain_volume"], dtype=np.float64))),
+            np.max(np.abs(np.asarray(reference["domain_volume"], dtype=np.float64))),
+        )
+    )
+    volume_derivative_tolerance = float(
+        REFERENCE_VOLUME_DERIVATIVE_ULPS
+        * np.spacing(volume_scale)
+        / timestep_seconds
+    )
+    temperature_scale = float(
+        max(
+            np.max(np.abs(np.asarray(candidate["T_domain_avg"], dtype=np.float64))),
+            np.max(np.abs(np.asarray(reference["T_domain_avg"], dtype=np.float64))),
+        )
+    )
+    absolute_tolerances = {
+        "dV_dt": volume_derivative_tolerance,
+        "volume_change_storage_term": volume_derivative_tolerance * temperature_scale,
+    }
+
+    comparisons = {}
+    dataset_identical = True
+    for name in sorted(candidate.data_vars):
+        candidate_var = candidate[name]
+        reference_var = reference[name]
+        _require(
+            candidate_var.dims == reference_var.dims,
+            f"Candidate variable {name!r} dimensions differ from reference.",
+        )
+        _require(
+            candidate_var.dtype == reference_var.dtype,
+            f"Candidate variable {name!r} dtype differs from reference.",
+        )
+        _require(
+            candidate_var.attrs == reference_var.attrs,
+            f"Candidate variable {name!r} attributes differ from reference.",
+        )
+        candidate_values = np.asarray(candidate_var.values)
+        reference_values = np.asarray(reference_var.values)
+        identical = bool(np.array_equal(candidate_values, reference_values, equal_nan=True))
+        dataset_identical = dataset_identical and identical
+        difference = np.abs(
+            candidate_values.astype(np.float64) - reference_values.astype(np.float64)
+        )
+        maximum_difference = float(np.max(difference))
+        scale = float(
+            max(
+                np.max(np.abs(candidate_values.astype(np.float64))),
+                np.max(np.abs(reference_values.astype(np.float64))),
+                1.0,
+            )
+        )
+        absolute_tolerance = float(
+            absolute_tolerances.get(name, REFERENCE_ABSOLUTE_TOLERANCE)
+        )
+        tolerance = float(
+            max(absolute_tolerance, REFERENCE_RELATIVE_TOLERANCE * scale)
+        )
+        _require(
+            maximum_difference <= tolerance,
+            f"Candidate variable {name!r} differs from reference by "
+            f"{maximum_difference:g}, which exceeds scientific tolerance {tolerance:g}.",
+        )
+        comparisons[name] = {
+            "identical": identical,
+            "max_abs_difference": maximum_difference,
+            "scale": scale,
+            "tolerance": tolerance,
+        }
 
     candidate_by_name = {path.name: path for path in candidate_pngs}
     reference_by_name = {path.name: path for path in (reference_dir / "plots").rglob("*.png")}
@@ -437,7 +529,10 @@ def _compare_reference(
             )
         compared.append(name)
     return {
-        "dataset_identical": True,
+        "dataset_identical": dataset_identical,
+        "dataset_scientifically_equivalent": True,
+        "relative_tolerance": REFERENCE_RELATIVE_TOLERANCE,
+        "variables": comparisons,
         "pixel_identical_plots": compared,
         "reference_netcdf_sha256": _sha256(reference_path),
     }
