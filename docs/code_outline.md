@@ -341,19 +341,19 @@ A production calculation:
 
 Queue-array construction and campaign submission remain backend-specific.
 
-### 4.5 Dask Client
+### 4.5 Dask Runtime
 
-The executable entrypoint parses arguments before or as part of starting a
-local Dask distributed client, depending on the branch-tip wrapper. The shared
-worker settings are currently:
+The executable entrypoint parses arguments before configuring Dask, so CLI
+help and invalid arguments do not start a runtime. Budget calculations use the
+core in-process threaded scheduler with four workers by default. Set
+`EHB_DASK_N_WORKERS` to a positive integer to change that concurrency.
 
-- `n_workers=4`
-- `threads_per_worker=1`
-- `processes=True`
-- `memory_limit="8GB"`
-
-The portable entrypoint closes the client through a context manager. Backend
-tips may rely on process termination after `main()` returns.
+Keeping the scheduler in the calculation process avoids serializing the full
+lazy graph through a local distributed scheduler and four worker processes.
+That transport is unnecessary for these single-node jobs, increases memory and
+scheduler overhead, and can emit large-graph warnings even when the graph is
+otherwise bounded. Numerical operations, chunk boundaries, and reduction order
+remain unchanged.
 
 ## 5. Repository Structure
 

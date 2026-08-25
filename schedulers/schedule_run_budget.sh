@@ -43,6 +43,7 @@ export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
+export EHB_DASK_N_WORKERS="${EHB_DASK_N_WORKERS:-4}"
 
 export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-${HOME}/miniconda3}"
 source "${MAMBA_ROOT_PREFIX}/etc/profile.d/mamba.sh"
@@ -63,6 +64,7 @@ echo "[info] Python executable: ${PYTHON_EXECUTABLE}"
 echo "[info] log file: ${LOGFILE}"
 echo "[info] settings file: ${SETTINGS_FILE}"
 echo "[info] data source: ${DATA_SOURCE}"
+echo "[info] dask: threaded scheduler, workers=${EHB_DASK_N_WORKERS}"
 if [[ "${DATA_SOURCE}" == "staged_arco_cache" ]]; then
   echo "[info] staged cache root: ${STAGED_CACHE_ROOT}"
 fi

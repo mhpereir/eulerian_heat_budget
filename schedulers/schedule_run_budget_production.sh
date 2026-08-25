@@ -24,6 +24,7 @@ export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
+export EHB_DASK_N_WORKERS="${EHB_DASK_N_WORKERS:-4}"
 export PYTHONUNBUFFERED="${PYTHONUNBUFFERED:-1}"
 
 export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-$HOME/miniconda3}"
@@ -115,6 +116,7 @@ echo "[info] Venus Mamba environment: ${VENUS_MAMBA_ENV}"
 echo "[info] Python executable: ${PYTHON_EXECUTABLE}"
 echo "[info] staged cache root: ${STAGED_CACHE_ROOT}"
 echo "[info] output dir: ${PRODUCTION_OUTPUT_DIR}"
+echo "[info] dask: threaded scheduler, workers=${EHB_DASK_N_WORKERS}"
 /usr/bin/time -v "${PYTHON_EXECUTABLE}" run_budget.py \
   "${COMMON_RUN_ARGS[@]}" \
   --time-start "${TIME_START}" \

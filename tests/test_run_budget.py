@@ -237,6 +237,43 @@ def test_staged_arco_cache_rejects_surface_variables():
         run_budget.build_surface_behaviour_from_cli(args)
 
 
+def test_build_dask_threaded_config_uses_defaults():
+    assert run_budget.build_dask_threaded_config(env={}) == {
+        "scheduler": "threads",
+        "num_workers": 4,
+    }
+
+
+def test_build_dask_threaded_config_reads_worker_override():
+    assert run_budget.build_dask_threaded_config(
+        env={"EHB_DASK_N_WORKERS": "2"}
+    ) == {
+        "scheduler": "threads",
+        "num_workers": 2,
+    }
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "many"])
+def test_build_dask_threaded_config_rejects_invalid_workers(value):
+    with pytest.raises(ValueError, match="EHB_DASK_N_WORKERS"):
+        run_budget.build_dask_threaded_config(
+            env={"EHB_DASK_N_WORKERS": value}
+        )
+
+
+def test_configure_dask_runtime_sets_threaded_scheduler(monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr(run_budget.dask.config, "set", lambda config: calls.append(config))
+
+    configured = run_budget.configure_dask_runtime(
+        env={"EHB_DASK_N_WORKERS": "3"}
+    )
+
+    assert configured == {"scheduler": "threads", "num_workers": 3}
+    assert calls == [configured]
+    assert "using dask threads scheduler with num_workers=3" in capsys.readouterr().out
+
+
 def test_cli_runtime_flags_parse_explicit_values():
     args = cli.parse_args(
         [
@@ -1001,6 +1038,8 @@ def test_single_run_schedulers_share_cli_settings():
     assert "#PBS -l select=1:ncpus=8:mem=8gb" in retrieval_scheduler
     assert "#PBS -l walltime=48:00:00" in run_scheduler
     assert "#PBS -l walltime=48:00:00" in retrieval_scheduler
+    assert "export EHB_DASK_N_WORKERS=\"${EHB_DASK_N_WORKERS:-4}\"" in run_scheduler
+    assert "dask: threaded scheduler, workers=${EHB_DASK_N_WORKERS}" in run_scheduler
     assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in retrieval_scheduler
     assert "/dev/null" not in run_scheduler
     assert "/dev/null" not in retrieval_scheduler
@@ -1068,6 +1107,14 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "source \"${SETTINGS_FILE}\"" in staging_scheduler
     assert "ehb_verify_runtime_checkout" in production_scheduler
     assert "ehb_require_external_production_paths" in production_scheduler
+    assert (
+        "export EHB_DASK_N_WORKERS=\"${EHB_DASK_N_WORKERS:-4}\""
+        in production_scheduler
+    )
+    assert (
+        "dask: threaded scheduler, workers=${EHB_DASK_N_WORKERS}"
+        in production_scheduler
+    )
     assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in staging_scheduler
     assert "#PBS -l select=1:ncpus=8:mem=8gb" in staging_scheduler
     assert "#PBS -l walltime=48:00:00" in staging_scheduler

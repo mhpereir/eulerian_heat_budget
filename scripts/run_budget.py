@@ -1,5 +1,6 @@
 import sys
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -7,14 +8,12 @@ PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+import dask
 import xarray as xr
 
 from src import config, cli, specs, io, validate, grid, budget, run_outputs
 from src import plot_results
 from src_arco import variables as arco_variables
-
-import logging
-    
 
 from src import terms
 
@@ -200,6 +199,49 @@ def build_production_options_from_cli(args) -> ProductionOptions | None:
         ),
         overwrite_output=args.overwrite_output,
     )
+
+
+def _env_int(env: Mapping[str, str], name: str, default: int) -> int:
+    value = env.get(name)
+    if value is None or value == "":
+        return default
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer, got {value!r}.") from exc
+    if parsed < 1:
+        raise ValueError(f"{name} must be at least 1, got {parsed}.")
+    return parsed
+
+
+def build_dask_threaded_config(
+    env: Mapping[str, str] | None = None,
+) -> dict[str, object]:
+    """Build the in-process Dask runtime used by budget calculations.
+
+    Budget jobs run on one scheduler node. The threaded scheduler executes the
+    existing lazy graph in that process, avoiding redundant serialization of
+    the full graph through a local distributed scheduler and its workers.
+    """
+    active_env = os.environ if env is None else env
+    return {
+        "scheduler": "threads",
+        "num_workers": _env_int(active_env, "EHB_DASK_N_WORKERS", 4),
+    }
+
+
+def configure_dask_runtime(
+    env: Mapping[str, str] | None = None,
+) -> dict[str, object]:
+    threaded_config = build_dask_threaded_config(env)
+    dask.config.set(threaded_config)
+    print(
+        "[info] using dask "
+        f"{threaded_config['scheduler']} scheduler "
+        f"with num_workers={threaded_config['num_workers']}"
+    )
+    return threaded_config
+
 
 def main(args=None) -> None:
     if args is None:
@@ -401,17 +443,8 @@ def main(args=None) -> None:
             # plot_results.plot_diabatic_terms_day_bin(result_test, plot_dir=constant_t_plot_dir)
             plot_results.plot_constant_T_results(result, result_test, plot_dir=constant_t_plot_dir)
 
+
 if __name__ == "__main__":
-    logging.getLogger("distributed.shuffle._scheduler_plugin").setLevel(logging.ERROR)
-    logging.getLogger("distributed.shuffle._core").setLevel(logging.ERROR)
-
     parsed_args = cli.parse_args()
-    from dask.distributed import Client
-
-    with Client(
-        n_workers=4,
-        threads_per_worker=1,
-        processes=True,
-        memory_limit="8GB",
-    ):
-        main(parsed_args)
+    configure_dask_runtime()
+    main(parsed_args)
