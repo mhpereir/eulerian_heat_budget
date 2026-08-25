@@ -61,6 +61,18 @@ def _format_time_axis(ax):
     ax.xaxis.set_major_formatter(formatter)
 
 
+def _add_major_time_grids(axes):
+    for ax in axes:
+        ax.grid(
+            axis="x",
+            which="major",
+            color="k",
+            linewidth=LINE_WIDTH_PT,
+            alpha=0.15,
+            zorder=0,
+        )
+
+
 def _pad_y_limits(ax, fraction: float = 0.12):
     lower, upper = ax.get_ylim()
     span = upper - lower
@@ -423,20 +435,6 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
         lines.append(line[0])
 
 
-    # add faint vertical lines
-    day_boundaries = domain_volume.time.values
-    for a in ax:
-        for t in day_boundaries:
-            a.axvline(
-                t,
-                color="k",
-                linewidth=LINE_WIDTH_PT,
-                alpha=0.2,
-                zorder=0
-            )
-
-
-
     ax[2].set_ylabel(f" {units}")
     ax[2].legend(lines, [
         "Adv.",
@@ -450,6 +448,7 @@ def plot_budget_terms_day_bin(ds_budget: xr.Dataset, plot_dir: str) -> None:
     ax[0].set_xlabel("")
     ax[1].set_xlabel("")
     _format_time_axis(ax[2])
+    _add_major_time_grids(ax)
     ax[2].set_xlabel("Time")
 
     ymax = max(

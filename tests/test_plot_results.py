@@ -1,4 +1,5 @@
 import warnings
+from unittest import mock
 
 import matplotlib
 import numpy as np
@@ -48,3 +49,12 @@ def test_short_budget_plots_are_warning_free(tmp_path):
     }
     assert {path.name for path in tmp_path.glob("*.png")} == expected
     assert all((tmp_path / name).stat().st_size > 0 for name in expected)
+
+
+def test_daily_plot_uses_major_date_grids_not_daily_boundary_lines(tmp_path):
+    dataset = _short_budget_dataset()
+
+    with mock.patch("matplotlib.axes.Axes.axvline") as axvline:
+        plot_results.plot_budget_terms_day_bin(dataset, str(tmp_path))
+
+    axvline.assert_not_called()
