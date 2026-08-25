@@ -1,6 +1,7 @@
 import importlib
 import multiprocessing
 import os
+import pickle
 import signal
 import sys
 import threading
@@ -328,6 +329,212 @@ def test_expand_sparse_wall_preserves_template_chunks_without_dask_warning():
     assert expanded.chunks == template.chunks
     assert bool((expanded.isel(lat=1, lon=0).compute() == 0.0).all())
     assert bool(expanded.isel(lat=0, lon=40).isnull().compute().all())
+
+
+@pytest.mark.parametrize(
+    ("dims", "shape", "chunks"),
+    [
+        (("time", "level", "lat", "lon"), (6, 3, 3, 2), (2, 3, 2, 1)),
+        (("time", "lat", "lon"), (6, 3, 2), (2, 2, 1)),
+    ],
+)
+def test_expand_sparse_wall_preserves_independent_dask_values_and_metadata(
+    dims,
+    shape,
+    chunks,
+):
+    coords = {
+        "time": np.arange("2021-06-01", "2021-06-01T06", dtype="datetime64[h]"),
+        "lat": np.array([1.0, 2.0, 3.0]),
+        "lon": np.array([10.0, 14.0]),
+    }
+    template_coords = {
+        "time": coords["time"],
+        "lat": np.arange(5.0),
+        "lon": np.arange(10.0, 16.0),
+    }
+    template_shape = (6, 5, 6)
+    template_chunks = (2, 2, 3)
+    if "level" in dims:
+        coords["level"] = np.array([100000.0, 90000.0, 80000.0])
+        template_coords["level"] = coords["level"]
+        template_shape = (6, 3, 5, 6)
+        template_chunks = (2, 3, 2, 3)
+
+    wall = xr.DataArray(
+        da.arange(np.prod(shape), chunks=np.prod(chunks), dtype=np.float32)
+        .reshape(shape)
+        .rechunk(chunks),
+        dims=dims,
+        coords=coords,
+        name="wall",
+        attrs={"units": "m s-1", "source": "independent"},
+    )
+    template = xr.DataArray(
+        da.zeros(template_shape, chunks=template_chunks, dtype=np.float32),
+        dims=dims,
+        coords=template_coords,
+        name="template",
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PerformanceWarning)
+        expanded = selection._expand_sparse_wall(wall, template, name="expanded")
+
+    assert expanded.name == "expanded"
+    assert expanded.dtype == wall.dtype
+    assert expanded.attrs == wall.attrs
+    assert expanded.dims == template.dims
+    assert expanded.chunks == template.chunks
+    xrt.assert_identical(
+        expanded.sel(lat=coords["lat"], lon=coords["lon"]),
+        wall.rename("expanded"),
+    )
+    assert bool(expanded.sel(lon=12.0).isnull().compute().all())
+    assert bool(expanded.sel(lat=0.0).isnull().compute().all())
+
+
+def test_expand_sparse_wall_numpy_matches_positional_reference():
+    time = np.arange("2021-06-01", "2021-06-01T02", dtype="datetime64[h]")
+    level = np.array([100000.0, 90000.0])
+    lat = np.arange(5.0)
+    lon = np.arange(10.0, 16.0)
+    wall_values = np.arange(2 * 2 * 3 * 2, dtype=np.float32).reshape(2, 2, 3, 2)
+    wall = xr.DataArray(
+        wall_values,
+        dims=("time", "level", "lat", "lon"),
+        coords={"time": time, "level": level, "lat": lat[1:4], "lon": lon[[0, 5]]},
+        attrs={"units": "m s-1"},
+    )
+    template = xr.DataArray(
+        np.zeros((2, 2, 5, 6), dtype=np.float32),
+        dims=wall.dims,
+        coords={"time": time, "level": level, "lat": lat, "lon": lon},
+    )
+
+    expanded = selection._expand_sparse_wall(wall, template, name="u")
+
+    expected = np.full(template.shape, np.nan, dtype=np.float32)
+    expected[:, :, 1:4, 0] = wall_values[:, :, :, 0]
+    expected[:, :, 1:4, 5] = wall_values[:, :, :, 1]
+    np.testing.assert_array_equal(expanded.values, expected)
+    assert expanded.attrs == wall.attrs
+    assert expanded.chunks is None
+
+
+@pytest.mark.parametrize(
+    ("coordinate", "match"),
+    [
+        ([10.0, 10.0], "must be unique"),
+        ([15.0, 10.0], "must follow template order"),
+        ([10.0, 16.0], "off-template values"),
+    ],
+)
+def test_expand_sparse_wall_rejects_invalid_spatial_coordinates(coordinate, match):
+    template = xr.DataArray(
+        np.zeros((2, 3, 6), dtype=np.float32),
+        dims=("time", "lat", "lon"),
+        coords={"time": [0, 1], "lat": np.arange(3.0), "lon": np.arange(10.0, 16.0)},
+    )
+    wall = xr.DataArray(
+        np.zeros((2, 3, 2), dtype=np.float32),
+        dims=template.dims,
+        coords={"time": [0, 1], "lat": np.arange(3.0), "lon": coordinate},
+    )
+
+    with pytest.raises(ValueError, match=match):
+        selection._expand_sparse_wall(wall, template, name="Fx_mass")
+
+
+def test_expand_sparse_wall_rejects_nonspatial_coordinate_mismatch():
+    template = xr.DataArray(
+        np.zeros((2, 3, 6), dtype=np.float32),
+        dims=("time", "lat", "lon"),
+        coords={"time": [0, 1], "lat": np.arange(3.0), "lon": np.arange(10.0, 16.0)},
+    )
+    wall = xr.DataArray(
+        np.zeros((2, 3, 2), dtype=np.float32),
+        dims=template.dims,
+        coords={"time": [0, 2], "lat": np.arange(3.0), "lon": [10.0, 15.0]},
+    )
+
+    with pytest.raises(ValueError, match="coordinate 'time' must exactly match"):
+        selection._expand_sparse_wall(wall, template, name="Fx_mass")
+
+
+def test_expand_sparse_wall_rejects_reversed_template_coordinate():
+    template = xr.DataArray(
+        np.zeros((2, 3, 6), dtype=np.float32),
+        dims=("time", "lat", "lon"),
+        coords={
+            "time": [0, 1],
+            "lat": np.arange(3.0),
+            "lon": np.arange(15.0, 9.0, -1.0),
+        },
+    )
+    wall = template.isel(lon=[0, 5])
+
+    with pytest.raises(
+        ValueError,
+        match="Template coordinate 'lon' must be strictly increasing",
+    ):
+        selection._expand_sparse_wall(wall, template, name="Fx_mass")
+
+
+def test_expand_sparse_wall_bounds_independent_multitile_graph():
+    level = np.arange(7.0)
+    lat = np.arange(82.0)
+    lon = np.arange(82.0)
+    template_tiles = []
+    wall_tiles = []
+    for tile_index in range(5):
+        time = np.arange(tile_index * 48, (tile_index + 1) * 48)
+        template_tiles.append(
+            xr.DataArray(
+                da.zeros((48, 7, 82, 82), chunks=(12, 7, 16, 16), dtype=np.float32),
+                dims=("time", "level", "lat", "lon"),
+                coords={"time": time, "level": level, "lat": lat, "lon": lon},
+            )
+        )
+        wall_tiles.append(
+            xr.DataArray(
+                da.full(
+                    (48, 7, 80, 4),
+                    tile_index,
+                    chunks=(12, 7, 40, 2),
+                    dtype=np.float32,
+                ),
+                dims=("time", "level", "lat", "lon"),
+                coords={
+                    "time": time,
+                    "level": level,
+                    "lat": lat[1:81],
+                    "lon": lon[[0, 1, 80, 81]],
+                },
+            )
+        )
+
+    template = xr.concat(template_tiles, dim="time")
+    wall = xr.concat(wall_tiles, dim="time")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", PerformanceWarning)
+        legacy = wall.chunk({"lat": -1, "lon": -1}).combine_first(
+            xr.full_like(template, np.nan)
+        )
+        legacy = legacy.transpose(*template.dims).chunk(template.chunksizes)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PerformanceWarning)
+        expanded = selection._expand_sparse_wall(wall, template, name="u")
+
+    assert len(expanded.data.__dask_graph__()) < len(legacy.data.__dask_graph__()) / 2
+    assert len(pickle.dumps(expanded.data.__dask_graph__())) < len(
+        pickle.dumps(legacy.data.__dask_graph__())
+    ) / 2
+    assert float(expanded.sel(time=200, level=0.0, lat=1.0, lon=0.0).compute()) == 4.0
+    assert bool(
+        expanded.sel(time=200, level=0.0, lat=0.0, lon=40.0).isnull().compute()
+    )
 
 
 def test_reconstruct_benchmark_dataset_expands_compact_shell():

@@ -236,9 +236,11 @@ The current staged cache schema stores:
 `src_arco.selection` reconstructs canonical `u` and `v` arrays before the
 dataset enters the shared validation and budget pipeline. Interior velocity
 locations that are not required by the wall-flux calculation can remain
-missing. During reconstruction, each compact wall coalesces only its spatial
-chunks before outer alignment, then restores the canonical template chunk
-layout. This bounds the Dask graph without removing time or level parallelism.
+missing. During reconstruction, exact wall-coordinate positions define lazy
+wall slices and NaN gaps that are concatenated without xarray outer alignment.
+The result is restored to the canonical template chunk layout. This keeps the
+Dask graph proportional to the input chunks without removing time or level
+parallelism.
 
 Current staged-cache constraints:
 

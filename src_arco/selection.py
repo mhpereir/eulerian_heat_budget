@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dask.array as da
 import numpy as np
 import xarray as xr
 
@@ -197,34 +198,183 @@ def _expand_sparse_wall(
     *,
     name: str,
 ) -> xr.DataArray:
-    """Expand a compact wall field without multiplying Dask chunks.
+    """Expand a compact wall field with bounded positional assembly.
 
-    Xarray's outer alignment builds one mask per missing spatial coordinate.
-    If the compact wall retains several spatial chunks, combining those masks
-    can multiply the task graph. A compact lateral shell is small in space, so
-    coalescing only its spatial chunks before alignment keeps the graph bounded
-    while preserving time and level parallelism. The expanded result is then
-    restored to the template's chunk layout.
+    ``xarray`` outer alignment creates one mask for every missing coordinate.
+    Across independently chunked monthly tiles, those masks can multiply the
+    Dask graph. Wall coordinates are an exact ordered subset of the canonical
+    template, so assemble the known slices and lazy NaN gaps by integer
+    position instead. No coordinate alignment is required.
     """
-    if wall.chunks is not None:
-        spatial_chunks = {
-            dim: -1
-            for dim in ("lat", "lon")
-            if dim in wall.dims
-        }
-        wall = wall.chunk(spatial_chunks)
-
-    empty = xr.full_like(template, np.nan).rename(name)
-    expanded = wall.combine_first(empty).transpose(*template.dims).rename(name)
-
-    if expanded.chunks is not None and template.chunks is not None:
-        expanded = expanded.chunk(
-            {
-                dim: template.chunksizes[dim]
-                for dim in template.dims
-            }
+    if set(wall.dims) != set(template.dims):
+        raise ValueError(
+            f"{name} wall dimensions must match template dimensions; "
+            f"got {wall.dims!r} and {template.dims!r}."
         )
-    return expanded
+    if not np.issubdtype(wall.dtype, np.inexact):
+        raise TypeError(f"{name} wall dtype must support NaN, got {wall.dtype!r}.")
+
+    wall = wall.transpose(*template.dims)
+    positions: dict[str, np.ndarray] = {}
+    for dim in template.dims:
+        template_index = template.get_index(dim)
+        wall_index = wall.get_index(dim)
+        if not template_index.is_unique:
+            raise ValueError(f"Template coordinate {dim!r} must be unique.")
+        if not wall_index.is_unique:
+            raise ValueError(f"{name} wall coordinate {dim!r} must be unique.")
+
+        if dim not in ("lat", "lon"):
+            if not wall_index.equals(template_index):
+                raise ValueError(
+                    f"{name} wall coordinate {dim!r} must exactly match the template."
+                )
+            continue
+
+        if not template_index.is_monotonic_increasing:
+            raise ValueError(
+                f"Template coordinate {dim!r} must be strictly increasing."
+            )
+        dim_positions = template_index.get_indexer(wall_index)
+        if np.any(dim_positions < 0):
+            missing = wall_index[np.flatnonzero(dim_positions < 0)].tolist()
+            raise ValueError(
+                f"{name} wall coordinate {dim!r} contains off-template values: {missing!r}."
+            )
+        if dim_positions.size > 1 and np.any(np.diff(dim_positions) <= 0):
+            raise ValueError(
+                f"{name} wall coordinate {dim!r} must follow template order."
+            )
+        positions[dim] = dim_positions
+
+    data = wall.data
+    uses_dask = isinstance(data, da.Array) or isinstance(template.data, da.Array)
+    if uses_dask and not isinstance(data, da.Array):
+        data = da.from_array(data, chunks=data.shape)
+
+    for dim, dim_positions in positions.items():
+        if dim_positions.size == template.sizes[dim]:
+            continue
+        data = _expand_sparse_axis(
+            data,
+            axis=template.get_axis_num(dim),
+            positions=dim_positions,
+            target_size=template.sizes[dim],
+            target_chunks=(
+                template.chunksizes[dim]
+                if template.chunks is not None
+                else None
+            ),
+        )
+
+    if isinstance(data, da.Array) and template.chunks is not None:
+        data = data.rechunk(template.chunks)
+
+    return xr.DataArray(
+        data,
+        dims=template.dims,
+        coords=template.coords,
+        name=name,
+        attrs=dict(wall.attrs),
+    )
+
+
+def _expand_sparse_axis(
+    data: np.ndarray | da.Array,
+    *,
+    axis: int,
+    positions: np.ndarray,
+    target_size: int,
+    target_chunks: tuple[int, ...] | None,
+) -> np.ndarray | da.Array:
+    """Insert lazy NaN gaps around ordered source positions on one axis."""
+    pieces: list[np.ndarray | da.Array] = []
+    source_start = 0
+    target_start = 0
+
+    while source_start < positions.size:
+        run_target_start = int(positions[source_start])
+        if target_start < run_target_start:
+            pieces.append(
+                _nan_gap(
+                    data,
+                    axis=axis,
+                    start=target_start,
+                    stop=run_target_start,
+                    target_chunks=target_chunks,
+                )
+            )
+
+        source_stop = source_start + 1
+        while (
+            source_stop < positions.size
+            and positions[source_stop] == positions[source_stop - 1] + 1
+        ):
+            source_stop += 1
+
+        indexer = [slice(None)] * data.ndim
+        indexer[axis] = slice(source_start, source_stop)
+        pieces.append(data[tuple(indexer)])
+        target_start = int(positions[source_stop - 1]) + 1
+        source_start = source_stop
+
+    if target_start < target_size:
+        pieces.append(
+            _nan_gap(
+                data,
+                axis=axis,
+                start=target_start,
+                stop=target_size,
+                target_chunks=target_chunks,
+            )
+        )
+
+    concatenate = da.concatenate if isinstance(data, da.Array) else np.concatenate
+    return concatenate(pieces, axis=axis)
+
+
+def _nan_gap(
+    data: np.ndarray | da.Array,
+    *,
+    axis: int,
+    start: int,
+    stop: int,
+    target_chunks: tuple[int, ...] | None,
+) -> np.ndarray | da.Array:
+    """Create a NaN segment matching ``data`` outside one expanded axis."""
+    shape = list(data.shape)
+    shape[axis] = stop - start
+    if isinstance(data, da.Array):
+        chunks = list(data.chunks)
+        chunks[axis] = _chunks_for_interval(target_chunks, start, stop)
+        return da.full(tuple(shape), np.nan, chunks=tuple(chunks), dtype=data.dtype)
+    return np.full(tuple(shape), np.nan, dtype=data.dtype)
+
+
+def _chunks_for_interval(
+    chunks: tuple[int, ...] | None,
+    start: int,
+    stop: int,
+) -> tuple[int, ...]:
+    """Return target chunk pieces intersecting the half-open interval."""
+    if chunks is None:
+        return (stop - start,)
+
+    pieces = []
+    chunk_start = 0
+    for chunk_size in chunks:
+        chunk_stop = chunk_start + chunk_size
+        overlap = min(stop, chunk_stop) - max(start, chunk_start)
+        if overlap > 0:
+            pieces.append(overlap)
+        chunk_start = chunk_stop
+        if chunk_start >= stop:
+            break
+    if sum(pieces) != stop - start:
+        raise ValueError(
+            f"Target chunks {chunks!r} do not cover interval [{start}, {stop})."
+        )
+    return tuple(pieces)
 
 
 def _select_u_wall(
