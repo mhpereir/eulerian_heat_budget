@@ -130,6 +130,14 @@ def _mass_flux_wall_label(var_name: str) -> str:
     return var_name
 
 
+def _nanmean_or_nan(values: np.ndarray) -> float:
+    """Match ``nanmean`` while defining empty and all-NaN groups as NaN."""
+    values = np.asarray(values)
+    if values.size == 0 or np.isnan(values).all():
+        return float("nan")
+    return float(np.nanmean(values))
+
+
 def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_dir: str):
     #test how mass advection terms compare to volume changes (should be y=-x)
     fig,ax = plt.subplots(
@@ -163,8 +171,8 @@ def fig1_mass_continuity(dV_dt: xr.DataArray, advection_terms: xr.Dataset, plot_
     edges = np.quantile(x, np.linspace(0, 1, nbin+1))
     bin_id = np.digitize(x, edges[1:-1])
 
-    xb = np.array([np.nanmean(x[bin_id==i]) for i in range(nbin)])
-    rb = np.array([np.nanmean(r[bin_id==i]) for i in range(nbin)])
+    xb = np.array([_nanmean_or_nan(x[bin_id == i]) for i in range(nbin)])
+    rb = np.array([_nanmean_or_nan(r[bin_id == i]) for i in range(nbin)])
 
     plt.figure(
         figsize=_publication_figsize("single", SINGLE_PANEL_ASPECT),
