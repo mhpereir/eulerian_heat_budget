@@ -16,6 +16,7 @@ Contract requirement: `io.py` is where any renaming between external conventions
 import xarray as xr
 import numpy as np
 import time
+from zarr.storage import FsspecStore
 
 from collections.abc import Mapping
 
@@ -462,14 +463,27 @@ def _open_arco_zarr_with_retry(
     base_delay_seconds = config.DEFAULT_ARCO_OPEN_RETRY_BASE_DELAY_SECONDS
 
     for attempt in range(1, max_attempts + 1):
+        store = FsspecStore.from_url(
+            cfg.arco_path,
+            storage_options={
+                "token": cfg.arco_storage_token,
+                "skip_instance_cache": True,
+            },
+            read_only=True,
+        )
         try:
-            return xr.open_zarr(
-                cfg.arco_path,
+            ds = xr.open_zarr(
+                store,
                 chunks=chunks,
-                storage_options={"token": cfg.arco_storage_token},
                 decode_timedelta=False,
             )
+            ds.set_close(lambda store=store: _close_arco_zarr_store(store))
+            return ds
         except Exception as exc:
+            try:
+                _close_arco_zarr_store(store)
+            except Exception as close_exc:
+                exc.add_note(f"ARCO store cleanup also failed: {close_exc}")
             if not _is_transient_arco_open_error(exc) or attempt == max_attempts:
                 raise
 
@@ -482,6 +496,31 @@ def _open_arco_zarr_with_retry(
             time.sleep(delay_seconds)
 
     raise RuntimeError("ARCO retry loop exhausted unexpectedly.")
+
+
+def _close_arco_zarr_store(store: FsspecStore) -> None:
+    """Close both the Zarr store and its dedicated remote filesystem session."""
+    try:
+        store.close()
+    finally:
+        filesystem = store.fs
+        close_session = getattr(filesystem, "close_session", None)
+        if callable(close_session):
+            try:
+                session = filesystem.session
+            except RuntimeError:
+                session = None
+            if session is not None:
+                close_session(
+                    getattr(filesystem, "loop", None),
+                    session,
+                    getattr(filesystem, "asynchronous", False),
+                )
+            return
+
+        close = getattr(filesystem, "close", None)
+        if callable(close):
+            close()
 
 
 def _is_transient_arco_open_error(exc: BaseException) -> bool:

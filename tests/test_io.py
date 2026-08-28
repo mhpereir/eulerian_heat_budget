@@ -40,8 +40,51 @@ def _request() -> DomainRequest:
     )
 
 
+class _FakeSession:
+    def __init__(self):
+        self.closed = False
+        self.close_calls = []
+
+
+class _FakeFilesystem:
+    asynchronous = True
+    loop = object()
+
+    def __init__(self):
+        self.session = _FakeSession()
+
+    @staticmethod
+    def close_session(loop, session, asynchronous=False):
+        session.close_calls.append((loop, asynchronous))
+        session.closed = True
+
+
+class _FakeFsspecStore:
+    def __init__(self):
+        self.fs = _FakeFilesystem()
+        self.close_calls = 0
+
+    def close(self):
+        self.close_calls += 1
+
+
+def _patch_arco_stores(monkeypatch):
+    stores = []
+    calls = []
+
+    def fake_from_url(url, *, storage_options, read_only):
+        store = _FakeFsspecStore()
+        stores.append(store)
+        calls.append((url, storage_options, read_only))
+        return store
+
+    monkeypatch.setattr(io.FsspecStore, "from_url", fake_from_url)
+    return stores, calls
+
+
 def test_open_arco_zarr_retries_transient_errors(monkeypatch):
     calls = {"count": 0}
+    stores, store_calls = _patch_arco_stores(monkeypatch)
     dataset = xr.Dataset(
         {
             "temperature": xr.DataArray([1.0], dims=("time",)),
@@ -62,10 +105,32 @@ def test_open_arco_zarr_retries_transient_errors(monkeypatch):
 
     assert out is dataset
     assert calls["count"] == 3
+    assert len(stores) == 3
+    assert [store.close_calls for store in stores] == [1, 1, 0]
+    assert [store.fs.session.closed for store in stores] == [True, True, False]
+    assert [store.fs.session.close_calls for store in stores] == [
+        [(stores[0].fs.loop, True)],
+        [(stores[1].fs.loop, True)],
+        [],
+    ]
+    assert store_calls == [
+        (
+            "gs://example-dataset.zarr",
+            {"token": "anon", "skip_instance_cache": True},
+            True,
+        )
+    ] * 3
+
+    out.close()
+
+    assert stores[-1].close_calls == 1
+    assert stores[-1].fs.session.closed is True
+    assert stores[-1].fs.session.close_calls == [(stores[-1].fs.loop, True)]
 
 
 def test_open_arco_zarr_does_not_retry_non_transient_errors(monkeypatch):
     calls = {"count": 0}
+    stores, _ = _patch_arco_stores(monkeypatch)
 
     def fake_open_zarr(*args, **kwargs):
         calls["count"] += 1
@@ -78,10 +143,13 @@ def test_open_arco_zarr_does_not_retry_non_transient_errors(monkeypatch):
         io._open_arco_zarr_with_retry(_arco_cfg())
 
     assert calls["count"] == 1
+    assert stores[0].close_calls == 1
+    assert stores[0].fs.session.closed is True
 
 
 def test_open_arco_zarr_accepts_native_chunk_strategy(monkeypatch):
     observed = {}
+    stores, _ = _patch_arco_stores(monkeypatch)
     dataset = xr.Dataset(
         {"temperature": xr.DataArray([1.0], dims=("time",))},
         coords={"time": [0]},
@@ -97,6 +165,11 @@ def test_open_arco_zarr_accepts_native_chunk_strategy(monkeypatch):
 
     assert out is dataset
     assert observed["chunks"] == {}
+
+    out.close()
+
+    assert stores[0].close_calls == 1
+    assert stores[0].fs.session.closed is True
 
 
 def test_standardize_can_preserve_source_chunks(monkeypatch):
