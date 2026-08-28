@@ -1167,7 +1167,10 @@ def test_staged_retrieval_avoids_store_wide_dask_graph(monkeypatch):
     )
     observed = {}
     materialized = []
+    close_events = []
     original_load = xr.DataArray.load
+
+    source.set_close(lambda: close_events.append("closed"))
 
     def fake_open(source_cfg, *, chunks="auto"):
         observed["open_chunks"] = chunks
@@ -1178,6 +1181,7 @@ def test_staged_retrieval_avoids_store_wide_dask_graph(monkeypatch):
         return canonical
 
     def tracked_load(data_array, **kwargs):
+        assert close_events == []
         materialized.append(data_array.name)
         return original_load(data_array, **kwargs)
 
@@ -1193,8 +1197,49 @@ def test_staged_retrieval_avoids_store_wide_dask_graph(monkeypatch):
 
     assert observed == {"open_chunks": None, "rechunk": False}
     assert materialized == ["T", "w", "sp", "u_wall", "v_wall"]
+    assert close_events == ["closed"]
     assert tile.sizes["lat"] < canonical.sizes["lat"]
     assert tile.sizes["lon"] < canonical.sizes["lon"]
+
+
+def test_staged_retrieval_closes_source_dataset_after_build_error(monkeypatch):
+    canonical = _canonical_dataset()
+    source = canonical[["T", "u", "v", "w", "sp"]].rename(
+        {
+            "T": "temperature",
+            "u": "u_component_of_wind",
+            "v": "v_component_of_wind",
+            "w": "vertical_velocity",
+            "sp": "surface_pressure",
+        }
+    )
+    close_events = []
+    source.set_close(lambda: close_events.append("closed"))
+
+    monkeypatch.setattr(
+        staged_arco_retrieval.io,
+        "_open_arco_zarr_with_retry",
+        lambda source_cfg, *, chunks="auto": source,
+    )
+    monkeypatch.setattr(
+        staged_arco_retrieval.io,
+        "standardize_era5_dataset",
+        lambda ds, source_cfg, *, rechunk=True: canonical,
+    )
+
+    def fail_build(*args, **kwargs):
+        raise RuntimeError("tile construction failed")
+
+    monkeypatch.setattr(staged_arco_retrieval.cache, "build_arco_cache_tile", fail_build)
+
+    with pytest.raises(RuntimeError, match="tile construction failed"):
+        staged_arco_retrieval._build_tile_from_arco(
+            _source_cfg(),
+            _request(),
+            include_benchmark_variables=False,
+        )
+
+    assert close_events == ["closed"]
 
 
 def test_staged_retrieval_main_stages_each_month_chunk(monkeypatch, tmp_path):

@@ -257,7 +257,9 @@ The staged retrieval path opens the global ARCO store with `chunks=None` so
 xarray does not construct a store-wide Dask graph. It applies the requested
 time, horizontal, vertical, and wall-only selections first, materializes the
 selected variables one at a time, and applies the configured Dask/Zarr chunks
-only to the compact tile being written.
+only to the compact tile being written. The retrieval child closes the original
+remote dataset in a `finally` block after materialization, including when tile
+construction or loading fails.
 
 ### 3.4 Data-Source Selection
 
@@ -760,6 +762,7 @@ Present on staged tips. It:
 - optionally splits requests into daily or monthly staging chunks
 - avoids a store-wide Dask graph while selecting compact staged data
 - materializes selected tile variables before normalizing their Zarr chunks
+- closes the remote source dataset after materialization on success or failure
 - retries recognized transient open or write failures
 - writes indexed compact Zarr tiles
 - skips only an exact tile already registered in the cache
@@ -1150,7 +1153,7 @@ Isolated cross-tip validation at this document update:
 - `drac_development_2_staged`: `120 passed`
 - `google_development_staged`: `139 passed` with one Matplotlib date-locator
   warning
-- `production_development_staged`: `170 passed` with warnings treated as errors
+- `production_development_staged`: `198 passed` with warnings treated as errors
 
 Branch-specific suites must pass before their corresponding retrieval or
 production deployment.

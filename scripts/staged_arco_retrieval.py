@@ -531,31 +531,38 @@ def _build_tile_from_arco(
     # The store has one full-globe chunk per variable and hour, so even native
     # Dask chunking creates enough graph metadata to exhaust a small VM before
     # any variable or regional selection is applied.
-    ds = io._open_arco_zarr_with_retry(source_cfg, chunks=None)
-    _log_info(f"opened ARCO zarr store in {_elapsed_seconds(build_started)}")
-    _log_info(f"selecting ARCO source variables: {list(var_map)}")
-    ds = ds[list(var_map.keys())]
-    if source_cfg.time_start is not None or source_cfg.time_end is not None:
-        _log_info(f"selecting ARCO time slice {source_cfg.time_start} to {source_cfg.time_end}")
-        ds = ds.sel(time=slice(source_cfg.time_start, source_cfg.time_end))
-    _log_info(f"renaming ARCO variables to staged schema: {list(var_map.values())}")
-    ds = ds.rename(var_map)
-    _log_info("standardizing ARCO dataset metadata and chunks")
-    ds = io.standardize_era5_dataset(ds, source_cfg, rechunk=False)
-    _log_info("building wall-only staged tile metadata")
-    tile = cache.build_arco_cache_tile(
-        ds,
-        request,
-        include_benchmark_variables=include_benchmark_variables,
-    )
-    _log_info(
-        f"built staged tile metadata in {_elapsed_seconds(build_started)} "
-        f"sizes={dict(tile.sizes)} variables={list(tile.data_vars)}"
-    )
-    for variable_name in tuple(tile.data_vars):
-        _log_info(f"materializing selected staged variable {variable_name}")
-        tile[variable_name] = tile[variable_name].load()
-    return tile
+    source_ds = io._open_arco_zarr_with_retry(source_cfg, chunks=None)
+    try:
+        _log_info(f"opened ARCO zarr store in {_elapsed_seconds(build_started)}")
+        _log_info(f"selecting ARCO source variables: {list(var_map)}")
+        ds = source_ds[list(var_map.keys())]
+        if source_cfg.time_start is not None or source_cfg.time_end is not None:
+            _log_info(
+                f"selecting ARCO time slice {source_cfg.time_start} "
+                f"to {source_cfg.time_end}"
+            )
+            ds = ds.sel(time=slice(source_cfg.time_start, source_cfg.time_end))
+        _log_info(f"renaming ARCO variables to staged schema: {list(var_map.values())}")
+        ds = ds.rename(var_map)
+        _log_info("standardizing ARCO dataset metadata and chunks")
+        ds = io.standardize_era5_dataset(ds, source_cfg, rechunk=False)
+        _log_info("building wall-only staged tile metadata")
+        tile = cache.build_arco_cache_tile(
+            ds,
+            request,
+            include_benchmark_variables=include_benchmark_variables,
+        )
+        _log_info(
+            f"built staged tile metadata in {_elapsed_seconds(build_started)} "
+            f"sizes={dict(tile.sizes)} variables={list(tile.data_vars)}"
+        )
+        for variable_name in tuple(tile.data_vars):
+            _log_info(f"materializing selected staged variable {variable_name}")
+            tile[variable_name] = tile[variable_name].load()
+        return tile
+    finally:
+        _log_info("closing ARCO source dataset")
+        source_ds.close()
 
 
 if __name__ == "__main__":
