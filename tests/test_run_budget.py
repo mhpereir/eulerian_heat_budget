@@ -1093,6 +1093,7 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "USE_SURFACE_AS_BOTTOM" not in settings
     assert "STAGED_ARCO_TIME_CHUNK=" in settings
     assert "STAGED_ARCO_ATTEMPT_TIMEOUT_SECONDS=" in settings
+    assert "RUN_BUDGET_WALLTIME=" in settings
     assert "ehb_build_production_run_budget_args" in settings
     assert "ehb_build_production_staged_retrieval_args" in settings
     assert "ehb_build_staged_campaign_init_args" in settings
@@ -1123,6 +1124,7 @@ def test_pbs_production_scheduler_uses_cli_settings(tmp_path):
     assert "export PYTHONUNBUFFERED=\"${PYTHONUNBUFFERED:-1}\"" in staging_scheduler
     assert "#PBS -l select=1:ncpus=8:mem=8gb" in staging_scheduler
     assert "#PBS -l walltime=48:00:00" in staging_scheduler
+    assert "#PBS -l walltime=02:00:00" in production_scheduler
     assert "#PBS -o /dev/null" not in production_scheduler
     assert "ehb_build_production_run_budget_args COMMON_RUN_ARGS" in production_scheduler
     assert "TASK_INDEX=$(ehb_resolve_yearly_task_index)" in production_scheduler
@@ -1639,11 +1641,25 @@ echo "200[].venus"
 
     submitted = qsub_log.read_text(encoding="utf-8")
     assert "-J 0-85%5" in submitted
+    assert "-l walltime=02:00:00" in submitted
     assert f"-o {log_dir}/" in submitted
     assert "schedule_run_budget_production.sh" in submitted
     assert f"STAGED_CACHE_ROOT={cache_root}" in submitted
     assert f"PRODUCTION_OUTPUT_DIR={output_dir}" in submitted
     assert "production_job_id=200[].venus" in result.stdout
+
+    invalid_env = env.copy()
+    invalid_env["RUN_BUDGET_WALLTIME"] = "two-hours"
+    invalid = subprocess.run(
+        ["bash", str(scheduler_dir / "submit_run_budget_production.sh")],
+        cwd=PROJECT_ROOT,
+        env=invalid_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert invalid.returncode != 0
+    assert "RUN_BUDGET_WALLTIME must use HH:MM:SS format" in invalid.stderr
 
 
 def test_single_year_run_budget_submission_uses_serial_pbs_job(tmp_path):
@@ -1688,6 +1704,7 @@ echo "201.venus"
             "LOG_DIR": str(log_dir),
             "START_YEAR": "1940",
             "END_YEAR": "1940",
+            "RUN_BUDGET_WALLTIME": "01:30:00",
         }
     )
 
@@ -1704,6 +1721,7 @@ echo "201.venus"
     assert "-J" not in submitted
     assert "-C #NO_PBS_DIRECTIVES" in submitted
     assert "-l select=1:ncpus=8:mem=25gb" in submitted
+    assert "-l walltime=01:30:00" in submitted
     assert "EHB_SERIAL_TASK_INDEX=0" in submitted
     assert f"-o {log_dir}/" in submitted
     assert "schedule_run_budget_production.sh" in submitted

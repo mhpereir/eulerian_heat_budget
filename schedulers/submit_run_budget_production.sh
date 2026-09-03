@@ -22,6 +22,10 @@ if (( MAX_PARALLEL < 1 )); then
   echo "[error] MAX_PARALLEL must be at least one." >&2
   exit 2
 fi
+if [[ ! "${RUN_BUDGET_WALLTIME}" =~ ^[0-9]+:[0-5][0-9]:[0-5][0-9]$ ]]; then
+  echo "[error] RUN_BUDGET_WALLTIME must use HH:MM:SS format." >&2
+  exit 2
+fi
 mkdir -p "${LOG_DIR}" "${PRODUCTION_OUTPUT_DIR}"
 if [[ ! -w "${LOG_DIR}" || ! -w "${PRODUCTION_OUTPUT_DIR}" ]]; then
   echo "[error] production log or output directory is not writable." >&2
@@ -57,6 +61,7 @@ echo "[submit] cache_root=${STAGED_CACHE_ROOT}"
 echo "[submit] output_dir=${PRODUCTION_OUTPUT_DIR}"
 echo "[submit] log_dir=${LOG_DIR}"
 echo "[submit] commit=${EXPECTED_COMMIT}"
+echo "[submit] walltime=${RUN_BUDGET_WALLTIME}"
 if (( TASK_COUNT == 1 )); then
   echo "[submit] production_serial_year=${START_YEAR}"
   PRODUCTION_JOB_ID=$(
@@ -64,6 +69,7 @@ if (( TASK_COUNT == 1 )); then
       -C "#NO_PBS_DIRECTIVES" \
       -N eulerian_heat_budget_prod \
       -l select=1:ncpus=8:mem=25gb \
+      -l walltime="${RUN_BUDGET_WALLTIME}" \
       -j oe \
       -o "${LOG_DIR}/" \
       -v "${EXPORTS},EHB_SERIAL_TASK_INDEX=0" \
@@ -74,6 +80,7 @@ else
   PRODUCTION_JOB_ID=$(
     "${QSUB_BIN}" \
       -J "0-${LAST_TASK}%${MAX_PARALLEL}" \
+      -l walltime="${RUN_BUDGET_WALLTIME}" \
       -o "${LOG_DIR}/" \
       -v "${EXPORTS}" \
       "${SCHEDULER_DIR}/schedule_run_budget_production.sh"

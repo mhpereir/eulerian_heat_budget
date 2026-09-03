@@ -68,6 +68,8 @@ Edit or override the values in `production_run_cli_settings.sh`:
 - `EHB_STAGED_ZARR_ROOT`, `EHB_RUN_BUDGET_ROOT`, and `EHB_LOG_ROOT`
 - `STAGED_CACHE_BASE_ROOT`
 - `RUN_ID` and `PRODUCTION_OUTPUT_DIR`
+- `RUN_BUDGET_WALLTIME` for the per-year calculation limit, defaulting to two
+  hours
 
 The default campaign cache root is
 `${STAGED_CACHE_BASE_ROOT}/${CAMPAIGN_ID}`. A campaign ID is permanently bound
@@ -162,6 +164,9 @@ PROJECT_ROOT=/home/USER/eulerian-heat-budget/production/eulerian_heat_budget-COM
 
 The default result directory is
 `campaign-data/run-budget/<region>/<run-id>/`.
+Each yearly calculation explicitly requests the configured
+`RUN_BUDGET_WALLTIME`; the default two-hour limit provides substantial
+headroom over the observed runtimes of the established regional campaigns.
 Resubmitting the same run is gap-safe: a year with an existing nonempty
 `annual/heat_budget_<year>.nc` is skipped, while a missing or empty annual file
 is recomputed. A one-year calculation is submitted as a serial PBS job for the

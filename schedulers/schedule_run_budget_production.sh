@@ -2,6 +2,7 @@
 #PBS -N eulerian_heat_budget_prod
 #PBS -J 0-85%5
 #PBS -l select=1:ncpus=8:mem=25gb
+#PBS -l walltime=02:00:00
 #PBS -j oe
 
 set -euo pipefail
